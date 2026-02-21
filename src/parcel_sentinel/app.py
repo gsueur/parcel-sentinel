@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import settings
-from .routes import features, health, score, thumbnail, timeseries
+from .routes import features, health, report, score, thumbnail, timeseries
 from .storage.duckdb_store import store
 
 
@@ -33,5 +33,6 @@ def create_app() -> FastAPI:
     app.include_router(features.router, prefix="/v1")
     app.include_router(score.router, prefix="/v1")
     app.include_router(thumbnail.router, prefix="/v1")
+    app.include_router(report.router, prefix="/v1")
 
     return app

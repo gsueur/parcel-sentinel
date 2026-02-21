@@ -198,6 +198,84 @@ class DuckDBStore:
         )
 
 
+    def get_timeseries(
+        self,
+        parcel_key: str,
+        processing_version: str,
+        cadence: str = "monthly",
+    ) -> dict[str, list[dict]] | None:
+        """Load all stored time series records for a parcel."""
+        if self._conn is None:
+            return None
+        rows = self._conn.execute(
+            """
+            SELECT metric, series_json FROM parcel_timeseries
+            WHERE parcel_key = ? AND processing_version = ? AND cadence = ?
+            """,
+            [parcel_key, processing_version, cadence],
+        ).fetchall()
+        if not rows:
+            return None
+        return {metric: json.loads(series_json) for metric, series_json in rows}
+
+    def get_scores(
+        self,
+        parcel_key: str,
+        score_version: str,
+    ) -> dict | None:
+        """Load most recent scores for a parcel."""
+        if self._conn is None:
+            return None
+        result = self._conn.execute(
+            """
+            SELECT scores_json FROM parcel_scores
+            WHERE parcel_key = ? AND score_version = ?
+            ORDER BY updated_at DESC LIMIT 1
+            """,
+            [parcel_key, score_version],
+        ).fetchone()
+        if result is None:
+            return None
+        return json.loads(result[0])
+
+    def get_scene_months(
+        self,
+        parcel_key: str,
+        processing_version: str,
+        limit: int = 12,
+    ) -> list[dict]:
+        """Return up to `limit` most recent scenes with all their band arrays.
+
+        Each entry: {"scene_id": str, "month_key": str, "bands": {band_key: np.ndarray}}
+        """
+        if self._conn is None:
+            return []
+        # Get distinct (scene_id, month_key) ordered by month desc
+        scenes = self._conn.execute(
+            """
+            SELECT DISTINCT scene_id, month_key FROM scene_bands
+            WHERE parcel_key = ? AND processing_version = ?
+            ORDER BY month_key DESC
+            LIMIT ?
+            """,
+            [parcel_key, processing_version, limit],
+        ).fetchall()
+        result = []
+        for scene_id, month_key in scenes:
+            rows = self._conn.execute(
+                """
+                SELECT band_key, width, height, data FROM scene_bands
+                WHERE parcel_key = ? AND scene_id = ? AND processing_version = ?
+                """,
+                [parcel_key, scene_id, processing_version],
+            ).fetchall()
+            bands = {
+                band_key: np.array(data, dtype=np.float32).reshape(h, w)
+                for band_key, w, h, data in rows
+            }
+            result.append({"scene_id": scene_id, "month_key": month_key, "bands": bands})
+        return result
+
     def store_scene_bands(
         self,
         parcel_key: str,
