@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import math
@@ -330,7 +331,13 @@ class DuckDBStore:
             return
         now = datetime.now(timezone.utc).isoformat()
         for metric, records in series.items():
-            serialized = json.dumps([r.model_dump() if hasattr(r, "model_dump") else r for r in records])
+            def _to_dict(r):
+                if hasattr(r, "model_dump"):
+                    return r.model_dump()
+                if dataclasses.is_dataclass(r):
+                    return dataclasses.asdict(r)
+                return r
+            serialized = json.dumps([_to_dict(r) for r in records])
             self._conn.execute(
                 """
                 INSERT OR REPLACE INTO location_timeseries
