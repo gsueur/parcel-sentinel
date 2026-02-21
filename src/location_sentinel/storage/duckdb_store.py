@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import os
 import secrets
 from datetime import datetime, timezone
 
@@ -10,6 +12,61 @@ import numpy as np
 from shapely.geometry import shape
 
 from ..config import settings
+
+# ---------------------------------------------------------------------------
+# Koeppen-Geiger climate classification metadata
+# ---------------------------------------------------------------------------
+_KG_DESCRIPTIONS: dict[str, tuple[str, str]] = {
+    # code: (short label, criterion/notes)
+    "Af": ("Equatorial rainforest, fully humid",    "Pmin ≥ 60 mm/month"),
+    "Am": ("Equatorial monsoon",                     "Pann ≥ 25(100−Pmin)"),
+    "As": ("Equatorial savannah, dry summer",        "Pmin < 60 mm in summer"),
+    "Aw": ("Equatorial savannah, dry winter",        "Pmin < 60 mm in winter"),
+    "BWh": ("Hot desert",                            "Pann ≤ 5 Pth, Tann ≥ +18 °C"),
+    "BWk": ("Cold desert",                           "Pann ≤ 5 Pth, Tann < +18 °C"),
+    "BSh": ("Hot steppe",                            "Pann > 5 Pth, Tann ≥ +18 °C"),
+    "BSk": ("Cold steppe",                           "Pann > 5 Pth, Tann < +18 °C"),
+    "Csa": ("Warm temperate, dry hot summer",        "Dry summer, Tmax ≥ +22 °C"),
+    "Csb": ("Warm temperate, dry warm summer",       "Dry summer, warm summers"),
+    "Csc": ("Warm temperate, dry cool summer",       "Dry summer, cool summers"),
+    "Cwa": ("Warm temperate, dry winter, hot summer","Dry winter, Tmax ≥ +22 °C"),
+    "Cwb": ("Warm temperate, dry winter, warm summer","Dry winter, warm summers"),
+    "Cwc": ("Warm temperate, dry winter, cool summer","Dry winter, cool summers"),
+    "Cfa": ("Warm temperate, fully humid, hot summer","Tmax ≥ +22 °C"),
+    "Cfb": ("Warm temperate, fully humid, warm summer","Warm summers"),
+    "Cfc": ("Warm temperate, fully humid, cool summer","Cool summers"),
+    "Dsa": ("Snow, dry summer, hot summer",          "Psmin < Pwmin, Tmax ≥ +22 °C"),
+    "Dsb": ("Snow, dry summer, warm summer",         "Psmin < Pwmin, warm summers"),
+    "Dsc": ("Snow, dry summer, cool summer",         "Psmin < Pwmin, cool summers"),
+    "Dsd": ("Snow, dry summer, extremely continental","Psmin < Pwmin, Tmin ≤ −38 °C"),
+    "Dwa": ("Snow, dry winter, hot summer",          "Pwmin < Psmin, Tmax ≥ +22 °C"),
+    "Dwb": ("Snow, dry winter, warm summer",         "Pwmin < Psmin, warm summers"),
+    "Dwc": ("Snow, dry winter, cool summer",         "Pwmin < Psmin, cool summers"),
+    "Dwd": ("Snow, dry winter, extremely continental","Pwmin < Psmin, Tmin ≤ −38 °C"),
+    "Dfa": ("Snow, fully humid, hot summer",         "Tmax ≥ +22 °C"),
+    "Dfb": ("Snow, fully humid, warm summer",        "Warm summers"),
+    "Dfc": ("Snow, fully humid, cool summer",        "Cool summers"),
+    "Dfd": ("Snow, fully humid, extremely continental","Tmin ≤ −38 °C"),
+    "ET":  ("Tundra",                                "0 °C ≤ Tmax < +10 °C"),
+    "EF":  ("Ice cap / frost",                       "Tmax < 0 °C"),
+}
+
+# Main-class descriptions (first letter)
+_KG_MAIN: dict[str, str] = {
+    "A": "Equatorial",
+    "B": "Arid",
+    "C": "Warm temperate",
+    "D": "Snow (continental)",
+    "E": "Polar",
+}
+
+
+def _snap_to_koeppen_grid(coord: float) -> float:
+    """Snap a lat or lon to the nearest 0.5° Koeppen-Geiger grid center.
+
+    Grid centers are at values of the form n × 0.5 + 0.25 (e.g. -89.75, -89.25, …).
+    """
+    return math.floor(coord / 0.5) * 0.5 + 0.25
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +172,13 @@ class DuckDBStore:
             self._conn.execute("ALTER TABLE scene_bands RENAME COLUMN parcel_key TO location_key")
         except Exception:
             pass
+        # climate_code on location_geometries
+        try:
+            self._conn.execute(
+                "ALTER TABLE location_geometries ADD COLUMN IF NOT EXISTS climate_code VARCHAR"
+            )
+        except Exception:
+            pass
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS scene_bands (
                 location_key VARCHAR NOT NULL,
@@ -130,6 +194,83 @@ class DuckDBStore:
                 PRIMARY KEY (location_key, scene_id, processing_version, band_key)
             )
         """)
+
+        # Climate reference tables
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS climate_descriptions (
+                code    VARCHAR PRIMARY KEY,
+                label   VARCHAR NOT NULL,
+                criterion VARCHAR
+            )
+        """)
+        # Populate reference table (INSERT OR IGNORE keeps it idempotent)
+        for code, (label, criterion) in _KG_DESCRIPTIONS.items():
+            self._conn.execute(
+                "INSERT OR IGNORE INTO climate_descriptions (code, label, criterion) VALUES (?, ?, ?)",
+                [code, label, criterion],
+            )
+        # Raw KG grid table
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS climates (
+                lat DOUBLE NOT NULL,
+                lon DOUBLE NOT NULL,
+                code VARCHAR NOT NULL,
+                PRIMARY KEY (lat, lon)
+            )
+        """)
+        # Load file only if table is empty
+        count = self._conn.execute("SELECT COUNT(*) FROM climates").fetchone()[0]
+        if count == 0:
+            self._load_koeppen_file()
+
+    def _load_koeppen_file(self) -> None:
+        """Parse Koeppen-Geiger-ASCII.txt and bulk-insert into climates table."""
+        # Look for the file relative to the project root (two levels up from this file)
+        candidates = [
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "Koeppen-Geiger-ASCII.txt"),
+            "Koeppen-Geiger-ASCII.txt",
+        ]
+        path = None
+        for c in candidates:
+            resolved = os.path.abspath(c)
+            if os.path.exists(resolved):
+                path = resolved
+                break
+        if path is None:
+            logger.warning("Koeppen-Geiger-ASCII.txt not found; climates table will be empty")
+            return
+
+        logger.info("Loading Koeppen-Geiger data from %s", path)
+        rows: list[tuple] = []
+        with open(path, encoding="utf-8") as fh:
+            next(fh)  # skip header
+            for line in fh:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                try:
+                    lat, lon, code = float(parts[0]), float(parts[1]), parts[2]
+                    rows.append((lat, lon, code))
+                except ValueError:
+                    continue
+
+        # Batch insert via executemany
+        self._conn.executemany(
+            "INSERT OR IGNORE INTO climates (lat, lon, code) VALUES (?, ?, ?)", rows
+        )
+        logger.info("Loaded %d Koeppen-Geiger grid cells", len(rows))
+
+    def lookup_climate(self, lat: float, lon: float) -> str | None:
+        """Return the Koeppen-Geiger code for the nearest 0.5° grid cell."""
+        if self._conn is None:
+            return None
+        snapped_lat = _snap_to_koeppen_grid(lat)
+        snapped_lon = _snap_to_koeppen_grid(lon)
+        result = self._conn.execute(
+            "SELECT code FROM climates WHERE lat = ? AND lon = ?",
+            [snapped_lat, snapped_lon],
+        ).fetchone()
+        return result[0] if result else None
 
     def health_check(self) -> bool:
         try:
@@ -227,13 +368,28 @@ class DuckDBStore:
             if not exists:
                 customer_id = None
 
+        # Derive climate code from centroid if not already stored
+        climate_code = None
+        if existing:
+            existing_code = self._conn.execute(
+                "SELECT climate_code FROM location_geometries WHERE location_key = ?",
+                [location_key],
+            ).fetchone()
+            climate_code = existing_code[0] if existing_code else None
+        if climate_code is None:
+            try:
+                pt = shape(geojson)
+                climate_code = self.lookup_climate(pt.y, pt.x)
+            except Exception:
+                pass
+
         self._conn.execute(
             """
             INSERT OR REPLACE INTO location_geometries
-                (location_key, geojson_text, name, customer_id, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+                (location_key, geojson_text, name, customer_id, climate_code, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            [location_key, json.dumps(geojson), name, customer_id, now],
+            [location_key, json.dumps(geojson), name, customer_id, climate_code, now],
         )
 
     def get_geometry(self, location_key: str) -> dict | None:
@@ -331,23 +487,38 @@ class DuckDBStore:
         return self._locations_query()
 
     def get_location_info(self, location_key: str) -> dict | None:
-        """Return geometry, name, and centroid for a location, or None if not found."""
+        """Return geometry, name, centroid, and climate info for a location."""
         if self._conn is None:
             return None
         result = self._conn.execute(
-            "SELECT geojson_text, name FROM location_geometries WHERE location_key = ?",
+            "SELECT geojson_text, name, climate_code FROM location_geometries WHERE location_key = ?",
             [location_key],
         ).fetchone()
         if result is None:
             return None
         geojson = json.loads(result[0])
         name = result[1]
+        climate_code = result[2]
         try:
             centroid = shape(geojson).centroid
             centroid_lonlat = [round(centroid.x, 5), round(centroid.y, 5)]
         except Exception:
             centroid_lonlat = None
-        return {"geojson": geojson, "name": name, "centroid": centroid_lonlat}
+
+        # Expand climate code into human-readable descriptions
+        climate_info: dict | None = None
+        if climate_code:
+            label, criterion = _KG_DESCRIPTIONS.get(climate_code, (None, None))
+            main_class = _KG_MAIN.get(climate_code[0]) if climate_code else None
+            climate_info = {
+                "code": climate_code,
+                "label": label or climate_code,
+                "criterion": criterion,
+                "main_class": main_class,
+            }
+
+        return {"geojson": geojson, "name": name, "centroid": centroid_lonlat,
+                "climate": climate_info}
 
     def save_scores(
         self,

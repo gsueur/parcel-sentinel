@@ -1,4 +1,4 @@
-# Parcel Sentinel Analytics API (Path A)
+
 Specification for implementation in FastAPI using STAC search + COG window reads, storing only derived parcel features.
 
 Owner: Guillaume Sueur  
@@ -428,3 +428,5 @@ Regional LST from Sentinel-3 or other thermal sources
 Batch processing endpoint for portfolio runs
 Async job queue for long requests
 Prewarming for frequently requested regions
+
+claude --resume b57a2772-e743-49a1-8721-fb861b95223a

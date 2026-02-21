@@ -677,6 +677,7 @@ def build_report_html(
     scene_months: list[dict],
     processing_version: str,
     score_version: str,
+    climate: dict | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -687,6 +688,24 @@ def build_report_html(
         coord_str = f"{lat:+.5f}, {lon:+.5f}"
     else:
         coord_str = "—"
+
+    # Climate badge
+    if climate:
+        code = climate.get("code", "")
+        label = climate.get("label", code)
+        criterion = climate.get("criterion", "")
+        climate_html = (
+            f'<span title="{criterion}" style="'
+            f'display:inline-flex;align-items:center;gap:6px;'
+            f'background:#1e2130;border:1px solid #374151;border-radius:6px;'
+            f'padding:3px 10px;font-size:0.82rem;color:#e5e7eb;cursor:default">'
+            f'<span style="font-weight:700;color:#60a5fa;font-family:monospace;font-size:1rem">{code}</span>'
+            f'<span style="color:#9ca3af">&mdash;</span>'
+            f'<span>{label}</span>'
+            f'</span>'
+        )
+    else:
+        climate_html = ""
 
     # Thumbnail
     thumb_url = f"/v1/thumbnail/{location_key}.png"
@@ -775,8 +794,9 @@ def build_report_html(
 
 <div class="header">
   <h1>{display_name}</h1>
-  <div style="margin-top:6px;display:flex;gap:24px;align-items:baseline;flex-wrap:wrap">
+  <div style="margin-top:6px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
     <span style="color:#9ca3af;font-size:0.9rem">&#x1F4CD; {coord_str}</span>
+    {climate_html}
     <small style="color:#4b5563;font-size:0.75rem;font-family:monospace">{location_key}</small>
   </div>
   <div style="margin-top:4px;color:#4b5563;font-size:0.72rem">generated {generated}</div>

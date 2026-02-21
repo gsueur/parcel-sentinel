@@ -35,6 +35,7 @@ async def get_location_report(location_key: str):
         name=location_info["name"],
         centroid=location_info["centroid"],
         geometry_geojson=location_info["geojson"],
+        climate=location_info.get("climate"),
         scores=scores,
         features=features_data.get("features") if features_data else None,
         quality=features_data.get("quality") if features_data else None,
