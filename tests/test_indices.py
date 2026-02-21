@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.parcel_sentinel.compute.indices import compute_ndvi, compute_ndwi, spatial_mean
+from src.parcel_sentinel.compute.indices import (
+    compute_bsi,
+    compute_nbr,
+    compute_ndmi,
+    compute_ndsi,
+    compute_ndvi,
+    compute_ndwi,
+    spatial_mean,
+)
 
 
 class TestNDVI:
@@ -56,6 +64,79 @@ class TestNDWI:
         nir   = np.array([4000.0])
         ndwi = compute_ndwi(green, nir)
         assert ndwi[0] < 0
+
+
+class TestNDMI:
+    def test_formula(self):
+        nir  = np.array([4000.0, 3000.0])
+        swir = np.array([1000.0, 3000.0])
+        ndmi = compute_ndmi(nir, swir)
+        np.testing.assert_allclose(ndmi, (nir - swir) / (nir + swir))
+
+    def test_high_moisture_positive(self):
+        # NIR >> SWIR → good moisture → positive
+        assert compute_ndmi(np.array([4000.0]), np.array([500.0]))[0] > 0
+
+    def test_stress_negative(self):
+        # SWIR >> NIR → water stress → negative
+        assert compute_ndmi(np.array([500.0]), np.array([4000.0]))[0] < 0
+
+
+class TestNBR:
+    def test_formula(self):
+        nir   = np.array([4000.0, 500.0])
+        swir2 = np.array([500.0, 4000.0])
+        nbr = compute_nbr(nir, swir2)
+        np.testing.assert_allclose(nbr, (nir - swir2) / (nir + swir2))
+
+    def test_healthy_vegetation_positive(self):
+        # High NIR, low SWIR2 → healthy, unburned
+        assert compute_nbr(np.array([4000.0]), np.array([300.0]))[0] > 0.3
+
+    def test_burned_negative(self):
+        # Low NIR (destroyed cells), high SWIR2 (exposed minerals)
+        assert compute_nbr(np.array([300.0]), np.array([4000.0]))[0] < 0
+
+
+class TestNDSI:
+    def test_formula(self):
+        green = np.array([3000.0, 500.0])
+        swir  = np.array([300.0, 3000.0])
+        ndsi = compute_ndsi(green, swir)
+        np.testing.assert_allclose(ndsi, (green - swir) / (green + swir))
+
+    def test_snow_high_positive(self):
+        # Snow: high green, very low SWIR → NDSI > 0.4
+        assert compute_ndsi(np.array([3000.0]), np.array([200.0]))[0] > 0.4
+
+    def test_bare_soil_negative(self):
+        # Soil: low green, higher SWIR
+        assert compute_ndsi(np.array([800.0]), np.array([2000.0]))[0] < 0
+
+
+class TestBSI:
+    def test_formula(self):
+        swir = np.array([2000.0])
+        red  = np.array([1500.0])
+        nir  = np.array([3000.0])
+        blue = np.array([800.0])
+        bsi = compute_bsi(swir, red, nir, blue)
+        expected = (swir + red - nir - blue) / (swir + red + nir + blue)
+        np.testing.assert_allclose(bsi, expected)
+
+    def test_bare_soil_positive(self):
+        # High SWIR+Red, low NIR+Blue → exposed soil
+        assert compute_bsi(
+            np.array([3000.0]), np.array([2500.0]),
+            np.array([500.0]),  np.array([300.0]),
+        )[0] > 0
+
+    def test_vegetation_negative(self):
+        # High NIR, low SWIR+Red → vegetated
+        assert compute_bsi(
+            np.array([500.0]),  np.array([600.0]),
+            np.array([4000.0]), np.array([400.0]),
+        )[0] < 0
 
 
 class TestSpatialMean:

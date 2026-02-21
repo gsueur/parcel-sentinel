@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from .render import band_to_b64, ndvi_to_b64, ndwi_to_b64
+from .render import band_to_b64, bsi_to_b64, nbr_to_b64, ndmi_to_b64, ndsi_to_b64, ndvi_to_b64, ndwi_to_b64
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -25,13 +25,14 @@ h2 { font-size: 1rem; font-weight: 600; color: #9ca3af; text-transform: uppercas
                         justify-content: center; color: #4b5563; font-size: 0.8rem; }
 
 /* Scores */
-.scores { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.scores { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .score-item label { display: block; color: #9ca3af; font-size: 0.8rem; margin-bottom: 4px; }
 .score-item .value { font-size: 1.6rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
 .bar-bg { height: 6px; background: #1e2130; border-radius: 3px; }
 .bar-fill { height: 6px; border-radius: 3px; }
 .drought  { background: #ef4444; }
 .wetness  { background: #3b82f6; }
+.fire     { background: #f97316; }
 .heat     { background: #22c55e; }
 .composite{ background: #a855f7; }
 .composite-big { font-size: 2.2rem; font-weight: 800; color: #a855f7; }
@@ -53,16 +54,41 @@ h2 { font-size: 1rem; font-weight: 600; color: #9ca3af; text-transform: uppercas
 /* Scene grid */
 .scene-grid { overflow-x: auto; }
 table.scenes { border-collapse: collapse; min-width: 100%; }
-table.scenes th { padding: 8px 12px; text-align: left; color: #6b7280;
-                  font-size: 0.78rem; font-weight: 500; border-bottom: 1px solid #1e2130; }
-table.scenes td { padding: 8px 12px; border-bottom: 1px solid #141824;
+table.scenes th { padding: 6px 8px; text-align: left; color: #6b7280;
+                  font-size: 0.75rem; font-weight: 500; border-bottom: 1px solid #1e2130; }
+table.scenes td { padding: 6px 8px; border-bottom: 1px solid #141824;
                   vertical-align: middle; }
-table.scenes td:first-child { font-family: monospace; font-size: 0.82rem; color: #9ca3af; }
-table.scenes img { display: block; width: 128px; height: 128px;
+table.scenes td:first-child { font-family: monospace; font-size: 0.78rem; color: #9ca3af;
+                               white-space: nowrap; padding-right: 12px; }
+table.scenes img { display: block; width: 96px; height: 96px;
                    image-rendering: pixelated; border-radius: 4px; }
-.no-img { width: 128px; height: 128px; background: #1e2130; border-radius: 4px;
+.no-img { width: 96px; height: 96px; background: #1e2130; border-radius: 4px;
           display: flex; align-items: center; justify-content: center;
-          color: #4b5563; font-size: 0.7rem; }
+          color: #4b5563; font-size: 0.65rem; }
+
+/* Index reference */
+.index-ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 720px) { .index-ref-grid { grid-template-columns: 1fr; } }
+.index-card { background: #0f1117; border: 1px solid #1e2130; border-radius: 6px; padding: 14px; }
+.index-card h3 { font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 6px;
+                  display: flex; align-items: center; gap: 8px; }
+.index-acronym { font-family: monospace; font-size: 0.75rem; background: #1e2130;
+                  padding: 2px 7px; border-radius: 3px; color: #60a5fa; }
+.index-formula { font-family: monospace; font-size: 0.8rem; background: #0a0d14;
+                  padding: 7px 10px; border-radius: 4px; color: #60a5fa; margin-bottom: 8px;
+                  white-space: nowrap; overflow-x: auto; }
+.index-bands { font-size: 0.74rem; color: #6b7280; margin-bottom: 8px; }
+.index-desc { font-size: 0.81rem; color: #d1d5db; line-height: 1.55; margin-bottom: 10px; }
+.index-bar { height: 14px; border-radius: 3px; margin-bottom: 4px; }
+.index-ticks { display: flex; justify-content: space-between;
+               font-size: 0.68rem; color: #6b7280; margin-bottom: 8px; }
+.index-ranges { font-size: 0.74rem; margin-bottom: 10px; }
+.index-range-row { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; color: #9ca3af; }
+.index-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+.score-badge { display: inline-block; font-size: 0.68rem; padding: 2px 7px; border-radius: 3px;
+               font-weight: 500; margin-right: 4px; }
+.badge-scoring { background: #1e3a5f; color: #60a5fa; }
+.badge-feature { background: #1a2e1a; color: #4ade80; }
 
 /* Chart */
 .chart-wrap { position: relative; height: 260px; }
@@ -92,23 +118,161 @@ table.scenes img { display: block; width: 128px; height: 128px;
 
 _CHART_JS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
 
-_NDWI_LEGEND_HTML = """
-<div class="ndwi-legend">
-  <div class="ndwi-legend-label">NDWI (McFeeters) &mdash; (Green &minus; NIR) / (Green + NIR)</div>
-  <div class="ndwi-bar"></div>
-  <div class="ndwi-ticks">
-    <span>&minus;1.0</span>
-    <span>&minus;0.3</span>
-    <span>0.0</span>
-    <span>+0.2</span>
-    <span>+1.0</span>
+def _index_reference_html() -> str:
+    """Build the comprehensive Index Reference section for the report."""
+    return """
+<div class="index-ref-grid">
+
+  <!-- NDVI -->
+  <div class="index-card">
+    <h3>Normalized Difference Vegetation Index <span class="index-acronym">NDVI</span></h3>
+    <div class="index-formula">(B08 &minus; B04) / (B08 + B04)</div>
+    <div class="index-bands">Bands: B08 NIR 835nm &bull; B04 Red 665nm &mdash; both 10m resolution</div>
+    <p class="index-desc">
+      The foundational vegetation index. Exploits the contrast between high NIR reflectance
+      from healthy leaf cell structure and strong red absorption by chlorophyll. Values rise
+      with vegetation density and greenness. Saturates above ~0.8 in dense closed-canopy forests.
+      Used to track long-term vegetation health trends, anomalous stress events, and canopy cover.
+    </p>
+    <div class="index-bar" style="background: linear-gradient(to right,
+      #6543211a 0%, #654321 5%, #dcd2a0 50%, #bedd50 65%, #3ca028 80%, #004600 100%)"></div>
+    <div class="index-ticks"><span>&minus;1</span><span>0</span><span>0.3</span><span>0.6</span><span>1</span></div>
+    <div class="index-ranges">
+      <div class="index-range-row"><div class="index-swatch" style="background:#004600"></div>&gt; 0.6 &mdash; Dense forest / high biomass</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#3ca028"></div>0.3 &ndash; 0.6 &mdash; Moderate to good vegetation</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#bedd50"></div>0.1 &ndash; 0.3 &mdash; Grass, shrub, sparse cover</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#dcd2a0"></div>−0.1 &ndash; 0.1 &mdash; Bare soil, rock, sand</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#654321"></div>&lt; −0.1 &mdash; Water, snow, clouds</div>
+    </div>
+    <span class="score-badge badge-scoring">Drought score</span>
+    <span class="score-badge badge-scoring">Heat mitigation</span>
   </div>
-  <div class="ndwi-ranges">
-    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#0028a0"></div>0.2 &ndash; 1.0 &nbsp;Water surface</div>
-    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#64b4f0"></div>0.0 &ndash; 0.2 &nbsp;Flooding / humidity</div>
-    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#ebe1c8"></div>&minus;0.3 &ndash; 0.0 &nbsp;Non-aqueous / moderate drought</div>
-    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#a01e1e"></div>&minus;1.0 &ndash; &minus;0.3 &nbsp;Drought / non-aqueous</div>
+
+  <!-- NDWI -->
+  <div class="index-card">
+    <h3>Normalized Difference Water Index <span class="index-acronym">NDWI</span></h3>
+    <div class="index-formula">(B03 &minus; B08) / (B03 + B08)</div>
+    <div class="index-bands">Bands: B03 Green 560nm &bull; B08 NIR 835nm &mdash; both 10m resolution</div>
+    <p class="index-desc">
+      McFeeters (1996) open-water detection index. Green wavelengths maximize reflectance
+      of the water surface; NIR is strongly absorbed by water and strongly reflected by
+      vegetation, creating a high contrast that isolates water bodies. Not a vegetation
+      moisture index (see NDMI for that).
+    </p>
+    <div class="index-bar" style="background: linear-gradient(to right,
+      #a01e1e 0%, #ebe1c8 50%, #64b4f0 60%, #0028a0 100%)"></div>
+    <div class="index-ticks"><span>&minus;1</span><span>0</span><span>+0.2</span><span>+1</span></div>
+    <div class="index-ranges">
+      <div class="index-range-row"><div class="index-swatch" style="background:#0028a0"></div>0.2 &ndash; 1.0 &mdash; Open water surface</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#64b4f0"></div>0.0 &ndash; 0.2 &mdash; Flooding / soil moisture</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#ebe1c8"></div>−0.3 &ndash; 0.0 &mdash; Non-aqueous / moderate drought</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#a01e1e"></div>−1.0 &ndash; −0.3 &mdash; Drought / dry non-aqueous</div>
+    </div>
+    <span class="score-badge badge-scoring">Wetness score</span>
+    <span class="score-badge badge-feature">ndwi_wetness_persistence_5y</span>
   </div>
+
+  <!-- NDMI -->
+  <div class="index-card">
+    <h3>Normalized Difference Moisture Index <span class="index-acronym">NDMI</span></h3>
+    <div class="index-formula">(B08 &minus; B11) / (B08 + B11)</div>
+    <div class="index-bands">Bands: B08 NIR 835nm (10m) &bull; B11 SWIR1 1610nm (20m)</div>
+    <p class="index-desc">
+      Measures leaf and canopy water content directly. SWIR at 1610nm corresponds to a
+      strong liquid-water absorption band, so reflectance drops as leaf water content
+      increases. Unlike NDWI, NDMI is sensitive to moisture <em>within vegetation</em> rather
+      than open water bodies. An early drought indicator: NDMI drops before NDVI responds.
+      Positive = adequate moisture; negative = water stress.
+    </p>
+    <div class="index-bar" style="background: linear-gradient(to right,
+      #8c320f 0%, #dc8c3c 40%, #f5ebb9 50%, #a0d764 60%, #1e9150 80%, #005a64 100%)"></div>
+    <div class="index-ticks"><span>&minus;1</span><span>&minus;0.2</span><span>0</span><span>0.2</span><span>0.6</span><span>1</span></div>
+    <div class="index-ranges">
+      <div class="index-range-row"><div class="index-swatch" style="background:#005a64"></div>0.4 &ndash; 1.0 &mdash; High moisture / lush canopy</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#1e9150"></div>0.1 &ndash; 0.4 &mdash; Adequate moisture</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#f5ebb9"></div>−0.1 &ndash; 0.1 &mdash; Marginal / transition</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#dc8c3c"></div>−0.3 &ndash; −0.1 &mdash; Moderate water stress</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#8c320f"></div>&lt; −0.3 &mdash; Severe water stress</div>
+    </div>
+    <span class="score-badge badge-scoring">Drought score</span>
+    <span class="score-badge badge-feature">ndmi_moisture_stress_freq_5y</span>
+  </div>
+
+  <!-- NBR -->
+  <div class="index-card">
+    <h3>Normalized Burn Ratio <span class="index-acronym">NBR</span></h3>
+    <div class="index-formula">(B08 &minus; B12) / (B08 + B12)</div>
+    <div class="index-bands">Bands: B08 NIR 835nm (10m) &bull; B12 SWIR2 2190nm (20m)</div>
+    <p class="index-desc">
+      Designed to detect and quantify wildfire burn severity. Healthy vegetation has high NIR
+      and low SWIR2 reflectance, giving high positive NBR values. Burned areas and char have
+      low NIR (destroyed cells) and high SWIR2 (exposed soil minerals), driving NBR sharply
+      negative. Also used to track post-fire recovery: NBR rises as vegetation regenerates.
+      The differenced NBR (pre minus post-fire) quantifies net burn severity.
+    </p>
+    <div class="index-bar" style="background: linear-gradient(to right,
+      #190f0a 0%, #5f5041 45%, #cdb982 55%, #b4d74b 65%, #004b0f 100%)"></div>
+    <div class="index-ticks"><span>&minus;1</span><span>−0.1</span><span>0.1</span><span>0.3</span><span>1</span></div>
+    <div class="index-ranges">
+      <div class="index-range-row"><div class="index-swatch" style="background:#004b0f"></div>&gt; 0.3 &mdash; Healthy unburned vegetation</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#b4d74b"></div>0.1 &ndash; 0.3 &mdash; Low-severity burn / recovering</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#cdb982"></div>−0.1 &ndash; 0.1 &mdash; Moderate burn / bare</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#5f5041"></div>−0.4 &ndash; −0.1 &mdash; High-severity burn</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#190f0a"></div>&lt; −0.4 &mdash; Severely burned / charred</div>
+    </div>
+    <span class="score-badge badge-scoring">Fire exposure score</span>
+    <span class="score-badge badge-feature">nbr_burn_freq_5y</span>
+  </div>
+
+  <!-- NDSI -->
+  <div class="index-card">
+    <h3>Normalized Difference Snow Index <span class="index-acronym">NDSI</span></h3>
+    <div class="index-formula">(B03 &minus; B11) / (B03 + B11)</div>
+    <div class="index-bands">Bands: B03 Green 560nm (10m) &bull; B11 SWIR1 1610nm (20m)</div>
+    <p class="index-desc">
+      Distinguishes snow and ice from clouds, soil, and vegetation. Snow has very high
+      reflectance in visible green but strongly absorbs SWIR energy, creating a distinctive
+      high NDSI signal. Clouds also appear bright in green but similarly bright in SWIR,
+      keeping their NDSI lower. Threshold of 0.4 reliably separates snow from all other
+      land cover types. Important for snowpack monitoring and alpine climate change analysis.
+    </p>
+    <div class="index-bar" style="background: linear-gradient(to right,
+      #64411900 0%, #644119 0%, #cdaf6e 50%, #aad7f5 70%, #f5fcff 100%)"></div>
+    <div class="index-ticks"><span>&minus;1</span><span>0</span><span>0.4</span><span>1</span></div>
+    <div class="index-ranges">
+      <div class="index-range-row"><div class="index-swatch" style="background:#f5fcff"></div>&gt; 0.6 &mdash; Deep snow / ice</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#aad7f5"></div>0.4 &ndash; 0.6 &mdash; Snow-covered (detection threshold)</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#cdaf6e"></div>0.0 &ndash; 0.4 &mdash; Bare soil / possible patchy snow</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#644119"></div>&lt; 0.0 &mdash; Vegetation / dark surfaces</div>
+    </div>
+    <span class="score-badge badge-feature">ndsi_snow_persistence_5y</span>
+  </div>
+
+  <!-- BSI -->
+  <div class="index-card">
+    <h3>Bare Soil Index <span class="index-acronym">BSI</span></h3>
+    <div class="index-formula">(B11 + B04 &minus; B08 &minus; B02) / (B11 + B04 + B08 + B02)</div>
+    <div class="index-bands">Bands: B11 SWIR1 1610nm (20m) &bull; B04 Red 665nm &bull; B08 NIR 835nm &bull; B02 Blue 490nm</div>
+    <p class="index-desc">
+      Multi-band index that combines SWIR and Red (which highlight soil mineral properties)
+      against NIR and Blue (which suppress vegetation and shadow). The combination enhances
+      exposed bare soil and suppresses vegetated areas more effectively than any single-band
+      ratio. Positive values indicate bare or sparsely covered ground; negative values
+      indicate vegetation. Useful as a land degradation and desertification indicator.
+    </p>
+    <div class="index-bar" style="background: linear-gradient(to right,
+      #005014 0%, #9bcd50 45%, #ebe1b9 50%, #cda55a 65%, #733f14 100%)"></div>
+    <div class="index-ticks"><span>&minus;1</span><span>−0.1</span><span>0</span><span>0.3</span><span>1</span></div>
+    <div class="index-ranges">
+      <div class="index-range-row"><div class="index-swatch" style="background:#005014"></div>&lt; −0.2 &mdash; Dense vegetation cover</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#9bcd50"></div>−0.2 &ndash; 0.0 &mdash; Sparse vegetation / mixed</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#cda55a"></div>0.0 &ndash; 0.3 &mdash; Partially exposed soil</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#733f14"></div>&gt; 0.3 &mdash; Heavily bare / degraded ground</div>
+    </div>
+    <span class="score-badge badge-feature">bsi_bare_soil_freq_5y</span>
+    <span class="score-badge badge-feature">bsi_mean_5y</span>
+  </div>
+
 </div>"""
 
 
@@ -150,6 +314,10 @@ def _chart_datasets(series: dict[str, list[dict]]) -> tuple[list[str], str]:
     colors = {
         "ndvi": {"border": "#22c55e", "bg": "rgba(34,197,94,0.15)"},
         "ndwi": {"border": "#3b82f6", "bg": "rgba(59,130,246,0.15)"},
+        "ndmi": {"border": "#06b6d4", "bg": "rgba(6,182,212,0.12)"},
+        "nbr":  {"border": "#f97316", "bg": "rgba(249,115,22,0.12)"},
+        "ndsi": {"border": "#a5f3fc", "bg": "rgba(165,243,252,0.12)"},
+        "bsi":  {"border": "#d97706", "bg": "rgba(217,119,6,0.12)"},
     }
     datasets = []
     for metric, records in series.items():
@@ -174,30 +342,43 @@ def _chart_datasets(series: dict[str, list[dict]]) -> tuple[list[str], str]:
 
 def _scene_rows(scene_months: list[dict]) -> str:
     if not scene_months:
-        return '<tr><td colspan="5" class="no-data">No scene images cached yet.</td></tr>'
+        return '<tr><td colspan="9" class="no-data">No scene images cached yet.</td></tr>'
     rows = []
     for entry in scene_months:
         month = entry["month_key"]
         bands = entry["bands"]
-        nir, red, green = bands.get("B08"), bands.get("B04"), bands.get("B03")
+        nir   = bands.get("B08")
+        red   = bands.get("B04")
+        green = bands.get("B03")
+        swir  = bands.get("B11")
+        swir2 = bands.get("B12")
+        blue  = bands.get("B02")
 
         def img_or_empty(b64: str | None, alt: str) -> str:
             if b64:
                 return f'<img src="data:image/png;base64,{b64}" alt="{alt}">'
-            return f'<div class="no-img">no {alt}</div>'
+            return f'<div class="no-img">{alt}</div>'
 
-        b04_b64  = band_to_b64(red)              if red   is not None else None
-        b08_b64  = band_to_b64(nir)              if nir   is not None else None
-        ndvi_b64 = ndvi_to_b64(nir, red)         if (nir is not None and red   is not None) else None
-        ndwi_b64 = ndwi_to_b64(green, nir)       if (nir is not None and green is not None) else None
+        b04_b64  = band_to_b64(red)                          if red is not None else None
+        b08_b64  = band_to_b64(nir)                          if nir is not None else None
+        ndvi_b64 = ndvi_to_b64(nir, red)                     if (nir and red)   else None
+        ndwi_b64 = ndwi_to_b64(green, nir)                   if (green and nir) else None
+        ndmi_b64 = ndmi_to_b64(nir, swir)                    if (nir and swir)  else None
+        nbr_b64  = nbr_to_b64(nir, swir2)                    if (nir and swir2) else None
+        ndsi_b64 = ndsi_to_b64(green, swir)                  if (green and swir) else None
+        bsi_b64  = bsi_to_b64(swir, red, nir, blue)          if (swir and red and nir and blue) else None
 
         rows.append(f"""
         <tr>
           <td>{month}</td>
-          <td>{img_or_empty(b04_b64,  'B04 Red')}</td>
-          <td>{img_or_empty(b08_b64,  'B08 NIR')}</td>
+          <td>{img_or_empty(b04_b64,  'B04')}</td>
+          <td>{img_or_empty(b08_b64,  'B08')}</td>
           <td>{img_or_empty(ndvi_b64, 'NDVI')}</td>
           <td>{img_or_empty(ndwi_b64, 'NDWI')}</td>
+          <td>{img_or_empty(ndmi_b64, 'NDMI')}</td>
+          <td>{img_or_empty(nbr_b64,  'NBR')}</td>
+          <td>{img_or_empty(ndsi_b64, 'NDSI')}</td>
+          <td>{img_or_empty(bsi_b64,  'BSI')}</td>
         </tr>""")
     return "\n".join(rows)
 
@@ -239,6 +420,7 @@ def build_report_html(
     score_bars = (
         _score_bar("Drought", s.get("drought_score"), "drought") +
         _score_bar("Wetness", s.get("wetness_score"), "wetness") +
+        _score_bar("Fire exposure", s.get("fire_exposure_score"), "fire") +
         _score_bar("Heat mitigation", s.get("heat_mitigation_score"), "heat")
     )
 
@@ -263,7 +445,6 @@ def build_report_html(
     # Chart
     if timeseries:
         _, chart_data = _chart_datasets(timeseries)
-        has_ndwi = "ndwi" in timeseries
         chart_html = f"""
         <div class="chart-wrap">
           <canvas id="tsChart"></canvas>
@@ -284,7 +465,7 @@ def build_report_html(
           }}
         }});
         </script>
-        {_NDWI_LEGEND_HTML if has_ndwi else ""}"""
+        """
     else:
         chart_html = '<p class="no-data">No time series stored yet. Call /v1/parcel/timeseries first.</p>'
 
@@ -366,6 +547,12 @@ def build_report_html(
     </table>
   </div>
 
+  <!-- Index Reference -->
+  <div class="card">
+    <h2>Index reference</h2>
+    {_index_reference_html()}
+  </div>
+
   <!-- Scene images -->
   <div class="card">
     <h2>Scene images (most recent {len(scene_months)})</h2>
@@ -374,10 +561,14 @@ def build_report_html(
         <thead>
           <tr>
             <th>Month</th>
-            <th>B04 &mdash; Red (gray)</th>
-            <th>B08 &mdash; NIR (gray)</th>
-            <th>NDVI (color)</th>
-            <th>NDWI (color)</th>
+            <th>B04 Red</th>
+            <th>B08 NIR</th>
+            <th>NDVI</th>
+            <th>NDWI</th>
+            <th>NDMI</th>
+            <th>NBR</th>
+            <th>NDSI</th>
+            <th>BSI</th>
           </tr>
         </thead>
         <tbody>{scene_rows}</tbody>

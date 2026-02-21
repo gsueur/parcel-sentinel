@@ -82,6 +82,66 @@ def compute_wetness_persistence(
     return round(wet_count / len(valid), 4)
 
 
+def compute_moisture_stress_frequency(
+    records: list[MonthlyRecord],
+    threshold: float = settings.NDMI_STRESS_THRESHOLD,
+) -> float | None:
+    """Fraction of months with NDMI below threshold (vegetation moisture stress).
+
+    Returns fraction in [0, 1]. None if no data.
+    """
+    valid = [r for r in records if r.mean is not None]
+    if not valid:
+        return None
+    stress_count = sum(1 for r in valid if r.mean < threshold)
+    return round(stress_count / len(valid), 4)
+
+
+def compute_burn_frequency(
+    records: list[MonthlyRecord],
+    threshold: float = settings.NBR_BURN_THRESHOLD,
+) -> float | None:
+    """Fraction of months with NBR below threshold (burn signal present).
+
+    Returns fraction in [0, 1]. None if no data.
+    """
+    valid = [r for r in records if r.mean is not None]
+    if not valid:
+        return None
+    burn_count = sum(1 for r in valid if r.mean < threshold)
+    return round(burn_count / len(valid), 4)
+
+
+def compute_snow_persistence(
+    records: list[MonthlyRecord],
+    threshold: float = settings.NDSI_SNOW_THRESHOLD,
+) -> float | None:
+    """Fraction of months with NDSI above threshold (snow-covered).
+
+    Returns fraction in [0, 1]. None if no data.
+    """
+    valid = [r for r in records if r.mean is not None]
+    if not valid:
+        return None
+    snow_count = sum(1 for r in valid if r.mean > threshold)
+    return round(snow_count / len(valid), 4)
+
+
+def compute_bare_soil_frequency(
+    records: list[MonthlyRecord],
+    threshold: float = settings.BSI_BARE_THRESHOLD,
+) -> float | None:
+    """Fraction of months with BSI above threshold (bare soil exposed).
+
+    Returns fraction in [0, 1]. None if no data.
+    """
+    valid = [r for r in records if r.mean is not None]
+    if not valid:
+        return None
+    bare_count = sum(1 for r in valid if r.mean > threshold)
+    return round(bare_count / len(valid), 4)
+
+
 def compute_mean(records: list[MonthlyRecord]) -> float | None:
     """Mean of all valid monthly values."""
     valid = [r.mean for r in records if r.mean is not None]

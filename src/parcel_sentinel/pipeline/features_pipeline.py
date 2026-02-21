@@ -5,8 +5,12 @@ import logging
 from ..compute.canopy import compute_canopy_proxy_from_series
 from ..compute.features import (
     compute_anomaly_frequency,
+    compute_bare_soil_frequency,
+    compute_burn_frequency,
     compute_mean,
+    compute_moisture_stress_frequency,
     compute_quality_score,
+    compute_snow_persistence,
     compute_trend_slope,
     compute_wetness_persistence,
 )
@@ -54,6 +58,29 @@ async def run_features(
     ndwi_records = series.get("ndwi", [])
     if ndwi_records:
         features["ndwi_wetness_persistence_5y"] = compute_wetness_persistence(ndwi_records)
+
+    # NDMI features -- vegetation moisture stress
+    ndmi_records = series.get("ndmi", [])
+    if ndmi_records:
+        features["ndmi_mean_5y"] = compute_mean(ndmi_records)
+        features["ndmi_moisture_stress_freq_5y"] = compute_moisture_stress_frequency(ndmi_records)
+
+    # NBR features -- fire / burn history
+    nbr_records = series.get("nbr", [])
+    if nbr_records:
+        features["nbr_mean_5y"] = compute_mean(nbr_records)
+        features["nbr_burn_freq_5y"] = compute_burn_frequency(nbr_records)
+
+    # NDSI features -- snow cover persistence
+    ndsi_records = series.get("ndsi", [])
+    if ndsi_records:
+        features["ndsi_snow_persistence_5y"] = compute_snow_persistence(ndsi_records)
+
+    # BSI features -- bare soil exposure
+    bsi_records = series.get("bsi", [])
+    if bsi_records:
+        features["bsi_mean_5y"] = compute_mean(bsi_records)
+        features["bsi_bare_soil_freq_5y"] = compute_bare_soil_frequency(bsi_records)
 
     # Canopy proxy from NDVI series
     if MetricName.canopy_proxy in metrics and ndvi_records:

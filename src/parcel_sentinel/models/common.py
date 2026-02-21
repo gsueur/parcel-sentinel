@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 class MetricName(str, Enum):
     ndvi = "ndvi"
     ndwi = "ndwi"
+    ndmi = "ndmi"
+    nbr  = "nbr"
+    ndsi = "ndsi"
+    bsi  = "bsi"
     canopy_proxy = "canopy_proxy"
 
 

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 # Earth Search v1 uses common names as asset keys, not band numbers.
 EARTH_SEARCH_BAND_MAP: dict[str, str] = {
+    "B02": "blue",
+    "B03": "green",
     "B04": "red",
     "B08": "nir",
     "B11": "swir16",
-    "B03": "green",
+    "B12": "swir22",
     "SCL": "scl",
 }
 

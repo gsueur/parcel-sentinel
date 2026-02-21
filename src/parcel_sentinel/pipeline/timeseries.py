@@ -8,7 +8,15 @@ import numpy as np
 import shapely
 
 from ..compute.aggregation import MonthlyRecord, Observation, aggregate_monthly
-from ..compute.indices import compute_ndvi, compute_ndwi, spatial_mean
+from ..compute.indices import (
+    compute_bsi,
+    compute_nbr,
+    compute_ndmi,
+    compute_ndsi,
+    compute_ndvi,
+    compute_ndwi,
+    spatial_mean,
+)
 from ..config import settings
 from ..geometry.normalize import geojson_to_shapely, geometry_hash
 from ..geometry.reproject import get_utm_crs, reproject_geometry
@@ -60,8 +68,18 @@ async def _process_scene(
     scene_id = item.id
 
     band_keys = ["B04", "B08", "SCL"]
-    if MetricName.ndwi in metrics and "green" in item.assets:
+    needs_b03 = bool({MetricName.ndwi, MetricName.ndsi} & set(metrics))
+    needs_b11 = bool({MetricName.ndmi, MetricName.ndsi, MetricName.bsi} & set(metrics))
+    needs_b12 = MetricName.nbr in metrics
+    needs_b02 = MetricName.bsi in metrics
+    if needs_b03 and "green" in item.assets:
         band_keys.append("B03")
+    if needs_b11 and "swir16" in item.assets:
+        band_keys.append("B11")
+    if needs_b12 and "swir22" in item.assets:
+        band_keys.append("B12")
+    if needs_b02 and "blue" in item.assets:
+        band_keys.append("B02")
 
     epsg = _extract_epsg(item)
     bounds = _get_bounds_in_scene_crs(geom, epsg)
@@ -133,6 +151,59 @@ async def _process_scene(
             results["ndwi"] = Observation(
                 month_key=scene_ref.month_key,
                 mean_value=spatial_mean(ndwi),
+                valid_pixel_count=mask_stats.valid_pixel_count,
+                cloud_fraction=mask_stats.cloud_fraction,
+            )
+
+    if MetricName.ndmi in metrics:
+        nir = scene_data.bands.get("B08")
+        swir = scene_data.bands.get("B11")
+        if nir is not None and swir is not None:
+            ndmi = compute_ndmi(mask_band(nir, valid_mask), mask_band(swir, valid_mask))
+            results["ndmi"] = Observation(
+                month_key=scene_ref.month_key,
+                mean_value=spatial_mean(ndmi),
+                valid_pixel_count=mask_stats.valid_pixel_count,
+                cloud_fraction=mask_stats.cloud_fraction,
+            )
+
+    if MetricName.nbr in metrics:
+        nir = scene_data.bands.get("B08")
+        swir2 = scene_data.bands.get("B12")
+        if nir is not None and swir2 is not None:
+            nbr = compute_nbr(mask_band(nir, valid_mask), mask_band(swir2, valid_mask))
+            results["nbr"] = Observation(
+                month_key=scene_ref.month_key,
+                mean_value=spatial_mean(nbr),
+                valid_pixel_count=mask_stats.valid_pixel_count,
+                cloud_fraction=mask_stats.cloud_fraction,
+            )
+
+    if MetricName.ndsi in metrics:
+        green = scene_data.bands.get("B03")
+        swir = scene_data.bands.get("B11")
+        if green is not None and swir is not None:
+            ndsi = compute_ndsi(mask_band(green, valid_mask), mask_band(swir, valid_mask))
+            results["ndsi"] = Observation(
+                month_key=scene_ref.month_key,
+                mean_value=spatial_mean(ndsi),
+                valid_pixel_count=mask_stats.valid_pixel_count,
+                cloud_fraction=mask_stats.cloud_fraction,
+            )
+
+    if MetricName.bsi in metrics:
+        swir = scene_data.bands.get("B11")
+        red = scene_data.bands.get("B04")
+        nir = scene_data.bands.get("B08")
+        blue = scene_data.bands.get("B02")
+        if all(b is not None for b in [swir, red, nir, blue]):
+            bsi = compute_bsi(
+                mask_band(swir, valid_mask), mask_band(red, valid_mask),
+                mask_band(nir, valid_mask),  mask_band(blue, valid_mask),
+            )
+            results["bsi"] = Observation(
+                month_key=scene_ref.month_key,
+                mean_value=spatial_mean(bsi),
                 valid_pixel_count=mask_stats.valid_pixel_count,
                 cloud_fraction=mask_stats.cloud_fraction,
             )

@@ -150,6 +150,7 @@ class TestScore:
             ScoreResult(
                 drought_score=62,
                 wetness_score=28,
+                fire_exposure_score=15,
                 heat_mitigation_score=71,
                 composite_score=54,
                 top_factors=[

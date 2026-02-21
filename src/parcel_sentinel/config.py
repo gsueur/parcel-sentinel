@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.1.0"
-    SCORE_VERSION: str = "risk-v1.0.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.2.0"
+    SCORE_VERSION: str = "risk-v1.1.0"
 
     # Storage
     DUCKDB_PATH: str = "parcel_sentinel.duckdb"
@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Scoring thresholds
     NDVI_ANOMALY_THRESHOLD: float = 0.1
     NDWI_WET_THRESHOLD: float = 0.0
+    NDMI_STRESS_THRESHOLD: float = 0.0    # NDMI below → vegetation moisture stress
+    NBR_BURN_THRESHOLD: float = 0.1       # NBR below → burn signal present
+    NDSI_SNOW_THRESHOLD: float = 0.4      # NDSI above → snow-covered
+    BSI_BARE_THRESHOLD: float = 0.0       # BSI above → bare soil exposed
 
     # Growing season (latitude threshold for zone split)
     GROWING_SEASON_LAT_THRESHOLD: float = 33.0

@@ -52,6 +52,7 @@ async def post_score(req: ScoreRequest):
     scores_dict = {
         "drought_score": score_result.drought_score,
         "wetness_score": score_result.wetness_score,
+        "fire_exposure_score": score_result.fire_exposure_score,
         "heat_mitigation_score": score_result.heat_mitigation_score,
         "composite_score": score_result.composite_score,
     }

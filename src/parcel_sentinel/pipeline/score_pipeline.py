@@ -24,7 +24,11 @@ async def run_score(
     d_start = date(d_end.year - lookback_years, d_end.month, d_end.day)
     date_start = d_start.isoformat()
 
-    metrics = [MetricName.ndvi, MetricName.ndwi, MetricName.canopy_proxy]
+    metrics = [
+        MetricName.ndvi, MetricName.ndwi, MetricName.ndmi,
+        MetricName.nbr, MetricName.ndsi, MetricName.bsi,
+        MetricName.canopy_proxy,
+    ]
     buffers_m = [50, 200]
 
     parcel_key, features, quality = await run_features(
