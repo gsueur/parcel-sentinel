@@ -139,6 +139,9 @@ class TestScore:
     @patch("src.location_sentinel.routes.score.run_score")
     def test_score_success(self, mock_run, client):
         from src.location_sentinel.compute.scoring import ScoreResult
+        from unittest.mock import MagicMock
+        mock_quality = MagicMock()
+        mock_quality.model_dump.return_value = {"months_total": 60, "months_observed": 55, "mean_cloud_fraction": 0.1, "flags": []}
         mock_run.return_value = (
             "sha256:abc123",
             ScoreResult(
@@ -151,6 +154,9 @@ class TestScore:
                     {"name": "ndvi_trend_slope_5y", "direction": "negative", "weight": 0.35},
                 ],
             ),
+            {"ndvi_mean_5y": 0.42},  # features
+            mock_quality,             # quality
+            "2019-01-31",             # date_start
         )
 
         resp = client.post("/v1/location/score", json={
