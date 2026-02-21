@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import duckdb
 import numpy as np
+from shapely.geometry import shape
 
 from ..config import settings
 
@@ -191,6 +192,35 @@ class DuckDBStore:
             return None
         return json.loads(result[0])
 
+    def get_all_parcels(self) -> list[dict]:
+        """Return all stored parcels ordered by most recently updated."""
+        if self._conn is None:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT parcel_key, geojson_text, name, updated_at
+            FROM parcel_geometries
+            ORDER BY updated_at DESC
+            """
+        ).fetchall()
+        result = []
+        for parcel_key, geojson_text, name, updated_at in rows:
+            try:
+                geojson = json.loads(geojson_text)
+                centroid = shape(geojson).centroid
+                centroid_lonlat = [round(centroid.x, 5), round(centroid.y, 5)]
+            except Exception:
+                centroid_lonlat = None
+            result.append({
+                "parcel_key": parcel_key,
+                "name": name,
+                "centroid": centroid_lonlat,
+                "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
+                "report_url": f"/v1/parcel/{parcel_key}/report",
+                "thumbnail_url": f"/v1/thumbnail/{parcel_key}.png",
+            })
+        return result
+
     def get_parcel_info(self, parcel_key: str) -> dict | None:
         """Return geometry, name, and centroid for a parcel, or None if not found."""
         if self._conn is None:
@@ -201,7 +231,6 @@ class DuckDBStore:
         ).fetchone()
         if result is None:
             return None
-        from shapely.geometry import shape
         geojson = json.loads(result[0])
         name = result[1]
         try:
