@@ -40,4 +40,4 @@ async def run_score(
     )
 
     result = compute_scores(features)
-    return location_key, result
+    return location_key, result, features, quality, date_start
