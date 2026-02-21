@@ -1,0 +1,35 @@
+[project]
+name = "parcel-sentinel"
+version = "0.1.0"
+description = "On-demand climate risk indicators from Sentinel-2 imagery"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pystac-client>=0.8.0",
+    "async-geotiff>=0.1.0",
+    "obstore>=0.3.0",
+    "shapely>=2.0.0",
+    "pyproj>=3.7.0",
+    "numpy>=2.0.0",
+    "scipy>=1.14.0",
+    "duckdb>=1.1.0",
+    "httpx>=0.28.0",
+    "pydantic-settings>=2.7.0",
+    "staticmap>=0.5.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
