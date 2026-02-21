@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from datetime import datetime, timezone
 
 import duckdb
@@ -65,18 +66,30 @@ class DuckDBStore:
             )
         """)
         self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS customers (
+                customer_id VARCHAR PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self._conn.execute("""
             CREATE TABLE IF NOT EXISTS parcel_geometries (
                 parcel_key VARCHAR PRIMARY KEY,
                 geojson_text VARCHAR,
                 name VARCHAR,
+                customer_id VARCHAR REFERENCES customers(customer_id),
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # Migration: add name column to existing databases that predate this field
-        try:
-            self._conn.execute("ALTER TABLE parcel_geometries ADD COLUMN IF NOT EXISTS name VARCHAR")
-        except Exception:
-            pass
+        # Migrations for existing databases
+        for col_def in [
+            "ALTER TABLE parcel_geometries ADD COLUMN IF NOT EXISTS name VARCHAR",
+            "ALTER TABLE parcel_geometries ADD COLUMN IF NOT EXISTS customer_id VARCHAR",
+        ]:
+            try:
+                self._conn.execute(col_def)
+            except Exception:
+                pass
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS scene_bands (
                 parcel_key VARCHAR NOT NULL,
@@ -161,24 +174,32 @@ class DuckDBStore:
                 [parcel_key, processing_version, cadence, metric, serialized, now],
             )
 
-    def save_geometry(self, parcel_key: str, geojson: dict, name: str | None = None) -> None:
+    def save_geometry(
+        self,
+        parcel_key: str,
+        geojson: dict,
+        name: str | None = None,
+        customer_id: str | None = None,
+    ) -> None:
         if self._conn is None:
             return
         now = datetime.now(timezone.utc).isoformat()
-        # Preserve existing name if a new one isn't supplied
-        if name is None:
-            existing = self._conn.execute(
-                "SELECT name FROM parcel_geometries WHERE parcel_key = ?", [parcel_key]
-            ).fetchone()
-            if existing:
+        # Preserve existing name/customer_id if not supplied in this call
+        existing = self._conn.execute(
+            "SELECT name, customer_id FROM parcel_geometries WHERE parcel_key = ?", [parcel_key]
+        ).fetchone()
+        if existing:
+            if name is None:
                 name = existing[0]
+            if customer_id is None:
+                customer_id = existing[1]
         self._conn.execute(
             """
             INSERT OR REPLACE INTO parcel_geometries
-                (parcel_key, geojson_text, name, updated_at)
-            VALUES (?, ?, ?, ?)
+                (parcel_key, geojson_text, name, customer_id, updated_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            [parcel_key, json.dumps(geojson), name, now],
+            [parcel_key, json.dumps(geojson), name, customer_id, now],
         )
 
     def get_geometry(self, parcel_key: str) -> dict | None:
@@ -192,19 +213,65 @@ class DuckDBStore:
             return None
         return json.loads(result[0])
 
-    def get_all_parcels(self) -> list[dict]:
-        """Return all stored parcels ordered by most recently updated."""
+    # ------------------------------------------------------------------
+    # Customer management
+    # ------------------------------------------------------------------
+
+    def create_customer(self, name: str) -> dict:
+        """Create a new customer with a random 6-hex-char ID."""
+        if self._conn is None:
+            raise RuntimeError("DB not connected")
+        # Retry on the astronomically unlikely collision
+        for _ in range(5):
+            customer_id = secrets.token_hex(3)  # 6 hex chars
+            existing = self._conn.execute(
+                "SELECT customer_id FROM customers WHERE customer_id = ?", [customer_id]
+            ).fetchone()
+            if existing is None:
+                break
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT INTO customers (customer_id, name, created_at) VALUES (?, ?, ?)",
+            [customer_id, name, now],
+        )
+        return {"customer_id": customer_id, "name": name, "created_at": now}
+
+    def get_customer(self, customer_id: str) -> dict | None:
+        if self._conn is None:
+            return None
+        row = self._conn.execute(
+            "SELECT customer_id, name, created_at FROM customers WHERE customer_id = ?",
+            [customer_id],
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "customer_id": row[0],
+            "name": row[1],
+            "created_at": row[2].isoformat() if hasattr(row[2], "isoformat") else str(row[2]),
+        }
+
+    def get_customer_parcels(self, customer_id: str) -> list[dict]:
+        """Return all parcels belonging to a customer, most recent first."""
         if self._conn is None:
             return []
+        return self._parcels_query("WHERE pg.customer_id = ?", [customer_id])
+
+    def _parcels_query(self, where: str = "", params: list = []) -> list[dict]:
+        """Shared parcel listing query, optionally filtered."""
         rows = self._conn.execute(
-            """
-            SELECT parcel_key, geojson_text, name, updated_at
-            FROM parcel_geometries
-            ORDER BY updated_at DESC
-            """
+            f"""
+            SELECT pg.parcel_key, pg.geojson_text, pg.name, pg.customer_id,
+                   c.name AS customer_name, pg.updated_at
+            FROM parcel_geometries pg
+            LEFT JOIN customers c ON pg.customer_id = c.customer_id
+            {where}
+            ORDER BY pg.updated_at DESC
+            """,
+            params,
         ).fetchall()
         result = []
-        for parcel_key, geojson_text, name, updated_at in rows:
+        for parcel_key, geojson_text, name, customer_id, customer_name, updated_at in rows:
             try:
                 geojson = json.loads(geojson_text)
                 centroid = shape(geojson).centroid
@@ -214,12 +281,20 @@ class DuckDBStore:
             result.append({
                 "parcel_key": parcel_key,
                 "name": name,
+                "customer_id": customer_id,
+                "customer_name": customer_name,
                 "centroid": centroid_lonlat,
                 "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
                 "report_url": f"/v1/parcel/{parcel_key}/report",
                 "thumbnail_url": f"/v1/thumbnail/{parcel_key}.png",
             })
         return result
+
+    def get_all_parcels(self) -> list[dict]:
+        """Return all stored parcels ordered by most recently updated."""
+        if self._conn is None:
+            return []
+        return self._parcels_query()
 
     def get_parcel_info(self, parcel_key: str) -> dict | None:
         """Return geometry, name, and centroid for a parcel, or None if not found."""

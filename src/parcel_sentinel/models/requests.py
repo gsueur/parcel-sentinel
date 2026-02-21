@@ -13,6 +13,7 @@ _S2_EARLIEST = datetime.date(2015, 7, 1)
 class FeaturesRequest(BaseModel):
     geometry: GeoJSONGeometry
     name: str | None = None
+    customer_id: str | None = None
     date_start: datetime.date
     date_end: datetime.date
     metrics: list[MetricName] = Field(
@@ -36,6 +37,7 @@ class FeaturesRequest(BaseModel):
 class TimeseriesRequest(BaseModel):
     geometry: GeoJSONGeometry
     name: str | None = None
+    customer_id: str | None = None
     date_start: datetime.date
     date_end: datetime.date
     metrics: list[MetricName] = Field(
@@ -59,6 +61,7 @@ class TimeseriesRequest(BaseModel):
 class ScoreRequest(BaseModel):
     geometry: GeoJSONGeometry
     name: str | None = None
+    customer_id: str | None = None
     date_end: datetime.date
     lookback_years: int = Field(default=5, ge=1, le=10)
     force_recompute: bool = False

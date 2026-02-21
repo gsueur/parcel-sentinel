@@ -71,7 +71,7 @@ async def post_timeseries(req: TimeseriesRequest):
     geom_dict = req.geometry.model_dump()
 
     from ..storage.duckdb_store import store
-    store.save_geometry(parcel_key, geom_dict, name=req.name)
+    store.save_geometry(parcel_key, geom_dict, name=req.name, customer_id=req.customer_id)
 
     map_links = build_map_links(parcel_key, geom_dict)
 
