@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timezone
 
 import duckdb
+import numpy as np
 
 from ..config import settings
 
@@ -67,6 +68,21 @@ class DuckDBStore:
                 parcel_key VARCHAR PRIMARY KEY,
                 geojson_text VARCHAR,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS scene_bands (
+                parcel_key VARCHAR NOT NULL,
+                scene_id VARCHAR NOT NULL,
+                month_key VARCHAR NOT NULL,
+                processing_version VARCHAR NOT NULL,
+                band_key VARCHAR NOT NULL,
+                width UTINYINT NOT NULL DEFAULT 64,
+                height UTINYINT NOT NULL DEFAULT 64,
+                data FLOAT[4096] NOT NULL,
+                cloud_fraction DOUBLE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (parcel_key, scene_id, processing_version, band_key)
             )
         """)
 
@@ -180,6 +196,61 @@ class DuckDBStore:
             """,
             [parcel_key, score_version, lookback_years, json.dumps(scores), now],
         )
+
+
+    def store_scene_bands(
+        self,
+        parcel_key: str,
+        scene_id: str,
+        month_key: str,
+        processing_version: str,
+        bands: dict[str, np.ndarray],
+        cloud_fraction: float = 0.0,
+    ) -> None:
+        """Persist 64×64 band arrays for a scene to DuckDB."""
+        if self._conn is None:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        for band_key, arr in bands.items():
+            h, w = arr.shape
+            flat = arr.flatten().astype(np.float32).tolist()
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO scene_bands
+                    (parcel_key, scene_id, month_key, processing_version,
+                     band_key, width, height, data, cloud_fraction, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [parcel_key, scene_id, month_key, processing_version,
+                 band_key, w, h, flat, cloud_fraction, now],
+            )
+
+    def load_scene_bands(
+        self,
+        parcel_key: str,
+        scene_id: str,
+        processing_version: str,
+        band_keys: list[str],
+    ) -> dict[str, np.ndarray] | None:
+        """Load stored band arrays for a scene. Returns None if any band is missing."""
+        if self._conn is None:
+            return None
+        rows = self._conn.execute(
+            """
+            SELECT band_key, width, height, data FROM scene_bands
+            WHERE parcel_key = ? AND scene_id = ? AND processing_version = ?
+              AND band_key IN (SELECT unnest(?))
+            """,
+            [parcel_key, scene_id, processing_version, band_keys],
+        ).fetchall()
+        if len(rows) < len(band_keys):
+            return None
+        result: dict[str, np.ndarray] = {}
+        for band_key, w, h, data in rows:
+            result[band_key] = np.array(data, dtype=np.float32).reshape(h, w)
+        if not all(k in result for k in band_keys):
+            return None
+        return result
 
 
 store = DuckDBStore()

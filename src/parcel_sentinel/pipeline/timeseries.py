@@ -17,6 +17,7 @@ from ..models.common import MetricName, MonthRecord, QualityInfo
 from ..raster.masking import MaskStats, apply_scl_mask, mask_band
 from ..raster.reader import SceneData, read_scene_bands
 from ..stac.client import SceneRef, search_scenes
+from ..storage.duckdb_store import store as duckdb_store
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +53,11 @@ async def _process_scene(
     scene_ref: SceneRef,
     geom: shapely.Geometry,
     metrics: list[MetricName],
+    parcel_key: str,
 ) -> dict[str, Observation]:
-    """Process a single scene: read bands (async), mask, compute indices."""
+    """Process a single scene: read bands (DuckDB cache or async S3), mask, compute indices."""
     item = scene_ref.item
+    scene_id = item.id
 
     band_keys = ["B04", "B08", "SCL"]
     if MetricName.ndwi in metrics and "swir16" in item.assets:
@@ -63,7 +66,28 @@ async def _process_scene(
     epsg = _extract_epsg(item)
     bounds = _get_bounds_in_scene_crs(geom, epsg)
 
-    scene_data = await read_scene_bands(item, bounds, band_keys=band_keys)
+    # Check DuckDB band cache before hitting S3
+    cached_bands = duckdb_store.load_scene_bands(
+        parcel_key, scene_id, settings.PROCESSING_VERSION, band_keys
+    )
+    if cached_bands is not None:
+        logger.debug("Band cache hit scene=%s parcel=%s", scene_id, parcel_key[:16])
+        scene_data = SceneData(
+            bands=cached_bands,
+            shape_10m=(settings.COG_WINDOW_SIZE, settings.COG_WINDOW_SIZE),
+        )
+    else:
+        scene_data = await read_scene_bands(item, bounds, band_keys=band_keys)
+        # Persist to DuckDB for future requests
+        if scene_data.bands:
+            duckdb_store.store_scene_bands(
+                parcel_key=parcel_key,
+                scene_id=scene_id,
+                month_key=scene_ref.month_key,
+                processing_version=settings.PROCESSING_VERSION,
+                bands=scene_data.bands,
+                cloud_fraction=scene_ref.cloud_cover / 100.0,
+            )
 
     if not scene_data.bands:
         return {}
@@ -158,7 +182,7 @@ async def run_timeseries(
 
     async def _process_one(scene_ref: SceneRef) -> dict[str, Observation]:
         async with sem:
-            return await _process_scene(scene_ref, geom, metrics)
+            return await _process_scene(scene_ref, geom, metrics, parcel_key)
 
     t1 = time.monotonic()
     scene_results = await asyncio.gather(*[_process_one(sr) for sr in search_result.scenes])
