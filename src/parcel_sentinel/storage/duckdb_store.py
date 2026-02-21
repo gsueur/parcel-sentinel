@@ -193,6 +193,15 @@ class DuckDBStore:
                 name = existing[0]
             if customer_id is None:
                 customer_id = existing[1]
+        # Validate customer_id exists before inserting; silently drop if not found
+        # (prevents FK violation when callers pass arbitrary customer strings)
+        if customer_id is not None:
+            exists = self._conn.execute(
+                "SELECT 1 FROM customers WHERE customer_id = ?", [customer_id]
+            ).fetchone()
+            if not exists:
+                customer_id = None
+
         self._conn.execute(
             """
             INSERT OR REPLACE INTO parcel_geometries
