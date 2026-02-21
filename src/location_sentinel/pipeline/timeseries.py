@@ -96,16 +96,6 @@ async def _process_scene(
         )
     else:
         scene_data = await read_scene_bands(item, center_xy, band_keys=band_keys)
-        # Persist to DuckDB for future requests
-        if scene_data.bands:
-            duckdb_store.store_scene_bands(
-                location_key=location_key,
-                scene_id=scene_id,
-                month_key=scene_ref.month_key,
-                processing_version=settings.PROCESSING_VERSION,
-                bands=scene_data.bands,
-                cloud_fraction=scene_ref.cloud_cover / 100.0,
-            )
 
     if not scene_data.bands:
         return {}
@@ -123,7 +113,23 @@ async def _process_scene(
         )
 
     if mask_stats.valid_fraction < settings.MIN_VALID_PIXEL_FRACTION:
+        # Purge stale cached bands that were stored before the validity check
+        # was enforced (e.g. stored with inaccurate STAC metadata cloud_cover).
+        if cached_bands is not None:
+            duckdb_store.delete_scene_bands(location_key, scene_id, settings.PROCESSING_VERSION)
         return {}
+
+    # Only cache bands for scenes that pass the validity check, using the
+    # actual SCL-measured cloud fraction (not the STAC metadata estimate).
+    if cached_bands is None:
+        duckdb_store.store_scene_bands(
+            location_key=location_key,
+            scene_id=scene_id,
+            month_key=scene_ref.month_key,
+            processing_version=settings.PROCESSING_VERSION,
+            bands=scene_data.bands,
+            cloud_fraction=mask_stats.cloud_fraction,
+        )
 
     results: dict[str, Observation] = {}
 

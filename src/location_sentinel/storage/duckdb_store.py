@@ -592,7 +592,9 @@ class DuckDBStore:
         """
         if self._conn is None:
             return []
-        # One scene per month: pick the scene with lowest cloud fraction.
+        # One scene per month: pick the scene with lowest cloud fraction,
+        # excluding scenes that exceed the max allowed cloud cover (invalid scenes).
+        max_cloud = 1.0 - settings.MIN_VALID_PIXEL_FRACTION
         scenes = self._conn.execute(
             """
             SELECT scene_id, month_key FROM (
@@ -601,12 +603,13 @@ class DuckDBStore:
                 FROM scene_bands
                 WHERE location_key = ? AND processing_version = ?
                 GROUP BY scene_id, month_key
+                HAVING MIN(cloud_fraction) <= ?
             )
             WHERE rn = 1
             ORDER BY month_key DESC
             LIMIT ?
             """,
-            [location_key, processing_version, limit],
+            [location_key, processing_version, max_cloud, limit],
         ).fetchall()
         result = []
         for scene_id, month_key in scenes:
@@ -677,6 +680,23 @@ class DuckDBStore:
         if not all(k in result for k in band_keys):
             return None
         return result
+
+    def delete_scene_bands(
+        self,
+        location_key: str,
+        scene_id: str,
+        processing_version: str,
+    ) -> None:
+        """Remove all band rows for a scene (e.g. when SCL validity check fails)."""
+        if self._conn is None:
+            return
+        self._conn.execute(
+            """
+            DELETE FROM scene_bands
+            WHERE location_key = ? AND scene_id = ? AND processing_version = ?
+            """,
+            [location_key, scene_id, processing_version],
+        )
 
 
 store = DuckDBStore()
