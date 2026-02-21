@@ -28,7 +28,7 @@ Given a location polygon or a point with coordinates, this service:
 
 - Searches the Sentinel-2 L2A archive for satellite passes over that location
 - Selects the clearest observations per month, going back up to 5 years
-- Downloads only a small window of imagery (200 x 200 m at 10m resolution) for each selected scene
+- Downloads exactly 64x64 native pixels (640m x 640m footprint) centered on the point for each selected scene
 - Filters out clouds, cloud shadows, snow, and saturated pixels
 - Computes six spectral indices per scene
 - Aggregates to monthly statistics and derives long-term features
@@ -172,17 +172,16 @@ The `cloud_fraction` reported in results is the fraction of pixels that were mas
 
 ## COG window reads: how imagery is downloaded
 
-Cloud-Optimized GeoTIFFs (COGs) are structured so that any rectangular window can be fetched by reading only the relevant bytes from S3, without downloading the full scene. A full Sentinel-2 scene covers ~100 x 100 km. For a 100m-buffered point (200 x 200 m analysis window), the service reads roughly **1/250,000th** of the file.
+Cloud-Optimized GeoTIFFs (COGs) are structured so that any rectangular window can be fetched by reading only the relevant bytes from S3, without downloading the full scene. A full Sentinel-2 scene covers ~100 x 100 km. Reading 64 pixels at 10m resolution (640m) from such a scene fetches roughly **1/150,000th** of the file.
 
 ### Read pipeline per band
 
 1. **Parse S3 key** from the HTTPS href in the STAC item assets (e.g. `sentinel-cogs.s3.us-west-2.amazonaws.com/{key}`).
 2. **Open the COG** via `async-geotiff` (backed by `obstore`), which reads only the header and overview metadata.
-3. **Convert bounds to pixel window** using the inverse affine transform stored in the COG header. The bounds are in the scene's native UTM CRS.
-4. **Read the window** -- a single HTTP range request to S3 fetching only the relevant tile bytes.
-5. **Resample to 64x64** using `scipy.ndimage.zoom`:
-   - Reflectance bands: bilinear interpolation (order=1)
-   - SCL class labels: nearest-neighbor (order=0, no interpolation between discrete classes)
+3. **Find the center pixel** by projecting the input point from WGS84 to the scene's native UTM CRS, then applying the inverse affine transform.
+4. **Read a native-resolution window** centered on that pixel -- a single HTTP range request to S3:
+   - 10m bands (B02, B03, B04, B08): read **64x64 native pixels** = 640m x 640m footprint, no resampling
+   - 20m bands (B11, B12, SCL): read **32x32 native pixels** = same 640m x 640m footprint, then expanded to 64x64 by 2x pixel repeat (nearest-neighbor block duplication, no interpolation) so all arrays share the same shape for index computation
 
 All bands for a scene are read concurrently (up to `MAX_CONCURRENT_COG_READS = 8` simultaneous S3 connections). Across scenes, concurrency is also bounded by the same semaphore to avoid overwhelming S3.
 
@@ -728,7 +727,7 @@ All settings are read from environment variables. Defaults are production-grade 
 | `MAX_SCENES_PER_MONTH` | `2` | Max scenes selected per calendar month |
 | `MAX_TOTAL_SCENES` | `120` | Hard cap on scenes per request |
 | `MAX_CONCURRENT_COG_READS` | `8` | Max parallel S3 connections |
-| `COG_WINDOW_SIZE` | `64` | Output pixel size (all bands resampled to this) |
+| `COG_WINDOW_SIZE` | `64` | Native pixel count read per band (10m bands: 64x64 = 640m; 20m bands: 32x32 = 640m, expanded to 64x64 by block repeat) |
 | `MIN_VALID_PIXEL_FRACTION` | `0.1` | Minimum valid pixel fraction to use a scene |
 | `MAX_PARCEL_AREA_SQM` | `5000000` | Max location area (500 ha) |
 | `DEFAULT_POINT_BUFFER_M` | `100.0` | Buffer radius applied to Point inputs |
