@@ -10,14 +10,8 @@ from src.parcel_sentinel.compute.aggregation import MonthlyRecord
 from src.parcel_sentinel.models.common import QualityInfo
 
 SAMPLE_GEOJSON = {
-    "type": "Polygon",
-    "coordinates": [[
-        [-77.0365, 38.8977],
-        [-77.0355, 38.8977],
-        [-77.0355, 38.8967],
-        [-77.0365, 38.8967],
-        [-77.0365, 38.8977],
-    ]],
+    "type": "Point",
+    "coordinates": [-77.036, 38.897],
 }
 
 

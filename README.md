@@ -45,8 +45,7 @@ Typical cold-start time (5-year window): 15-30 seconds. Cached results return in
 User request (geometry + date range)
         |
         v
-  Input validation & geometry normalization
-  (WGS84, max area 500 ha, max 5000 vertices)
+  Input validation (Point only, WGS84)
         |
         v
   Parcel key = SHA-256 of normalized WKB
@@ -194,9 +193,9 @@ All scenes and locations produce a fixed 64x64 pixel array. This ensures:
 - Predictable storage in DuckDB (typed `FLOAT[4096]` column)
 - Band arrays are cacheable and reusable across API calls for the same parcel
 
-The physical area covered by the 64x64 window depends on the geometry:
-- For a **point input**: 100m buffer creates a 200x200m bounding box (20x20 native pixels at 10m, resampled to 64x64)
-- For a **polygon input**: the bounding box of the polygon geometry
+The physical area covered by the 64x64 window:
+- At 10m resolution (B02, B03, B04, B08): 64 native pixels = **640m x 640m** footprint
+- At 20m resolution (B11, B12, SCL): 32 native pixels covering the same 640m x 640m footprint, expanded to 64x64 by 2x pixel repeat (no interpolation) for array alignment
 
 ### Band cache
 
@@ -446,8 +445,7 @@ Compute or retrieve the monthly time series for a location.
 }
 ```
 
-`geometry` accepts `Point`, `Polygon`, or `MultiPolygon` in WGS84.
-For a `Point`, a 100m buffer is automatically applied.
+`geometry` must be a `Point` in WGS84. The analysis window is 64x64 native pixels (640m x 640m) centered on the point.
 
 **Response**
 
@@ -672,31 +670,9 @@ http://localhost:8000/v1/parcel/{parcel_key}/report
 
 Replace `{parcel_key}` with the value from the timeseries response. The report shows charts for all indices, a feature summary with contextual descriptions, and the four risk scores.
 
-### Using a polygon instead of a point
+### Geometry: Point only
 
-If you have a polygon boundary (e.g. from a cadastral database), use it directly:
-
-```bash
-curl -s -X POST http://localhost:8000/v1/parcel/timeseries \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "geometry": {
-      "type": "Polygon",
-      "coordinates": [[
-        [-118.250, 34.055],
-        [-118.235, 34.055],
-        [-118.235, 34.045],
-        [-118.250, 34.045],
-        [-118.250, 34.055]
-      ]]
-    },
-    "date_start": "2021-01-01",
-    "date_end": "2026-01-01",
-    "metrics": ["ndvi", "ndwi", "ndmi", "nbr"]
-  }' | jq .
-```
-
-Polygon area must not exceed 500 ha. Geometries with more than 5000 vertices will be simplified automatically.
+Only `Point` geometries are accepted. The analysis window is always 64x64 native pixels (640m x 640m at 10m resolution) centered on the given point. This is consistent and comparable across all locations regardless of parcel size.
 
 ### Interpreting results
 

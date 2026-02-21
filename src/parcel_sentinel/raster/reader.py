@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from scipy.ndimage import zoom
 
 from ..config import settings
 from .asset_keys import earth_search_asset_key
@@ -41,48 +40,57 @@ def _parse_s3_key(href: str) -> str:
     return href.split(marker, 1)[1]
 
 
-def _bounds_to_window(bounds: tuple[float, float, float, float], transform: Any) -> Any:
-    """Convert (minx, miny, maxx, maxy) bounds to a pixel Window using the affine transform."""
+def _center_to_window(center_xy: tuple[float, float], transform: Any, size: int) -> Any:
+    """Return a pixel Window of `size x size` centered on the given CRS coordinate.
+
+    Uses the inverse affine transform to convert the UTM center point to
+    fractional pixel coordinates, then builds a window anchored at the
+    nearest integer pixel such that the center falls inside the window.
+    """
     from async_geotiff import Window
     inv = ~transform
-    col_ul, row_ul = inv * (bounds[0], bounds[3])  # minx, maxy
-    col_lr, row_lr = inv * (bounds[2], bounds[1])  # maxx, miny
-    col_off = int(np.floor(min(col_ul, col_lr)))
-    row_off = int(np.floor(min(row_ul, row_lr)))
-    width = int(np.ceil(max(col_ul, col_lr))) - col_off
-    height = int(np.ceil(max(row_ul, row_lr))) - row_off
+    col, row = inv * center_xy
+    col_off = int(round(col)) - size // 2
+    row_off = int(round(row)) - size // 2
     return Window(
         col_off=max(0, col_off),
         row_off=max(0, row_off),
-        width=max(1, width),
-        height=max(1, height),
+        width=size,
+        height=size,
     )
-
-
-def _resample_to_w(arr: np.ndarray, order: int = 1) -> np.ndarray:
-    """Resample any 2D or (1, H, W) array to (_W, _W)."""
-    if arr.ndim == 3:
-        arr = arr[0]
-    if arr.shape == (_W, _W):
-        return arr.astype(np.float32)
-    factors = (_W / arr.shape[0], _W / arr.shape[1])
-    return zoom(arr, factors, order=order).astype(np.float32)
 
 
 async def _read_band_async(
     href: str,
-    bounds: tuple[float, float, float, float],
-    is_scl: bool = False,
+    center_xy: tuple[float, float],
 ) -> tuple[np.ndarray, Any, Any]:
-    """Open a COG via async-geotiff, read the window, resample to (_W, _W)."""
+    """Open a COG via async-geotiff and read a native-resolution window centered on the point.
+
+    For 10m bands: reads exactly 64x64 native pixels (640m x 640m footprint).
+    For 20m bands: reads 32x32 native pixels (same 640m x 640m footprint),
+    then expands to 64x64 by 2x pixel repeat (nearest-neighbor, no interpolation)
+    so all band arrays share the same shape for index computation.
+    """
     from async_geotiff import GeoTIFF
     key = _parse_s3_key(href)
     logger.info("COG async read key=%s", key[:120])
     geotiff = await GeoTIFF.open(key, store=_get_store())
-    window = _bounds_to_window(bounds, geotiff.transform)
+
+    # Detect native resolution from transform (pixel width in CRS units = meters for UTM)
+    native_res = abs(geotiff.transform.a)
+    native_size = _W // 2 if native_res > 15 else _W  # 32 for 20m bands, 64 for 10m bands
+
+    window = _center_to_window(center_xy, geotiff.transform, size=native_size)
     result = await geotiff.read(window=window)
-    order = 0 if is_scl else 1
-    data = _resample_to_w(result.data, order=order)
+    data = result.data
+    if data.ndim == 3:
+        data = data[0]
+    data = data.astype(np.float32)
+
+    # For 20m bands: 2x block repeat to reach 64x64 (same footprint, no interpolation)
+    if native_size < _W:
+        data = np.repeat(np.repeat(data, 2, axis=0), 2, axis=1)
+
     return data, geotiff.transform, geotiff.crs
 
 
@@ -97,17 +105,19 @@ class SceneData:
 
 async def read_scene_bands(
     item: Any,
-    bounds: tuple[float, float, float, float],
+    center_xy: tuple[float, float],
     band_keys: list[str] | None = None,
     max_concurrent: int = settings.MAX_CONCURRENT_COG_READS,
 ) -> SceneData:
     """Read required bands from an Earth Search STAC item using async COG window reads.
 
-    All bands are resampled to (_W, _W) = (64, 64) pixels regardless of native resolution.
+    Reads exactly 64x64 native pixels centered on `center_xy` for 10m bands.
+    For 20m bands (SCL, B11, B12), reads 32x32 native pixels covering the same
+    640m x 640m footprint and expands to 64x64 by 2x pixel repeat.
 
     Args:
         item: pystac.Item from Earth Search v1.
-        bounds: (minx, miny, maxx, maxy) in the scene's native CRS.
+        center_xy: (x, y) center coordinate in the scene's native UTM CRS.
         band_keys: Internal band keys to read (e.g. ["B04", "B08", "SCL"]).
         max_concurrent: Maximum simultaneous S3 connections.
     """
@@ -123,9 +133,7 @@ async def read_scene_bands(
                 logger.warning("Asset key '%s' not found in item %s", asset_key, item.id)
                 return band_key, None, None, None
             href = item.assets[asset_key].href
-            data, transform, crs = await _read_band_async(
-                href, bounds, is_scl=(band_key == "SCL")
-            )
+            data, transform, crs = await _read_band_async(href, center_xy)
             return band_key, data, transform, crs
 
     results = await asyncio.gather(*[_read(k) for k in band_keys])

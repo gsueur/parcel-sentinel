@@ -46,15 +46,15 @@ def _extract_epsg(item) -> int | None:
     return None
 
 
-def _get_bounds_in_scene_crs(geom: shapely.Geometry, scene_crs_epsg: int | None) -> tuple[float, float, float, float]:
-    """Get geometry bounds in scene CRS. Falls back to WGS84 bounds if no CRS info."""
+def _get_center_in_scene_crs(point: shapely.Geometry, scene_crs_epsg: int | None) -> tuple[float, float]:
+    """Return (x, y) center of the Point in the scene's native CRS."""
     if scene_crs_epsg:
         import pyproj
         wgs84 = pyproj.CRS.from_epsg(4326)
         scene_crs = pyproj.CRS.from_epsg(scene_crs_epsg)
-        geom_proj = reproject_geometry(geom, wgs84, scene_crs)
-        return geom_proj.bounds
-    return geom.bounds
+        proj = reproject_geometry(point, wgs84, scene_crs)
+        return (proj.x, proj.y)
+    return (point.x, point.y)
 
 
 async def _process_scene(
@@ -82,7 +82,7 @@ async def _process_scene(
         band_keys.append("B02")
 
     epsg = _extract_epsg(item)
-    bounds = _get_bounds_in_scene_crs(geom, epsg)
+    center_xy = _get_center_in_scene_crs(geom, epsg)
 
     # Check DuckDB band cache before hitting S3
     cached_bands = duckdb_store.load_scene_bands(
@@ -95,7 +95,7 @@ async def _process_scene(
             shape_10m=(settings.COG_WINDOW_SIZE, settings.COG_WINDOW_SIZE),
         )
     else:
-        scene_data = await read_scene_bands(item, bounds, band_keys=band_keys)
+        scene_data = await read_scene_bands(item, center_xy, band_keys=band_keys)
         # Persist to DuckDB for future requests
         if scene_data.bands:
             duckdb_store.store_scene_bands(

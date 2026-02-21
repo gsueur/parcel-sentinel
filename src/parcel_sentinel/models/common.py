@@ -21,7 +21,7 @@ class Cadence(str, Enum):
 
 
 class GeoJSONGeometry(BaseModel):
-    type: str = Field(..., pattern="^(Polygon|MultiPolygon|Point)$")
+    type: str = Field(..., pattern="^Point$")
     coordinates: list[Any]
 
 

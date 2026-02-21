@@ -62,22 +62,18 @@ class TestReproject:
 
 
 class TestValidate:
-    def test_valid_polygon(self, sample_polygon):
-        result = validate_geometry(sample_polygon)
-        assert result.geom_type in ("Polygon", "MultiPolygon")
-
-    def test_point_gets_buffered(self):
+    def test_valid_point(self):
         pt = Point(-77.0, 38.9)
         result = validate_geometry(pt)
-        assert result.geom_type == "Polygon"
+        assert result.geom_type == "Point"
+        assert result.x == pt.x and result.y == pt.y
+
+    def test_polygon_rejected(self, sample_polygon):
+        with pytest.raises(GeometryValidationError, match="Only Point"):
+            validate_geometry(sample_polygon)
 
     def test_empty_geometry_rejected(self):
         from shapely import wkt
         empty = wkt.loads("GEOMETRYCOLLECTION EMPTY")
         with pytest.raises(GeometryValidationError, match="empty"):
             validate_geometry(empty)
-
-    def test_too_large_area_rejected(self, sample_polygon):
-        # Use a tiny max area to trigger rejection
-        with pytest.raises(GeometryValidationError, match="exceeds limit"):
-            validate_geometry(sample_polygon, max_area_sqm=1.0)
