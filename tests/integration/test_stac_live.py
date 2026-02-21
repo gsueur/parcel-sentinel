@@ -5,7 +5,7 @@ import os
 import pytest
 from shapely.geometry import Polygon
 
-from src.parcel_sentinel.stac.client import search_scenes
+from src.location_sentinel.stac.client import search_scenes
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("RUN_INTEGRATION_TESTS"),

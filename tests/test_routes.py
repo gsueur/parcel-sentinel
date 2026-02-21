@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.parcel_sentinel.app import create_app
-from src.parcel_sentinel.compute.aggregation import MonthlyRecord
-from src.parcel_sentinel.models.common import QualityInfo
+from src.location_sentinel.app import create_app
+from src.location_sentinel.compute.aggregation import MonthlyRecord
+from src.location_sentinel.models.common import QualityInfo
 
 SAMPLE_GEOJSON = {
     "type": "Point",
@@ -24,7 +24,7 @@ def client():
 
 class TestDateValidation:
     def test_impossible_date_rejected(self, client):
-        resp = client.post("/v1/parcel/features", json={
+        resp = client.post("/v1/location/features", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "1788-22-85",
             "date_end": "8414-06-78",
@@ -33,7 +33,7 @@ class TestDateValidation:
         assert resp.status_code == 422
 
     def test_start_after_end_rejected(self, client):
-        resp = client.post("/v1/parcel/timeseries", json={
+        resp = client.post("/v1/location/timeseries", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "2024-06-01",
             "date_end": "2024-01-01",
@@ -42,7 +42,7 @@ class TestDateValidation:
         assert resp.status_code == 422
 
     def test_before_sentinel2_rejected(self, client):
-        resp = client.post("/v1/parcel/features", json={
+        resp = client.post("/v1/location/features", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "2010-01-01",
             "date_end": "2015-01-01",
@@ -51,7 +51,7 @@ class TestDateValidation:
         assert resp.status_code == 422
 
     def test_future_date_rejected(self, client):
-        resp = client.post("/v1/parcel/score", json={
+        resp = client.post("/v1/location/score", json={
             "geometry": SAMPLE_GEOJSON,
             "date_end": "2099-01-01",
         })
@@ -67,7 +67,7 @@ class TestHealth:
 
 
 class TestTimeseries:
-    @patch("src.parcel_sentinel.routes.timeseries.run_timeseries")
+    @patch("src.location_sentinel.routes.timeseries.run_timeseries")
     def test_timeseries_success(self, mock_run, client):
         mock_run.return_value = (
             "sha256:abc123",
@@ -80,7 +80,7 @@ class TestTimeseries:
             QualityInfo(months_total=2, months_observed=2, mean_cloud_fraction=0.09),
         )
 
-        resp = client.post("/v1/parcel/timeseries", json={
+        resp = client.post("/v1/location/timeseries", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "2024-01-01",
             "date_end": "2024-02-28",
@@ -88,16 +88,16 @@ class TestTimeseries:
         })
         assert resp.status_code == 200
         data = resp.json()
-        assert data["parcel_key"] == "sha256:abc123"
+        assert data["location_key"] == "sha256:abc123"
         assert len(data["series"]["ndvi"]) == 2
         assert data["series"]["ndvi"][0]["month"] == "2024-01"
         assert data["map_links"] is not None
         assert data["map_links"]["thumbnail_url"].endswith(".png")
 
-    @patch("src.parcel_sentinel.routes.timeseries.run_timeseries")
+    @patch("src.location_sentinel.routes.timeseries.run_timeseries")
     def test_timeseries_no_scenes(self, mock_run, client):
         mock_run.side_effect = ValueError("No scenes found")
-        resp = client.post("/v1/parcel/timeseries", json={
+        resp = client.post("/v1/location/timeseries", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "2024-01-01",
             "date_end": "2024-02-28",
@@ -108,7 +108,7 @@ class TestTimeseries:
 
 
 class TestFeatures:
-    @patch("src.parcel_sentinel.routes.features.run_features")
+    @patch("src.location_sentinel.routes.features.run_features")
     def test_features_success(self, mock_run, client):
         mock_run.return_value = (
             "sha256:abc123",
@@ -121,7 +121,7 @@ class TestFeatures:
             QualityInfo(months_total=60, months_observed=55, mean_cloud_fraction=0.12),
         )
 
-        resp = client.post("/v1/parcel/features", json={
+        resp = client.post("/v1/location/features", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "2019-01-01",
             "date_end": "2024-01-31",
@@ -136,9 +136,9 @@ class TestFeatures:
 
 
 class TestScore:
-    @patch("src.parcel_sentinel.routes.score.run_score")
+    @patch("src.location_sentinel.routes.score.run_score")
     def test_score_success(self, mock_run, client):
-        from src.parcel_sentinel.compute.scoring import ScoreResult
+        from src.location_sentinel.compute.scoring import ScoreResult
         mock_run.return_value = (
             "sha256:abc123",
             ScoreResult(
@@ -153,7 +153,7 @@ class TestScore:
             ),
         )
 
-        resp = client.post("/v1/parcel/score", json={
+        resp = client.post("/v1/location/score", json={
             "geometry": SAMPLE_GEOJSON,
             "date_end": "2024-01-31",
             "lookback_years": 5,

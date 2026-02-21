@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from src.parcel_sentinel.storage.cache import TTLCache
+from src.location_sentinel.storage.cache import TTLCache
 
 
 class TestTTLCache:

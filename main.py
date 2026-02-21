@@ -1,6 +1,6 @@
 import uvicorn
 
-from src.parcel_sentinel.app import create_app
+from src.location_sentinel.app import create_app
 
 app = create_app()
 

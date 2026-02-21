@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from src.parcel_sentinel.compute.aggregation import MonthlyRecord
-from src.parcel_sentinel.compute.canopy import compute_canopy_proxy_from_series
-from src.parcel_sentinel.compute.features import (
+from src.location_sentinel.compute.aggregation import MonthlyRecord
+from src.location_sentinel.compute.canopy import compute_canopy_proxy_from_series
+from src.location_sentinel.compute.features import (
     compute_anomaly_frequency,
     compute_mean,
     compute_quality_score,

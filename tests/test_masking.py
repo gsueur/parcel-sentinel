@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.parcel_sentinel.raster.masking import apply_scl_mask, mask_band
+from src.location_sentinel.raster.masking import apply_scl_mask, mask_band
 
 
 class TestSCLMask:

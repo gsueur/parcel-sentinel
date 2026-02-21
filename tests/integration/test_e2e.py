@@ -5,7 +5,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from src.parcel_sentinel.app import create_app
+from src.location_sentinel.app import create_app
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("RUN_INTEGRATION_TESTS"),
@@ -33,7 +33,7 @@ def client():
 
 class TestE2E:
     def test_timeseries_e2e(self, client):
-        resp = client.post("/v1/parcel/timeseries", json={
+        resp = client.post("/v1/location/timeseries", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "2024-06-01",
             "date_end": "2024-08-31",
@@ -42,14 +42,14 @@ class TestE2E:
         })
         assert resp.status_code == 200
         data = resp.json()
-        assert data["parcel_key"].startswith("sha256:")
+        assert data["location_key"].startswith("sha256:")
         assert "ndvi" in data["series"]
         for rec in data["series"]["ndvi"]:
             if rec["mean"] is not None:
                 assert -1.0 <= rec["mean"] <= 1.0
 
     def test_features_e2e(self, client):
-        resp = client.post("/v1/parcel/features", json={
+        resp = client.post("/v1/location/features", json={
             "geometry": SAMPLE_GEOJSON,
             "date_start": "2024-01-01",
             "date_end": "2024-12-31",
@@ -60,7 +60,7 @@ class TestE2E:
         assert "ndvi_mean_5y" in data["features"]
 
     def test_score_e2e(self, client):
-        resp = client.post("/v1/parcel/score", json={
+        resp = client.post("/v1/location/score", json={
             "geometry": SAMPLE_GEOJSON,
             "date_end": "2024-12-31",
             "lookback_years": 1,

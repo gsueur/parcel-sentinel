@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.parcel_sentinel.app import create_app
-from src.parcel_sentinel.thumbnails.geojson_link import build_geojson_io_url
-from src.parcel_sentinel.thumbnails.links import build_map_links
+from src.location_sentinel.app import create_app
+from src.location_sentinel.thumbnails.geojson_link import build_geojson_io_url
+from src.location_sentinel.thumbnails.links import build_map_links
 
 SAMPLE_GEOJSON = {
     "type": "Polygon",
@@ -52,8 +52,8 @@ class TestThumbnailRoute:
         with TestClient(app) as c:
             yield c
 
-    @patch("src.parcel_sentinel.routes.thumbnail.store")
-    @patch("src.parcel_sentinel.routes.thumbnail.render_parcel_thumbnail", new_callable=AsyncMock)
+    @patch("src.location_sentinel.routes.thumbnail.store")
+    @patch("src.location_sentinel.routes.thumbnail.render_location_thumbnail", new_callable=AsyncMock)
     def test_thumbnail_200(self, mock_render, mock_store, client):
         mock_store.get_geometry.return_value = SAMPLE_GEOJSON
         mock_render.return_value = b"\x89PNG\r\n\x1a\nfake"
@@ -64,7 +64,7 @@ class TestThumbnailRoute:
         assert resp.headers["cache-control"] == "public, max-age=86400"
         assert resp.content == b"\x89PNG\r\n\x1a\nfake"
 
-    @patch("src.parcel_sentinel.routes.thumbnail.store")
+    @patch("src.location_sentinel.routes.thumbnail.store")
     def test_thumbnail_404(self, mock_store, client):
         mock_store.get_geometry.return_value = None
 
@@ -74,7 +74,7 @@ class TestThumbnailRoute:
 
 class TestStaticMapRender:
     async def test_render_returns_png_bytes(self):
-        from src.parcel_sentinel.thumbnails.static_map import render_parcel_thumbnail
+        from src.location_sentinel.thumbnails.static_map import render_location_thumbnail
 
         fake_png = b"\x89PNG\r\n\x1a\ntest"
         mock_resp = MagicMock()
@@ -86,21 +86,21 @@ class TestStaticMapRender:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch("src.parcel_sentinel.thumbnails.static_map.httpx.AsyncClient", return_value=mock_client):
-            result = await render_parcel_thumbnail(SAMPLE_GEOJSON)
+        with patch("src.location_sentinel.thumbnails.static_map.httpx.AsyncClient", return_value=mock_client):
+            result = await render_location_thumbnail(SAMPLE_GEOJSON)
 
         assert isinstance(result, bytes)
         assert result == fake_png
 
     def test_extract_coords_polygon(self):
-        from src.parcel_sentinel.thumbnails.static_map import _extract_exterior_coords
+        from src.location_sentinel.thumbnails.static_map import _extract_exterior_coords
 
         coords = _extract_exterior_coords(SAMPLE_GEOJSON)
         assert len(coords) == 5
         assert coords[0] == (-77.0365, 38.8977)
 
     def test_extract_coords_multipolygon(self):
-        from src.parcel_sentinel.thumbnails.static_map import _extract_exterior_coords
+        from src.location_sentinel.thumbnails.static_map import _extract_exterior_coords
 
         multi = {
             "type": "MultiPolygon",
@@ -110,7 +110,7 @@ class TestStaticMapRender:
         assert len(coords) == 5
 
     def test_extract_coords_unsupported(self):
-        from src.parcel_sentinel.thumbnails.static_map import _extract_exterior_coords
+        from src.location_sentinel.thumbnails.static_map import _extract_exterior_coords
 
         with pytest.raises(ValueError, match="Unsupported geometry type"):
             _extract_exterior_coords({"type": "Point", "coordinates": [0, 0]})

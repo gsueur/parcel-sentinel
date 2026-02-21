@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.parcel_sentinel.compute.indices import (
+from src.location_sentinel.compute.indices import (
     compute_bsi,
     compute_nbr,
     compute_ndmi,

@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 from shapely.geometry import Polygon
 
-from src.parcel_sentinel.raster.masking import apply_scl_mask
-from src.parcel_sentinel.raster.reader import read_scene_bands
-from src.parcel_sentinel.stac.client import search_scenes
+from src.location_sentinel.raster.masking import apply_scl_mask
+from src.location_sentinel.raster.reader import read_scene_bands
+from src.location_sentinel.stac.client import search_scenes
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("RUN_INTEGRATION_TESTS"),
@@ -26,7 +26,7 @@ AOI = Polygon([
 
 def _get_bounds_in_scene_crs(item) -> tuple[float, float, float, float]:
     import pyproj
-    from src.parcel_sentinel.geometry.reproject import reproject_geometry
+    from src.location_sentinel.geometry.reproject import reproject_geometry
     epsg = item.properties.get("proj:epsg")
     if epsg is None:
         code = item.properties.get("proj:code", "")

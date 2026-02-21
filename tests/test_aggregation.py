@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.parcel_sentinel.compute.aggregation import Observation, aggregate_monthly
+from src.location_sentinel.compute.aggregation import Observation, aggregate_monthly
 
 
 class TestAggregation:

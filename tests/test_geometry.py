@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 from shapely.geometry import Point, Polygon
 
-from src.parcel_sentinel.geometry.normalize import geometry_hash, geojson_to_shapely, round_coordinates
-from src.parcel_sentinel.geometry.reproject import area_in_sqm, buffer_in_meters, get_utm_crs
-from src.parcel_sentinel.geometry.validate import GeometryValidationError, validate_geometry
+from src.location_sentinel.geometry.normalize import geometry_hash, geojson_to_shapely, round_coordinates
+from src.location_sentinel.geometry.reproject import area_in_sqm, buffer_in_meters, get_utm_crs
+from src.location_sentinel.geometry.validate import GeometryValidationError, validate_geometry
 
 
 class TestNormalize:
@@ -57,7 +57,7 @@ class TestReproject:
 
     def test_area_in_sqm(self, sample_polygon):
         area = area_in_sqm(sample_polygon)
-        # ~100m x ~110m parcel ~ 11000 sqm
+        # ~100m x ~110m location ~ 11000 sqm
         assert 5000 < area < 200_000
 
 

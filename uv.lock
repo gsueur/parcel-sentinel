@@ -328,6 +328,54 @@ wheels = [
 ]
 
 [[package]]
+name = "location-sentinel"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "async-geotiff" },
+    { name = "duckdb" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "numpy" },
+    { name = "obstore" },
+    { name = "pydantic-settings" },
+    { name = "pyproj" },
+    { name = "pystac-client" },
+    { name = "scipy" },
+    { name = "shapely" },
+    { name = "staticmap" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "async-geotiff", specifier = ">=0.1.0" },
+    { name = "duckdb", specifier = ">=1.1.0" },
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
+    { name = "numpy", specifier = ">=2.0.0" },
+    { name = "obstore", specifier = ">=0.3.0" },
+    { name = "pydantic-settings", specifier = ">=2.7.0" },
+    { name = "pyproj", specifier = ">=3.7.0" },
+    { name = "pystac-client", specifier = ">=0.8.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
+    { name = "scipy", specifier = ">=1.14.0" },
+    { name = "shapely", specifier = ">=2.0.0" },
+    { name = "staticmap", specifier = ">=0.5.7" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "numpy"
 version = "2.4.2"
 source = { registry = "https://pypi.org/simple" }
@@ -454,54 +502,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/65/ee/299d360cdc32edc7d
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/b9/c538f279a4e237a006a2c98387d081e9eb060d203d8ed34467cc0f0b9b53/packaging-26.0-py3-none-any.whl", hash = "sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529", size = 74366, upload-time = "2026-01-21T20:50:37.788Z" },
 ]
-
-[[package]]
-name = "parcel-sentinel"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "async-geotiff" },
-    { name = "duckdb" },
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "numpy" },
-    { name = "obstore" },
-    { name = "pydantic-settings" },
-    { name = "pyproj" },
-    { name = "pystac-client" },
-    { name = "scipy" },
-    { name = "shapely" },
-    { name = "staticmap" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "httpx" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "async-geotiff", specifier = ">=0.1.0" },
-    { name = "duckdb", specifier = ">=1.1.0" },
-    { name = "fastapi", specifier = ">=0.115.0" },
-    { name = "httpx", specifier = ">=0.28.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
-    { name = "numpy", specifier = ">=2.0.0" },
-    { name = "obstore", specifier = ">=0.3.0" },
-    { name = "pydantic-settings", specifier = ">=2.7.0" },
-    { name = "pyproj", specifier = ">=3.7.0" },
-    { name = "pystac-client", specifier = ">=0.8.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "scipy", specifier = ">=1.14.0" },
-    { name = "shapely", specifier = ">=2.0.0" },
-    { name = "staticmap", specifier = ">=0.5.7" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "pillow"

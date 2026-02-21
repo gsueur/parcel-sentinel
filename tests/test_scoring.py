@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from src.parcel_sentinel.compute.scoring import compute_scores
+from src.location_sentinel.compute.scoring import compute_scores
 
 
 class TestScoring:
-    def test_healthy_parcel(self):
+    def test_healthy_location(self):
         features = {
             "ndvi_mean_5y": 0.65,
             "ndvi_trend_slope_5y": 0.01,
@@ -22,7 +22,7 @@ class TestScoring:
         assert result.heat_mitigation_score > 60
         assert 0 <= result.composite_score <= 100
 
-    def test_stressed_parcel(self):
+    def test_stressed_location(self):
         features = {
             "ndvi_mean_5y": 0.2,
             "ndvi_trend_slope_5y": -0.03,
@@ -38,7 +38,7 @@ class TestScoring:
         # composite reflects drought+canopy penalty; no fire data so fire=0 keeps it moderate
         assert result.composite_score > 30
 
-    def test_wet_parcel(self):
+    def test_wet_location(self):
         features = {
             "ndvi_mean_5y": 0.5,
             "ndvi_trend_slope_5y": 0.0,

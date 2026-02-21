@@ -1,6 +1,6 @@
-# Parcel Sentinel Analytics API
+# Location Sentinel Analytics API
 
-On-demand climate risk indicators for any parcel or point of interest, derived from Sentinel-2 satellite imagery. No raw imagery is stored. Everything is computed from cloud-hosted COG assets, persisted as derived features and time series, and served via a JSON API.
+On-demand climate risk indicators for any location or point of interest, derived from Sentinel-2 satellite imagery. No raw imagery is stored. Everything is computed from cloud-hosted COG assets, persisted as derived features and time series, and served via a JSON API.
 
 ---
 
@@ -24,7 +24,7 @@ On-demand climate risk indicators for any parcel or point of interest, derived f
 
 ## What this does
 
-Given a parcel polygon or a point with coordinates, this service:
+Given a location polygon or a point with coordinates, this service:
 
 - Searches the Sentinel-2 L2A archive for satellite passes over that location
 - Selects the clearest observations per month, going back up to 5 years
@@ -32,7 +32,7 @@ Given a parcel polygon or a point with coordinates, this service:
 - Filters out clouds, cloud shadows, snow, and saturated pixels
 - Computes six spectral indices per scene
 - Aggregates to monthly statistics and derives long-term features
-- Scores the parcel across four climate risk dimensions
+- Scores the location across four climate risk dimensions
 - Returns all results as JSON and renders an HTML report with charts
 
 Typical cold-start time (5-year window): 15-30 seconds. Cached results return instantly.
@@ -48,7 +48,7 @@ User request (geometry + date range)
   Input validation (Point only, WGS84)
         |
         v
-  Parcel key = SHA-256 of normalized WKB
+  Location key = SHA-256 of normalized WKB
   (geometry hash used as stable cache key)
         |
         v
@@ -130,7 +130,7 @@ For a given geometry and date range, pystac-client queries Earth Search and retu
 
 1. **Group by calendar month** -- scenes are bucketed into `YYYY-MM` groups.
 2. **Sort by cloud cover** -- within each month, scenes are ranked by the `eo:cloud_cover` property (a scene-level cloud percentage from the catalog metadata).
-3. **Select the N clearest** -- up to `MAX_SCENES_PER_MONTH` (default 2) are kept per month. This is a best-effort pre-filter; a scene with 5% cloud cover in the metadata may still have bad pixels over the specific parcel.
+3. **Select the N clearest** -- up to `MAX_SCENES_PER_MONTH` (default 2) are kept per month. This is a best-effort pre-filter; a scene with 5% cloud cover in the metadata may still have bad pixels over the specific location.
 4. **Hard cap** -- total scenes across the full date range are capped at `MAX_TOTAL_SCENES` (default 120) to bound compute time.
 
 ### Step 2: Per-pixel SCL masking
@@ -141,7 +141,7 @@ See the next section for details.
 
 ### Step 3: Scene rejection
 
-If fewer than `MIN_VALID_PIXEL_FRACTION` (default 10%) of pixels survive the SCL mask, the entire scene is discarded. This handles cases where a scene has low catalog cloud cover globally but happens to be fully cloud-covered over the specific parcel.
+If fewer than `MIN_VALID_PIXEL_FRACTION` (default 10%) of pixels survive the SCL mask, the entire scene is discarded. This handles cases where a scene has low catalog cloud cover globally but happens to be fully cloud-covered over the specific location.
 
 ---
 
@@ -191,7 +191,7 @@ All bands for a scene are read concurrently (up to `MAX_CONCURRENT_COG_READS = 8
 All scenes and locations produce a fixed 64x64 pixel array. This ensures:
 - Consistent array shapes across compute
 - Predictable storage in DuckDB (typed `FLOAT[4096]` column)
-- Band arrays are cacheable and reusable across API calls for the same parcel
+- Band arrays are cacheable and reusable across API calls for the same location
 
 The physical area covered by the 64x64 window:
 - At 10m resolution (B02, B03, B04, B08): 64 native pixels = **640m x 640m** footprint
@@ -199,7 +199,7 @@ The physical area covered by the 64x64 window:
 
 ### Band cache
 
-After the first read, all 64x64 band arrays are stored in DuckDB keyed by `(parcel_key, scene_id, processing_version, band_key)`. Subsequent requests for the same parcel reuse these arrays directly, with no S3 traffic.
+After the first read, all 64x64 band arrays are stored in DuckDB keyed by `(location_key, scene_id, processing_version, band_key)`. Subsequent requests for the same location reuse these arrays directly, with no S3 traffic.
 
 ---
 
@@ -329,8 +329,8 @@ Over the full date window (typically 5 years of monthly observations), the follo
 | `ndsi_snow_persistence_5y` | Fraction of months with NDSI > 0.4 (snow covered) |
 | `bsi_mean_5y` | Mean BSI over the period |
 | `bsi_bare_soil_freq_5y` | Fraction of months with BSI > 0 (bare soil exposed) |
-| `canopy_proxy_50m` | Mean peak-season NDVI within 50m of parcel center |
-| `canopy_proxy_200m` | Mean peak-season NDVI within 200m of parcel center |
+| `canopy_proxy_50m` | Mean peak-season NDVI within 50m of location center |
+| `canopy_proxy_200m` | Mean peak-season NDVI within 200m of location center |
 | `quality_score` | Combined score [0-1] of temporal coverage and cloud clarity |
 
 ### Trend computation
@@ -384,7 +384,7 @@ A score of 0 means no drought signal. A score of 80+ indicates persistent and wo
 wetness_score = ndwi_wetness_persistence_5y * 100
 ```
 
-Directly reflects how often open water is detected over the parcel. 0 = never wet, 100 = water present every month. High wetness scores (> 50) suggest chronic flooding or permanent water body.
+Directly reflects how often open water is detected over the location. 0 = never wet, 100 = water present every month. High wetness scores (> 50) suggest chronic flooding or permanent water body.
 
 ### Fire exposure score (0-100)
 
@@ -424,7 +424,7 @@ Interactive docs: `http://localhost:8000/docs`
 
 ---
 
-### POST /v1/parcel/timeseries
+### POST /v1/location/timeseries
 
 Compute or retrieve the monthly time series for a location.
 
@@ -451,7 +451,7 @@ Compute or retrieve the monthly time series for a location.
 
 ```json
 {
-  "parcel_key": "a1b2c3",
+  "location_key": "a1b2c3",
   "processing_version": "s2l2a-v1.2.0",
   "series": {
     "ndvi": [
@@ -476,7 +476,7 @@ Compute or retrieve the monthly time series for a location.
 
 ---
 
-### POST /v1/parcel/features
+### POST /v1/location/features
 
 Compute long-term derived features. Runs the timeseries pipeline internally if not cached.
 
@@ -500,7 +500,7 @@ Compute long-term derived features. Runs the timeseries pipeline internally if n
 
 ```json
 {
-  "parcel_key": "a1b2c3",
+  "location_key": "a1b2c3",
   "processing_version": "s2l2a-v1.2.0",
   "date_window": { "start": "2021-01-01", "end": "2026-01-01" },
   "features": {
@@ -526,7 +526,7 @@ Compute long-term derived features. Runs the timeseries pipeline internally if n
 
 ---
 
-### POST /v1/parcel/score
+### POST /v1/location/score
 
 Compute the four risk sub-scores and composite. Runs features pipeline internally if needed.
 
@@ -548,7 +548,7 @@ Compute the four risk sub-scores and composite. Runs features pipeline internall
 
 ```json
 {
-  "parcel_key": "a1b2c3",
+  "location_key": "a1b2c3",
   "score_version": "risk-v1.1.0",
   "scores": {
     "drought_score": 38,
@@ -568,7 +568,7 @@ Compute the four risk sub-scores and composite. Runs features pipeline internall
 
 ---
 
-### GET /v1/parcel/{parcel_key}/report
+### GET /v1/location/{location_key}/report
 
 Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox satellite)
@@ -577,37 +577,37 @@ Returns a self-contained HTML page with:
 - Feature table grouped by theme
 - Risk score gauges with explanations
 
-The `parcel_key` is returned by any of the POST endpoints above. The parcel geometry must have been stored by a prior POST request.
+The `location_key` is returned by any of the POST endpoints above. The location geometry must have been stored by a prior POST request.
 
-Example: `GET /v1/parcel/a1b2c3/report`
+Example: `GET /v1/location/a1b2c3/report`
 
 ---
 
-### GET /v1/thumbnail/{parcel_key}.png
+### GET /v1/thumbnail/{location_key}.png
 
-Returns a 300x200 PNG map thumbnail showing the parcel boundary on a Mapbox basemap.
-The viewport covers 1500m of landscape context around the parcel.
+Returns a 300x200 PNG map thumbnail showing the location boundary on a Mapbox basemap.
+The viewport covers 1500m of landscape context around the location.
 
 Response: `image/png`, `Cache-Control: public, max-age=86400`.
 
 ---
 
-### GET /v1/parcels
+### GET /v1/locations
 
-Returns all stored parcels ordered by last-updated timestamp.
+Returns all stored locations ordered by last-updated timestamp.
 
 **Response**
 
 ```json
 [
   {
-    "parcel_key": "a1b2c3",
-    "name": "My parcel",
+    "location_key": "a1b2c3",
+    "name": "My location",
     "customer_id": "abc123",
     "customer_name": "Acme Corp",
     "centroid": [-77.036, 38.897],
     "updated_at": "2026-02-21T10:00:00Z",
-    "report_url": "/v1/parcel/a1b2c3/report",
+    "report_url": "/v1/location/a1b2c3/report",
     "thumbnail_url": "/v1/thumbnail/a1b2c3.png"
   }
 ]
@@ -630,7 +630,7 @@ You have coordinates for a location and want to understand its climate risk prof
 ### Step 1: Get the monthly time series
 
 ```bash
-curl -s -X POST http://localhost:8000/v1/parcel/timeseries \
+curl -s -X POST http://localhost:8000/v1/location/timeseries \
   -H 'Content-Type: application/json' \
   -d '{
     "geometry": {
@@ -643,12 +643,12 @@ curl -s -X POST http://localhost:8000/v1/parcel/timeseries \
   }' | jq .
 ```
 
-The first call will take 15-30 seconds (live S3 reads). The response includes your `parcel_key`.
+The first call will take 15-30 seconds (live S3 reads). The response includes your `location_key`.
 
 ### Step 2: Get the risk scores
 
 ```bash
-curl -s -X POST http://localhost:8000/v1/parcel/score \
+curl -s -X POST http://localhost:8000/v1/location/score \
   -H 'Content-Type: application/json' \
   -d '{
     "geometry": {
@@ -660,19 +660,19 @@ curl -s -X POST http://localhost:8000/v1/parcel/score \
   }' | jq .scores
 ```
 
-This call is instant if the timeseries was already computed (same geometry = same parcel key = cache hit).
+This call is instant if the timeseries was already computed (same geometry = same location key = cache hit).
 
 ### Step 3: Open the HTML report
 
 ```
-http://localhost:8000/v1/parcel/{parcel_key}/report
+http://localhost:8000/v1/location/{location_key}/report
 ```
 
-Replace `{parcel_key}` with the value from the timeseries response. The report shows charts for all indices, a feature summary with contextual descriptions, and the four risk scores.
+Replace `{location_key}` with the value from the timeseries response. The report shows charts for all indices, a feature summary with contextual descriptions, and the four risk scores.
 
 ### Geometry: Point only
 
-Only `Point` geometries are accepted. The analysis window is always 64x64 native pixels (640m x 640m at 10m resolution) centered on the given point. This is consistent and comparable across all locations regardless of parcel size.
+Only `Point` geometries are accepted. The analysis window is always 64x64 native pixels (640m x 640m at 10m resolution) centered on the given point. This is consistent and comparable across all locations regardless of location size.
 
 ### Interpreting results
 
@@ -700,7 +700,7 @@ uv run python main.py
 
 Server runs on `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
 
-The DuckDB database file (`parcel_sentinel.duckdb`) is created automatically on first run. All computed features, time series, and band arrays are persisted there.
+The DuckDB database file (`location_sentinel.duckdb`) is created automatically on first run. All computed features, time series, and band arrays are persisted there.
 
 ### Running tests
 
@@ -720,7 +720,7 @@ All settings are read from environment variables. Defaults are production-grade 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DUCKDB_PATH` | `parcel_sentinel.duckdb` | Path to DuckDB file |
+| `DUCKDB_PATH` | `location_sentinel.duckdb` | Path to DuckDB file |
 | `STAC_ENDPOINTS` | AWS Earth Search v1 | Comma-separated STAC endpoint list |
 | `STAC_COLLECTION` | `sentinel-2-l2a` | STAC collection name |
 | `AWS_SENTINEL_BUCKET` | `sentinel-cogs` | Public S3 bucket name |
@@ -730,7 +730,7 @@ All settings are read from environment variables. Defaults are production-grade 
 | `MAX_CONCURRENT_COG_READS` | `8` | Max parallel S3 connections |
 | `COG_WINDOW_SIZE` | `64` | Output pixel size (all bands resampled to this) |
 | `MIN_VALID_PIXEL_FRACTION` | `0.1` | Minimum valid pixel fraction to use a scene |
-| `MAX_PARCEL_AREA_SQM` | `5000000` | Max parcel area (500 ha) |
+| `MAX_PARCEL_AREA_SQM` | `5000000` | Max location area (500 ha) |
 | `DEFAULT_POINT_BUFFER_M` | `100.0` | Buffer radius applied to Point inputs |
 | `PROCESSING_VERSION` | `s2l2a-v1.2.0` | Version tag for features cache key |
 | `SCORE_VERSION` | `risk-v1.1.0` | Version tag for scores cache key |

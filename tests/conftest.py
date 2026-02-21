@@ -14,13 +14,13 @@ def _use_temp_duckdb(tmp_path, monkeypatch):
     db_path = str(tmp_path / "test.duckdb")
     monkeypatch.setenv("DUCKDB_PATH", db_path)
     # Also patch the already-imported settings and store instances
-    from src.parcel_sentinel.config import settings
+    from src.location_sentinel.config import settings
     monkeypatch.setattr(settings, "DUCKDB_PATH", db_path)
-    from src.parcel_sentinel.storage.duckdb_store import store
+    from src.location_sentinel.storage.duckdb_store import store
     store._db_path = db_path
 
 
-# Small residential parcel in suburban Virginia (CONUS)
+# Small residential location in suburban Virginia (CONUS)
 SAMPLE_POLYGON_COORDS = [
     [-77.0365, 38.8977],
     [-77.0355, 38.8977],
