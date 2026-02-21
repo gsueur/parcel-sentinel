@@ -50,8 +50,10 @@ async def render_parcel_thumbnail(geojson_geometry: dict) -> bytes:
     encoded = quote(json.dumps(feature, separators=(",", ":")), safe="")
     overlay = f"geojson({encoded})"
 
-    # Explicit bbox viewport — matches the analysis extent exactly
-    minx, miny, maxx, maxy = shape(analysis_geojson).bounds
+    # Expand viewport with landscape context buffer so the map shows surroundings,
+    # while the GeoJSON overlay still marks only the actual analysis geometry.
+    context_geom = buffer_in_meters(shape(analysis_geojson), settings.THUMBNAIL_CONTEXT_BUFFER_M)
+    minx, miny, maxx, maxy = context_geom.bounds
     bbox = f"[{minx},{miny},{maxx},{maxy}]"
 
     url = _MAPBOX_BASE.format(

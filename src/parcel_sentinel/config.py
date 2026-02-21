@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     GEOJSON_IO_MAX_URL_LENGTH: int = 8000
     MAPBOX_TOKEN: str = "pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bTE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q"
     MAPBOX_STYLE: str = "mapbox/streets-v11"
+    THUMBNAIL_CONTEXT_BUFFER_M: float = 1500.0  # extra buffer for landscape context around the parcel
 
 
 settings = Settings()

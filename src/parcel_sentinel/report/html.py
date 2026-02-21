@@ -79,7 +79,12 @@ table.scenes img { display: block; width: 96px; height: 96px;
                   white-space: nowrap; overflow-x: auto; }
 .index-bands { font-size: 0.74rem; color: #6b7280; margin-bottom: 8px; }
 .index-desc { font-size: 0.81rem; color: #d1d5db; line-height: 1.55; margin-bottom: 10px; }
-.index-bar { height: 14px; border-radius: 3px; margin-bottom: 4px; }
+.index-bar { height: 14px; border-radius: 3px; }
+.index-bar-wrap { position: relative; margin-bottom: 20px; }
+.index-marker { position: absolute; top: 0; width: 2px; height: 14px;
+                transform: translateX(-50%); pointer-events: none; }
+.index-marker-label { position: absolute; top: 16px; font-size: 0.6rem;
+                      transform: translateX(-50%); white-space: nowrap; font-weight: 600; }
 .index-ticks { display: flex; justify-content: space-between;
                font-size: 0.68rem; color: #6b7280; margin-bottom: 8px; }
 .index-ranges { font-size: 0.74rem; margin-bottom: 10px; }
@@ -118,9 +123,62 @@ table.scenes img { display: block; width: 96px; height: 96px;
 
 _CHART_JS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
 
-def _index_reference_html() -> str:
+
+def _bar_with_markers(gradient: str, metric: str, index_stats: dict) -> str:
+    """Render an index gradient bar wrapped in a relative container.
+
+    If ``index_stats`` contains min/max for the metric, vertical marker lines are
+    overlaid at the corresponding positions (orange = min, green = max).
+    All indices use the fixed [-1, 1] scale, so position% = (v + 1) / 2 * 100.
+    """
+    bar = f'<div class="index-bar" style="background: {gradient}"></div>'
+    stats = index_stats.get(metric)
+    markers = ""
+    if stats:
+        for key, label, color in (
+            ("min", "min", "#f97316"),
+            ("max", "max", "#22c55e"),
+        ):
+            v = stats.get(key)
+            if v is not None:
+                pct = max(1.0, min(99.0, (v + 1) / 2 * 100))
+                markers += (
+                    f'<div class="index-marker"'
+                    f' style="left:{pct:.1f}%;background:{color}"></div>'
+                    f'<div class="index-marker-label"'
+                    f' style="left:{pct:.1f}%;color:{color}">{v:+.2f}&nbsp;{label}</div>'
+                )
+    return f'<div class="index-bar-wrap">{bar}{markers}</div>'
+
+
+def _index_reference_html(index_stats: dict) -> str:
     """Build the comprehensive Index Reference section for the report."""
-    return """
+    ndvi_bar = _bar_with_markers(
+        "linear-gradient(to right, #6543211a 0%, #654321 5%, #dcd2a0 50%, #bedd50 65%, #3ca028 80%, #004600 100%)",
+        "ndvi", index_stats,
+    )
+    ndwi_bar = _bar_with_markers(
+        "linear-gradient(to right, #a01e1e 0%, #ebe1c8 50%, #64b4f0 60%, #0028a0 100%)",
+        "ndwi", index_stats,
+    )
+    ndmi_bar = _bar_with_markers(
+        "linear-gradient(to right, #8c320f 0%, #dc8c3c 40%, #f5ebb9 50%, #a0d764 60%, #1e9150 80%, #005a64 100%)",
+        "ndmi", index_stats,
+    )
+    nbr_bar = _bar_with_markers(
+        "linear-gradient(to right, #190f0a 0%, #5f5041 45%, #cdb982 55%, #b4d74b 65%, #004b0f 100%)",
+        "nbr", index_stats,
+    )
+    ndsi_bar = _bar_with_markers(
+        "linear-gradient(to right, #64411900 0%, #644119 0%, #cdaf6e 50%, #aad7f5 70%, #f5fcff 100%)",
+        "ndsi", index_stats,
+    )
+    bsi_bar = _bar_with_markers(
+        "linear-gradient(to right, #005014 0%, #9bcd50 45%, #ebe1b9 50%, #cda55a 65%, #733f14 100%)",
+        "bsi", index_stats,
+    )
+
+    return f"""
 <div class="index-ref-grid">
 
   <!-- NDVI -->
@@ -134,15 +192,14 @@ def _index_reference_html() -> str:
       with vegetation density and greenness. Saturates above ~0.8 in dense closed-canopy forests.
       Used to track long-term vegetation health trends, anomalous stress events, and canopy cover.
     </p>
-    <div class="index-bar" style="background: linear-gradient(to right,
-      #6543211a 0%, #654321 5%, #dcd2a0 50%, #bedd50 65%, #3ca028 80%, #004600 100%)"></div>
+    {ndvi_bar}
     <div class="index-ticks"><span>&minus;1</span><span>0</span><span>0.3</span><span>0.6</span><span>1</span></div>
     <div class="index-ranges">
       <div class="index-range-row"><div class="index-swatch" style="background:#004600"></div>&gt; 0.6 &mdash; Dense forest / high biomass</div>
       <div class="index-range-row"><div class="index-swatch" style="background:#3ca028"></div>0.3 &ndash; 0.6 &mdash; Moderate to good vegetation</div>
       <div class="index-range-row"><div class="index-swatch" style="background:#bedd50"></div>0.1 &ndash; 0.3 &mdash; Grass, shrub, sparse cover</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#dcd2a0"></div>−0.1 &ndash; 0.1 &mdash; Bare soil, rock, sand</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#654321"></div>&lt; −0.1 &mdash; Water, snow, clouds</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#dcd2a0"></div>&minus;0.1 &ndash; 0.1 &mdash; Bare soil, rock, sand</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#654321"></div>&lt; &minus;0.1 &mdash; Water, snow, clouds</div>
     </div>
     <span class="score-badge badge-scoring">Drought score</span>
     <span class="score-badge badge-scoring">Heat mitigation</span>
@@ -159,14 +216,13 @@ def _index_reference_html() -> str:
       vegetation, creating a high contrast that isolates water bodies. Not a vegetation
       moisture index (see NDMI for that).
     </p>
-    <div class="index-bar" style="background: linear-gradient(to right,
-      #a01e1e 0%, #ebe1c8 50%, #64b4f0 60%, #0028a0 100%)"></div>
+    {ndwi_bar}
     <div class="index-ticks"><span>&minus;1</span><span>0</span><span>+0.2</span><span>+1</span></div>
     <div class="index-ranges">
       <div class="index-range-row"><div class="index-swatch" style="background:#0028a0"></div>0.2 &ndash; 1.0 &mdash; Open water surface</div>
       <div class="index-range-row"><div class="index-swatch" style="background:#64b4f0"></div>0.0 &ndash; 0.2 &mdash; Flooding / soil moisture</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#ebe1c8"></div>−0.3 &ndash; 0.0 &mdash; Non-aqueous / moderate drought</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#a01e1e"></div>−1.0 &ndash; −0.3 &mdash; Drought / dry non-aqueous</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#ebe1c8"></div>&minus;0.3 &ndash; 0.0 &mdash; Non-aqueous / moderate drought</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#a01e1e"></div>&minus;1.0 &ndash; &minus;0.3 &mdash; Drought / dry non-aqueous</div>
     </div>
     <span class="score-badge badge-scoring">Wetness score</span>
     <span class="score-badge badge-feature">ndwi_wetness_persistence_5y</span>
@@ -184,15 +240,14 @@ def _index_reference_html() -> str:
       than open water bodies. An early drought indicator: NDMI drops before NDVI responds.
       Positive = adequate moisture; negative = water stress.
     </p>
-    <div class="index-bar" style="background: linear-gradient(to right,
-      #8c320f 0%, #dc8c3c 40%, #f5ebb9 50%, #a0d764 60%, #1e9150 80%, #005a64 100%)"></div>
+    {ndmi_bar}
     <div class="index-ticks"><span>&minus;1</span><span>&minus;0.2</span><span>0</span><span>0.2</span><span>0.6</span><span>1</span></div>
     <div class="index-ranges">
       <div class="index-range-row"><div class="index-swatch" style="background:#005a64"></div>0.4 &ndash; 1.0 &mdash; High moisture / lush canopy</div>
       <div class="index-range-row"><div class="index-swatch" style="background:#1e9150"></div>0.1 &ndash; 0.4 &mdash; Adequate moisture</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#f5ebb9"></div>−0.1 &ndash; 0.1 &mdash; Marginal / transition</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#dc8c3c"></div>−0.3 &ndash; −0.1 &mdash; Moderate water stress</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#8c320f"></div>&lt; −0.3 &mdash; Severe water stress</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#f5ebb9"></div>&minus;0.1 &ndash; 0.1 &mdash; Marginal / transition</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#dc8c3c"></div>&minus;0.3 &ndash; &minus;0.1 &mdash; Moderate water stress</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#8c320f"></div>&lt; &minus;0.3 &mdash; Severe water stress</div>
     </div>
     <span class="score-badge badge-scoring">Drought score</span>
     <span class="score-badge badge-feature">ndmi_moisture_stress_freq_5y</span>
@@ -210,15 +265,14 @@ def _index_reference_html() -> str:
       negative. Also used to track post-fire recovery: NBR rises as vegetation regenerates.
       The differenced NBR (pre minus post-fire) quantifies net burn severity.
     </p>
-    <div class="index-bar" style="background: linear-gradient(to right,
-      #190f0a 0%, #5f5041 45%, #cdb982 55%, #b4d74b 65%, #004b0f 100%)"></div>
-    <div class="index-ticks"><span>&minus;1</span><span>−0.1</span><span>0.1</span><span>0.3</span><span>1</span></div>
+    {nbr_bar}
+    <div class="index-ticks"><span>&minus;1</span><span>&minus;0.1</span><span>0.1</span><span>0.3</span><span>1</span></div>
     <div class="index-ranges">
       <div class="index-range-row"><div class="index-swatch" style="background:#004b0f"></div>&gt; 0.3 &mdash; Healthy unburned vegetation</div>
       <div class="index-range-row"><div class="index-swatch" style="background:#b4d74b"></div>0.1 &ndash; 0.3 &mdash; Low-severity burn / recovering</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#cdb982"></div>−0.1 &ndash; 0.1 &mdash; Moderate burn / bare</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#5f5041"></div>−0.4 &ndash; −0.1 &mdash; High-severity burn</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#190f0a"></div>&lt; −0.4 &mdash; Severely burned / charred</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#cdb982"></div>&minus;0.1 &ndash; 0.1 &mdash; Moderate burn / bare</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#5f5041"></div>&minus;0.4 &ndash; &minus;0.1 &mdash; High-severity burn</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#190f0a"></div>&lt; &minus;0.4 &mdash; Severely burned / charred</div>
     </div>
     <span class="score-badge badge-scoring">Fire exposure score</span>
     <span class="score-badge badge-feature">nbr_burn_freq_5y</span>
@@ -236,8 +290,7 @@ def _index_reference_html() -> str:
       keeping their NDSI lower. Threshold of 0.4 reliably separates snow from all other
       land cover types. Important for snowpack monitoring and alpine climate change analysis.
     </p>
-    <div class="index-bar" style="background: linear-gradient(to right,
-      #64411900 0%, #644119 0%, #cdaf6e 50%, #aad7f5 70%, #f5fcff 100%)"></div>
+    {ndsi_bar}
     <div class="index-ticks"><span>&minus;1</span><span>0</span><span>0.4</span><span>1</span></div>
     <div class="index-ranges">
       <div class="index-range-row"><div class="index-swatch" style="background:#f5fcff"></div>&gt; 0.6 &mdash; Deep snow / ice</div>
@@ -260,12 +313,11 @@ def _index_reference_html() -> str:
       ratio. Positive values indicate bare or sparsely covered ground; negative values
       indicate vegetation. Useful as a land degradation and desertification indicator.
     </p>
-    <div class="index-bar" style="background: linear-gradient(to right,
-      #005014 0%, #9bcd50 45%, #ebe1b9 50%, #cda55a 65%, #733f14 100%)"></div>
-    <div class="index-ticks"><span>&minus;1</span><span>−0.1</span><span>0</span><span>0.3</span><span>1</span></div>
+    {bsi_bar}
+    <div class="index-ticks"><span>&minus;1</span><span>&minus;0.1</span><span>0</span><span>0.3</span><span>1</span></div>
     <div class="index-ranges">
-      <div class="index-range-row"><div class="index-swatch" style="background:#005014"></div>&lt; −0.2 &mdash; Dense vegetation cover</div>
-      <div class="index-range-row"><div class="index-swatch" style="background:#9bcd50"></div>−0.2 &ndash; 0.0 &mdash; Sparse vegetation / mixed</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#005014"></div>&lt; &minus;0.2 &mdash; Dense vegetation cover</div>
+      <div class="index-range-row"><div class="index-swatch" style="background:#9bcd50"></div>&minus;0.2 &ndash; 0.0 &mdash; Sparse vegetation / mixed</div>
       <div class="index-range-row"><div class="index-swatch" style="background:#cda55a"></div>0.0 &ndash; 0.3 &mdash; Partially exposed soil</div>
       <div class="index-range-row"><div class="index-swatch" style="background:#733f14"></div>&gt; 0.3 &mdash; Heavily bare / degraded ground</div>
     </div>
@@ -442,6 +494,14 @@ def build_report_html(
     feat = features or {}
     feat_rows = _feature_rows(feat)
 
+    # Per-index min/max from timeseries (used by the index reference legend bars)
+    index_stats: dict[str, dict] = {}
+    if timeseries:
+        for metric, records in timeseries.items():
+            vals = [r.get("mean") for r in records if r.get("mean") is not None]
+            if vals:
+                index_stats[metric] = {"min": round(min(vals), 3), "max": round(max(vals), 3)}
+
     # Chart
     if timeseries:
         _, chart_data = _chart_datasets(timeseries)
@@ -550,7 +610,7 @@ def build_report_html(
   <!-- Index Reference -->
   <div class="card">
     <h2>Index reference</h2>
-    {_index_reference_html()}
+    {_index_reference_html(index_stats)}
   </div>
 
   <!-- Scene images -->
