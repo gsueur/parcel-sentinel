@@ -1,39 +1,50 @@
 from __future__ import annotations
 
-import io
+import json
 import logging
+from urllib.parse import quote
 
-from staticmap import StaticMap, Polygon as SMPolygon
+import httpx
 
 from ..config import settings
 
 logger = logging.getLogger(__name__)
 
+_MAPBOX_BASE = "https://api.mapbox.com/styles/v1/{style}/static/{overlay}/auto/{w}x{h}@2x"
 
-def render_parcel_thumbnail(geojson_geometry: dict) -> bytes:
-    """Render a PNG thumbnail of the parcel on an OSM basemap.
+
+async def render_parcel_thumbnail(geojson_geometry: dict) -> bytes:
+    """Fetch a Mapbox Static API map tile with the parcel overlay.
 
     Returns PNG image bytes.
     """
-    width = settings.THUMBNAIL_WIDTH
-    height = settings.THUMBNAIL_HEIGHT
+    feature = {
+        "type": "Feature",
+        "properties": {
+            "stroke": "#3b82f6",
+            "stroke-width": 2,
+            "stroke-opacity": 1,
+            "fill": "#3b82f6",
+            "fill-opacity": 0.2,
+        },
+        "geometry": geojson_geometry,
+    }
+    encoded = quote(json.dumps(feature, separators=(",", ":")), safe="")
+    overlay = f"geojson({encoded})"
 
-    m = StaticMap(width, height, padding_x=16, padding_y=16)
-
-    coords = _extract_exterior_coords(geojson_geometry)
-    outline = SMPolygon(
-        coords,
-        fill_color="rgba(59, 130, 246, 0.25)",
-        outline_color="rgba(59, 130, 246, 0.9)",
-        simplify=True,
+    url = _MAPBOX_BASE.format(
+        style=settings.MAPBOX_STYLE,
+        overlay=overlay,
+        w=settings.THUMBNAIL_WIDTH,
+        h=settings.THUMBNAIL_HEIGHT,
     )
-    m.add_polygon(outline)
 
-    logger.info("Thumbnail render %dx%d fetching OSM tiles", width, height)
-    image = m.render()
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    return buf.getvalue()
+    logger.info("Mapbox Static fetch style=%s", settings.MAPBOX_STYLE)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(url, params={"padding": "40", "access_token": settings.MAPBOX_TOKEN})
+        resp.raise_for_status()
+
+    return resp.content
 
 
 def _extract_exterior_coords(geojson_geometry: dict) -> list[tuple[float, float]]:
@@ -44,7 +55,6 @@ def _extract_exterior_coords(geojson_geometry: dict) -> list[tuple[float, float]
     if geom_type == "Polygon":
         return [(c[0], c[1]) for c in coordinates[0]]
     elif geom_type == "MultiPolygon":
-        # Use the first polygon
         return [(c[0], c[1]) for c in coordinates[0][0]]
     else:
         raise ValueError(f"Unsupported geometry type for thumbnail: {geom_type}")

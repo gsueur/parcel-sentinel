@@ -59,11 +59,13 @@ class Settings(BaseSettings):
     # Minimum valid pixel fraction to accept an observation
     MIN_VALID_PIXEL_FRACTION: float = 0.1
 
-    # Thumbnails
+    # Thumbnails / Mapbox
     THUMBNAIL_WIDTH: int = 300
     THUMBNAIL_HEIGHT: int = 200
     THUMBNAIL_CACHE_TTL: int = 86400  # 1 day
     GEOJSON_IO_MAX_URL_LENGTH: int = 8000
+    MAPBOX_TOKEN: str = "pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bTE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q"
+    MAPBOX_STYLE: str = "mapbox/streets-v11"
 
 
 settings = Settings()

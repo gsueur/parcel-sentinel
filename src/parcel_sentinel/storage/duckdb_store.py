@@ -67,9 +67,15 @@ class DuckDBStore:
             CREATE TABLE IF NOT EXISTS parcel_geometries (
                 parcel_key VARCHAR PRIMARY KEY,
                 geojson_text VARCHAR,
+                name VARCHAR,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # Migration: add name column to existing databases that predate this field
+        try:
+            self._conn.execute("ALTER TABLE parcel_geometries ADD COLUMN IF NOT EXISTS name VARCHAR")
+        except Exception:
+            pass
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS scene_bands (
                 parcel_key VARCHAR NOT NULL,
@@ -154,17 +160,24 @@ class DuckDBStore:
                 [parcel_key, processing_version, cadence, metric, serialized, now],
             )
 
-    def save_geometry(self, parcel_key: str, geojson: dict) -> None:
+    def save_geometry(self, parcel_key: str, geojson: dict, name: str | None = None) -> None:
         if self._conn is None:
             return
         now = datetime.now(timezone.utc).isoformat()
+        # Preserve existing name if a new one isn't supplied
+        if name is None:
+            existing = self._conn.execute(
+                "SELECT name FROM parcel_geometries WHERE parcel_key = ?", [parcel_key]
+            ).fetchone()
+            if existing:
+                name = existing[0]
         self._conn.execute(
             """
             INSERT OR REPLACE INTO parcel_geometries
-                (parcel_key, geojson_text, updated_at)
-            VALUES (?, ?, ?)
+                (parcel_key, geojson_text, name, updated_at)
+            VALUES (?, ?, ?, ?)
             """,
-            [parcel_key, json.dumps(geojson), now],
+            [parcel_key, json.dumps(geojson), name, now],
         )
 
     def get_geometry(self, parcel_key: str) -> dict | None:
@@ -177,6 +190,26 @@ class DuckDBStore:
         if result is None:
             return None
         return json.loads(result[0])
+
+    def get_parcel_info(self, parcel_key: str) -> dict | None:
+        """Return geometry, name, and centroid for a parcel, or None if not found."""
+        if self._conn is None:
+            return None
+        result = self._conn.execute(
+            "SELECT geojson_text, name FROM parcel_geometries WHERE parcel_key = ?",
+            [parcel_key],
+        ).fetchone()
+        if result is None:
+            return None
+        from shapely.geometry import shape
+        geojson = json.loads(result[0])
+        name = result[1]
+        try:
+            centroid = shape(geojson).centroid
+            centroid_lonlat = [round(centroid.x, 5), round(centroid.y, 5)]
+        except Exception:
+            centroid_lonlat = None
+        return {"geojson": geojson, "name": name, "centroid": centroid_lonlat}
 
     def save_scores(
         self,

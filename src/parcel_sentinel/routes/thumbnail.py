@@ -31,7 +31,7 @@ async def get_thumbnail(parcel_key: str):
         raise HTTPException(status_code=404, detail="Parcel geometry not found")
 
     try:
-        png_bytes = render_parcel_thumbnail(geojson)
+        png_bytes = await render_parcel_thumbnail(geojson)
     except Exception:
         logger.exception("Thumbnail render failed for %s", parcel_key)
         raise HTTPException(status_code=500, detail="Thumbnail render failed")

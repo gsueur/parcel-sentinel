@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -53,7 +53,7 @@ class TestThumbnailRoute:
             yield c
 
     @patch("src.parcel_sentinel.routes.thumbnail.store")
-    @patch("src.parcel_sentinel.routes.thumbnail.render_parcel_thumbnail")
+    @patch("src.parcel_sentinel.routes.thumbnail.render_parcel_thumbnail", new_callable=AsyncMock)
     def test_thumbnail_200(self, mock_render, mock_store, client):
         mock_store.get_geometry.return_value = SAMPLE_GEOJSON
         mock_render.return_value = b"\x89PNG\r\n\x1a\nfake"
@@ -73,20 +73,24 @@ class TestThumbnailRoute:
 
 
 class TestStaticMapRender:
-    @patch("src.parcel_sentinel.thumbnails.static_map.StaticMap")
-    def test_render_returns_png_bytes(self, mock_sm_cls):
+    async def test_render_returns_png_bytes(self):
         from src.parcel_sentinel.thumbnails.static_map import render_parcel_thumbnail
 
-        mock_image = MagicMock()
-        mock_image.save = lambda buf, format: buf.write(b"\x89PNG\r\n\x1a\ntest")
-        mock_sm_instance = MagicMock()
-        mock_sm_instance.render.return_value = mock_image
-        mock_sm_cls.return_value = mock_sm_instance
+        fake_png = b"\x89PNG\r\n\x1a\ntest"
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.content = fake_png
 
-        result = render_parcel_thumbnail(SAMPLE_GEOJSON)
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with patch("src.parcel_sentinel.thumbnails.static_map.httpx.AsyncClient", return_value=mock_client):
+            result = await render_parcel_thumbnail(SAMPLE_GEOJSON)
+
         assert isinstance(result, bytes)
-        assert result.startswith(b"\x89PNG")
-        mock_sm_instance.add_polygon.assert_called_once()
+        assert result == fake_png
 
     def test_extract_coords_polygon(self):
         from src.parcel_sentinel.thumbnails.static_map import _extract_exterior_coords

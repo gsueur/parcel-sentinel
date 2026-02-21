@@ -164,6 +164,8 @@ def _scene_rows(scene_months: list[dict]) -> str:
 
 def build_report_html(
     parcel_key: str,
+    name: str | None,
+    centroid: list[float] | None,
     geometry_geojson: dict | None,
     scores: dict | None,
     features: dict | None,
@@ -175,6 +177,13 @@ def build_report_html(
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = parcel_key[:24] + "..." if len(parcel_key) > 24 else parcel_key
+
+    display_name = name or "Unnamed parcel"
+    if centroid:
+        lon, lat = centroid
+        coord_str = f"{lat:+.5f}, {lon:+.5f}"
+    else:
+        coord_str = "—"
 
     # Thumbnail
     thumb_url = f"/v1/thumbnail/{parcel_key}.png"
@@ -245,15 +254,19 @@ def build_report_html(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Parcel Report &mdash; {key_short}</title>
+  <title>{display_name} &mdash; Parcel Report</title>
   <script src="{_CHART_JS_CDN}"></script>
   <style>{_CSS}</style>
 </head>
 <body>
 
 <div class="header">
-  <h1>Parcel Sentinel Report</h1>
-  <small>{parcel_key} &nbsp;&bull;&nbsp; generated {generated}</small>
+  <h1>{display_name}</h1>
+  <div style="margin-top:6px;display:flex;gap:24px;align-items:baseline;flex-wrap:wrap">
+    <span style="color:#9ca3af;font-size:0.9rem">&#x1F4CD; {coord_str}</span>
+    <small style="color:#4b5563;font-size:0.75rem;font-family:monospace">{parcel_key}</small>
+  </div>
+  <div style="margin-top:4px;color:#4b5563;font-size:0.72rem">generated {generated}</div>
 </div>
 
 <div class="container">
