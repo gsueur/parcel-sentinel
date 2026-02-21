@@ -10,14 +10,17 @@ from shapely.geometry import Polygon, Point, mapping
 
 @pytest.fixture(autouse=True)
 def _use_temp_duckdb(tmp_path, monkeypatch):
-    """Route DuckDB to a temp file so tests don't conflict with a running server."""
+    """Route DuckDB to a temp file so tests don't conflict with a running server.
+    Koeppen-Geiger file loading is skipped in tests -- the 92K-row insert is
+    done once at production startup and must not run on every test session.
+    """
     db_path = str(tmp_path / "test.duckdb")
     monkeypatch.setenv("DUCKDB_PATH", db_path)
-    # Also patch the already-imported settings and store instances
     from src.location_sentinel.config import settings
     monkeypatch.setattr(settings, "DUCKDB_PATH", db_path)
     from src.location_sentinel.storage.duckdb_store import store
     store._db_path = db_path
+    monkeypatch.setattr(store, "_load_koeppen_file", lambda: None)
 
 
 # Small residential location in suburban Virginia (CONUS)
