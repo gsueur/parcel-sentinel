@@ -119,6 +119,24 @@ table.scenes img { display: block; width: 96px; height: 96px;
 
 /* No-data */
 .no-data { color: #4b5563; font-style: italic; font-size: 0.85rem; }
+
+/* Feature groups */
+.feat-groups { display: flex; flex-direction: column; gap: 12px; }
+.feat-group { border: 1px solid #1e2130; border-radius: 6px; overflow: hidden; }
+.feat-group-hdr { background: #0d1018; padding: 8px 14px; display: flex; align-items: center;
+                  gap: 8px; font-size: 0.8rem; font-weight: 600; color: #9ca3af; }
+.feat-group-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.feat-group-idx { font-family: monospace; font-size: 0.72rem; background: #1e2130;
+                  padding: 1px 6px; border-radius: 3px; color: #60a5fa; margin-left: auto; }
+.feat-row { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center;
+            padding: 10px 14px; border-top: 1px solid #141824; }
+.feat-label { font-size: 0.84rem; font-weight: 500; color: #e5e7eb; margin-bottom: 2px; }
+.feat-desc { font-size: 0.74rem; color: #6b7280; line-height: 1.45; }
+.feat-val-col { text-align: right; min-width: 90px; flex-shrink: 0; }
+.feat-val { font-size: 1.05rem; font-weight: 700; font-family: monospace; line-height: 1.2; }
+.feat-key-mono { font-size: 0.62rem; color: #2d3748; font-family: monospace; margin-top: 3px; }
+.feat-mini-bg { height: 3px; background: #1e2130; border-radius: 2px; margin-top: 5px; }
+.feat-mini-fill { height: 3px; border-radius: 2px; }
 """
 
 _CHART_JS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
@@ -340,17 +358,229 @@ def _score_bar(label: str, value: int | None, css_class: str) -> str:
     </div>"""
 
 
-def _feature_rows(features: dict) -> str:
+# ── Feature metadata ──────────────────────────────────────────────────────────
+# Each entry: label, group, group_color, group_index, desc, fmt, signal, thr1, thr2
+# fmt: "pct" | "slope" | "float3" | "score"
+# signal: "high_good" | "low_good" | "context"
+# For high_good: v >= thr2 → green, thr1 <= v < thr2 → amber, v < thr1 → red
+# For low_good:  v <= thr1 → green, thr1 < v <= thr2 → amber, v > thr2 → red
+_FM: dict[str, dict] = {
+    "ndvi_mean_5y": dict(
+        label="Average vegetation density",
+        group="Vegetation Health", group_color="#22c55e", group_index="NDVI",
+        desc="Mean NDVI across all valid observations over 5 years. "
+             "Dense healthy vegetation: &gt;0.4 &bull; Sparse cover: 0.1&ndash;0.4 &bull; Bare ground or water: &lt;0.1.",
+        fmt="float3", signal="high_good", thr1=0.1, thr2=0.4,
+    ),
+    "ndvi_trend_slope_5y": dict(
+        label="Vegetation trend",
+        group="Vegetation Health", group_color="#22c55e", group_index="NDVI",
+        desc="Theil&ndash;Sen robust slope of NDVI over 5 years (units per year). "
+             "Negative = declining vegetation density. Small positive = stable recovery.",
+        fmt="slope", signal="high_good", thr1=-0.005, thr2=0.0,
+    ),
+    "ndvi_anomaly_freq_5y": dict(
+        label="Drought anomaly frequency",
+        group="Vegetation Health", group_color="#22c55e", group_index="NDVI",
+        desc="Share of months where NDVI fell more than 0.1 units below its seasonal climatological baseline. "
+             "High values indicate recurring drought or stress episodes.",
+        fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
+    ),
+    "ndwi_wetness_persistence_5y": dict(
+        label="Open-water persistence",
+        group="Open Water", group_color="#3b82f6", group_index="NDWI",
+        desc="Share of months with open water detected (NDWI &gt; 0, McFeeters). "
+             "Chronically high values indicate flooding risk or permanent water bodies. "
+             "Context-dependent: expected to be high for wetlands and riparian parcels.",
+        fmt="pct", signal="context", thr1=0.2, thr2=0.5,
+    ),
+    "ndmi_mean_5y": dict(
+        label="Average vegetation moisture",
+        group="Vegetation Moisture", group_color="#06b6d4", group_index="NDMI",
+        desc="Mean NDMI across 5 years. Positive values indicate adequate leaf water content; "
+             "negative values indicate chronic moisture deficit within the canopy.",
+        fmt="float3", signal="high_good", thr1=-0.1, thr2=0.1,
+    ),
+    "ndmi_moisture_stress_freq_5y": dict(
+        label="Moisture stress frequency",
+        group="Vegetation Moisture", group_color="#06b6d4", group_index="NDMI",
+        desc="Share of months where vegetation water stress was detected (NDMI &lt; 0). "
+             "Contributes directly to the drought risk sub-score.",
+        fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
+    ),
+    "nbr_mean_5y": dict(
+        label="Average burn ratio",
+        group="Fire History", group_color="#f97316", group_index="NBR",
+        desc="Mean NBR over 5 years. Healthy unburned vegetation typically exceeds 0.3. "
+             "Low or negative values indicate sustained fire damage or bare mineral soil.",
+        fmt="float3", signal="high_good", thr1=0.1, thr2=0.3,
+    ),
+    "nbr_burn_freq_5y": dict(
+        label="Burn signal frequency",
+        group="Fire History", group_color="#f97316", group_index="NBR",
+        desc="Share of months where a burn signal was present (NBR &lt; 0.1). "
+             "Directly sets the fire exposure score. Even low frequencies are significant.",
+        fmt="pct", signal="low_good", thr1=0.05, thr2=0.15,
+    ),
+    "ndsi_snow_persistence_5y": dict(
+        label="Snow-cover persistence",
+        group="Snow Cover", group_color="#a5f3fc", group_index="NDSI",
+        desc="Share of months with snow detected (NDSI &gt; 0.4). "
+             "Note: open water bodies can produce high NDSI values similar to snow &mdash; "
+             "high readings in low-elevation or coastal parcels may indicate water, not snowpack.",
+        fmt="pct", signal="context", thr1=0.1, thr2=0.4,
+    ),
+    "bsi_mean_5y": dict(
+        label="Average bare soil exposure",
+        group="Bare Soil", group_color="#d97706", group_index="BSI",
+        desc="Mean BSI over 5 years. Positive values indicate bare or degraded ground is dominant; "
+             "negative values indicate vegetated surfaces suppressing the soil signal.",
+        fmt="float3", signal="low_good", thr1=0.0, thr2=0.2,
+    ),
+    "bsi_bare_soil_freq_5y": dict(
+        label="Bare soil frequency",
+        group="Bare Soil", group_color="#d97706", group_index="BSI",
+        desc="Share of months with bare soil dominant (BSI &gt; 0). "
+             "Can reflect land degradation, erosion risk, or seasonal tillage patterns.",
+        fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
+    ),
+    "canopy_proxy_50m": dict(
+        label="Canopy density — 50 m buffer",
+        group="Canopy & Context", group_color="#4ade80", group_index="NDVI",
+        desc="Peak-season NDVI averaged within a 50 m buffer around the parcel boundary. "
+             "Proxies immediate tree cover, shading potential, and micro-climate buffering.",
+        fmt="float3", signal="high_good", thr1=0.2, thr2=0.4,
+    ),
+    "canopy_proxy_200m": dict(
+        label="Canopy density — 200 m buffer",
+        group="Canopy & Context", group_color="#4ade80", group_index="NDVI",
+        desc="Peak-season NDVI averaged within a 200 m buffer. Broader landscape context. "
+             "Drives the heat mitigation sub-score.",
+        fmt="float3", signal="high_good", thr1=0.2, thr2=0.4,
+    ),
+    "quality_score": dict(
+        label="Data quality",
+        group="Quality", group_color="#9ca3af", group_index=None,
+        desc="Composite 0&ndash;1 score based on scene coverage, cloud fraction, and valid pixel ratio. "
+             "Below 0.5: low confidence &mdash; features may be unreliable.",
+        fmt="score", signal="high_good", thr1=0.4, thr2=0.7,
+    ),
+}
+
+_GROUP_ORDER = [
+    "Vegetation Health",
+    "Open Water",
+    "Vegetation Moisture",
+    "Fire History",
+    "Snow Cover",
+    "Bare Soil",
+    "Canopy & Context",
+    "Quality",
+    "Other",
+]
+
+
+def _fmt_feat_value(v: float, fmt: str) -> str:
+    if fmt == "pct":
+        return f"{v * 100:.1f}%"
+    if fmt == "slope":
+        return f"{v:+.4f} / yr"
+    if fmt == "score":
+        return f"{v * 100:.0f} / 100"
+    return f"{v:+.3f}"  # float3
+
+
+def _feat_color(v: float, signal: str, thr1: float, thr2: float) -> str:
+    """Return a CSS hex color for the value given the signal direction and thresholds."""
+    if signal == "context":
+        return "#9ca3af"
+    if signal == "high_good":
+        return "#22c55e" if v >= thr2 else ("#f59e0b" if v >= thr1 else "#ef4444")
+    # low_good
+    return "#22c55e" if v <= thr1 else ("#f59e0b" if v <= thr2 else "#ef4444")
+
+
+def _mini_bar(v: float, fmt: str, color: str) -> str:
+    """Small horizontal fill bar for pct / score features."""
+    if fmt not in ("pct", "score"):
+        return ""
+    pct = min(100.0, v * 100)
+    return (
+        f'<div class="feat-mini-bg">'
+        f'<div class="feat-mini-fill" style="width:{pct:.1f}%;background:{color}"></div>'
+        f'</div>'
+    )
+
+
+def _features_html(features: dict) -> str:
+    """Render the Derived Features section as grouped, annotated cards."""
     if not features:
-        return '<tr><td colspan="2" class="no-data">No features computed yet.</td></tr>'
-    rows = []
-    for k, v in sorted(features.items()):
-        if isinstance(v, float):
-            display = f"{v:.4f}"
-        else:
-            display = str(v)
-        rows.append(f"<tr><td>{k}</td><td>{display}</td></tr>")
-    return "\n".join(rows)
+        return '<p class="no-data">No features computed yet.</p>'
+
+    # Bucket features into groups (preserving _GROUP_ORDER)
+    grouped: dict[str, list[tuple[str, float]]] = {g: [] for g in _GROUP_ORDER}
+    for k, v in features.items():
+        if not isinstance(v, (int, float)):
+            continue
+        meta = _FM.get(k)
+        group = meta["group"] if meta else "Other"
+        grouped.setdefault(group, []).append((k, float(v)))
+
+    parts = ['<div class="feat-groups">']
+    for group_name in _GROUP_ORDER:
+        rows = grouped.get(group_name, [])
+        if not rows:
+            continue
+
+        first_meta = next((_FM[k] for k, _ in rows if k in _FM), None)
+        g_color = first_meta["group_color"] if first_meta else "#6b7280"
+        g_index = first_meta.get("group_index") if first_meta else None
+        idx_badge = (
+            f'<span class="feat-group-idx">{g_index}</span>' if g_index else ""
+        )
+
+        parts.append(
+            f'<div class="feat-group">'
+            f'<div class="feat-group-hdr">'
+            f'<span class="feat-group-dot" style="background:{g_color}"></span>'
+            f'{group_name}{idx_badge}'
+            f'</div>'
+        )
+
+        for k, v in rows:
+            meta = _FM.get(k)
+            if meta:
+                label = meta["label"]
+                desc = f'<div class="feat-desc">{meta["desc"]}</div>'
+                fmt = meta["fmt"]
+                color = _feat_color(v, meta["signal"], meta["thr1"], meta["thr2"])
+                val_str = _fmt_feat_value(v, fmt)
+                bar = _mini_bar(v, fmt, color)
+            else:
+                label = k.replace("_", " ")
+                desc = ""
+                color = "#9ca3af"
+                val_str = f"{v:.4f}"
+                bar = ""
+
+            parts.append(
+                f'<div class="feat-row">'
+                f'<div class="feat-info">'
+                f'<div class="feat-label">{label}</div>'
+                f'{desc}'
+                f'</div>'
+                f'<div class="feat-val-col">'
+                f'<div class="feat-val" style="color:{color}">{val_str}</div>'
+                f'{bar}'
+                f'<div class="feat-key-mono">{k}</div>'
+                f'</div>'
+                f'</div>'
+            )
+
+        parts.append('</div>')
+
+    parts.append('</div>')
+    return "\n".join(parts)
 
 
 def _chart_datasets(series: dict[str, list[dict]]) -> tuple[list[str], str]:
@@ -492,7 +722,7 @@ def build_report_html(
 
     # Feature rows
     feat = features or {}
-    feat_rows = _feature_rows(feat)
+    features_html = _features_html(feat)
 
     # Per-index min/max from timeseries (used by the index reference legend bars)
     index_stats: dict[str, dict] = {}
@@ -602,9 +832,7 @@ def build_report_html(
   <!-- Features -->
   <div class="card">
     <h2>Derived features</h2>
-    <table class="feat-table">
-      <tbody>{feat_rows}</tbody>
-    </table>
+    {features_html}
   </div>
 
   <!-- Index Reference -->
