@@ -361,12 +361,12 @@ def _scene_rows(scene_months: list[dict]) -> str:
 
         b04_b64  = band_to_b64(red)                          if red is not None else None
         b08_b64  = band_to_b64(nir)                          if nir is not None else None
-        ndvi_b64 = ndvi_to_b64(nir, red)                     if (nir and red)   else None
-        ndwi_b64 = ndwi_to_b64(green, nir)                   if (green and nir) else None
-        ndmi_b64 = ndmi_to_b64(nir, swir)                    if (nir and swir)  else None
-        nbr_b64  = nbr_to_b64(nir, swir2)                    if (nir and swir2) else None
-        ndsi_b64 = ndsi_to_b64(green, swir)                  if (green and swir) else None
-        bsi_b64  = bsi_to_b64(swir, red, nir, blue)          if (swir and red and nir and blue) else None
+        ndvi_b64 = ndvi_to_b64(nir, red)            if (nir is not None and red is not None) else None
+        ndwi_b64 = ndwi_to_b64(green, nir)          if (green is not None and nir is not None) else None
+        ndmi_b64 = ndmi_to_b64(nir, swir)           if (nir is not None and swir is not None) else None
+        nbr_b64  = nbr_to_b64(nir, swir2)           if (nir is not None and swir2 is not None) else None
+        ndsi_b64 = ndsi_to_b64(green, swir)         if (green is not None and swir is not None) else None
+        bsi_b64  = bsi_to_b64(swir, red, nir, blue) if (swir is not None and red is not None and nir is not None and blue is not None) else None
 
         rows.append(f"""
         <tr>
