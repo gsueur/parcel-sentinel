@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# DuckDB database files
+*.duckdb
+*.duckdb.wal
