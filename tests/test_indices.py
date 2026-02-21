@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.parcel_sentinel.compute.indices import compute_ndvi, compute_ndwi_gao, spatial_mean
+from src.parcel_sentinel.compute.indices import compute_ndvi, compute_ndwi, spatial_mean
 
 
 class TestNDVI:
@@ -35,11 +35,27 @@ class TestNDVI:
 
 class TestNDWI:
     def test_basic_ndwi(self):
-        nir = np.array([4000.0, 3000.0])
-        swir = np.array([2000.0, 2000.0])
-        ndwi = compute_ndwi_gao(nir, swir)
-        expected = (nir - swir) / (nir + swir)
+        # McFeeters: (GREEN - NIR) / (GREEN + NIR)
+        # Water: GREEN >> NIR → positive; vegetation: NIR >> GREEN → negative
+        green = np.array([3000.0, 1000.0])
+        nir   = np.array([1000.0, 4000.0])
+        ndwi = compute_ndwi(green, nir)
+        expected = (green - nir) / (green + nir)
         np.testing.assert_allclose(ndwi, expected)
+
+    def test_water_positive(self):
+        # Water: high green reflectance, low NIR → NDWI > 0
+        green = np.array([3000.0])
+        nir   = np.array([500.0])
+        ndwi = compute_ndwi(green, nir)
+        assert ndwi[0] > 0
+
+    def test_vegetation_negative(self):
+        # Vegetation: high NIR, low green → NDWI < 0
+        green = np.array([800.0])
+        nir   = np.array([4000.0])
+        ndwi = compute_ndwi(green, nir)
+        assert ndwi[0] < 0
 
 
 class TestSpatialMean:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from .render import band_to_b64, ndvi_to_b64
+from .render import band_to_b64, ndvi_to_b64, ndwi_to_b64
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -67,11 +67,49 @@ table.scenes img { display: block; width: 128px; height: 128px;
 /* Chart */
 .chart-wrap { position: relative; height: 260px; }
 
+/* NDWI legend */
+.ndwi-legend { margin-top: 16px; }
+.ndwi-legend-label { font-size: 0.78rem; color: #9ca3af; margin-bottom: 6px; }
+.ndwi-bar {
+  height: 16px; border-radius: 4px;
+  background: linear-gradient(to right,
+    #a01e1e 0%,        /* -1.0  drought */
+    #dcaa6e 35%,       /* -0.3  non-aqueous */
+    #ebe1c8 50%,       /* 0.0   boundary */
+    #64b4f0 60%,       /* 0.2   flooding/humidity */
+    #0028a0 100%       /* 1.0   open water */
+  );
+}
+.ndwi-ticks { display: flex; justify-content: space-between;
+              font-size: 0.7rem; color: #6b7280; margin-top: 3px; }
+.ndwi-ranges { display: flex; margin-top: 8px; gap: 8px; flex-wrap: wrap; }
+.ndwi-range { display: flex; align-items: center; gap: 5px; font-size: 0.75rem; color: #9ca3af; }
+.ndwi-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+
 /* No-data */
 .no-data { color: #4b5563; font-style: italic; font-size: 0.85rem; }
 """
 
 _CHART_JS_CDN = "https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"
+
+_NDWI_LEGEND_HTML = """
+<div class="ndwi-legend">
+  <div class="ndwi-legend-label">NDWI (McFeeters) &mdash; (Green &minus; NIR) / (Green + NIR)</div>
+  <div class="ndwi-bar"></div>
+  <div class="ndwi-ticks">
+    <span>&minus;1.0</span>
+    <span>&minus;0.3</span>
+    <span>0.0</span>
+    <span>+0.2</span>
+    <span>+1.0</span>
+  </div>
+  <div class="ndwi-ranges">
+    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#0028a0"></div>0.2 &ndash; 1.0 &nbsp;Water surface</div>
+    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#64b4f0"></div>0.0 &ndash; 0.2 &nbsp;Flooding / humidity</div>
+    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#ebe1c8"></div>&minus;0.3 &ndash; 0.0 &nbsp;Non-aqueous / moderate drought</div>
+    <div class="ndwi-range"><div class="ndwi-swatch" style="background:#a01e1e"></div>&minus;1.0 &ndash; &minus;0.3 &nbsp;Drought / non-aqueous</div>
+  </div>
+</div>"""
 
 
 def _score_bar(label: str, value: int | None, css_class: str) -> str:
@@ -136,28 +174,30 @@ def _chart_datasets(series: dict[str, list[dict]]) -> tuple[list[str], str]:
 
 def _scene_rows(scene_months: list[dict]) -> str:
     if not scene_months:
-        return '<tr><td colspan="4" class="no-data">No scene images cached yet.</td></tr>'
+        return '<tr><td colspan="5" class="no-data">No scene images cached yet.</td></tr>'
     rows = []
     for entry in scene_months:
         month = entry["month_key"]
         bands = entry["bands"]
-        nir, red = bands.get("B08"), bands.get("B04")
+        nir, red, green = bands.get("B08"), bands.get("B04"), bands.get("B03")
 
         def img_or_empty(b64: str | None, alt: str) -> str:
             if b64:
                 return f'<img src="data:image/png;base64,{b64}" alt="{alt}">'
             return f'<div class="no-img">no {alt}</div>'
 
-        b04_b64 = band_to_b64(red) if red is not None else None
-        b08_b64 = band_to_b64(nir) if nir is not None else None
-        ndvi_b64 = ndvi_to_b64(nir, red) if (nir is not None and red is not None) else None
+        b04_b64  = band_to_b64(red)              if red   is not None else None
+        b08_b64  = band_to_b64(nir)              if nir   is not None else None
+        ndvi_b64 = ndvi_to_b64(nir, red)         if (nir is not None and red   is not None) else None
+        ndwi_b64 = ndwi_to_b64(green, nir)       if (nir is not None and green is not None) else None
 
         rows.append(f"""
         <tr>
           <td>{month}</td>
-          <td>{img_or_empty(b04_b64, 'B04 Red')}</td>
-          <td>{img_or_empty(b08_b64, 'B08 NIR')}</td>
+          <td>{img_or_empty(b04_b64,  'B04 Red')}</td>
+          <td>{img_or_empty(b08_b64,  'B08 NIR')}</td>
           <td>{img_or_empty(ndvi_b64, 'NDVI')}</td>
+          <td>{img_or_empty(ndwi_b64, 'NDWI')}</td>
         </tr>""")
     return "\n".join(rows)
 
@@ -223,6 +263,7 @@ def build_report_html(
     # Chart
     if timeseries:
         _, chart_data = _chart_datasets(timeseries)
+        has_ndwi = "ndwi" in timeseries
         chart_html = f"""
         <div class="chart-wrap">
           <canvas id="tsChart"></canvas>
@@ -242,7 +283,8 @@ def build_report_html(
             }}
           }}
         }});
-        </script>"""
+        </script>
+        {_NDWI_LEGEND_HTML if has_ndwi else ""}"""
     else:
         chart_html = '<p class="no-data">No time series stored yet. Call /v1/parcel/timeseries first.</p>'
 
@@ -335,6 +377,7 @@ def build_report_html(
             <th>B04 &mdash; Red (gray)</th>
             <th>B08 &mdash; NIR (gray)</th>
             <th>NDVI (color)</th>
+            <th>NDWI (color)</th>
           </tr>
         </thead>
         <tbody>{scene_rows}</tbody>

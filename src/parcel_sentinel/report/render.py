@@ -40,6 +40,39 @@ def _build_ndvi_lut() -> np.ndarray:
 _NDVI_LUT = _build_ndvi_lut()
 
 
+# NDWI (McFeeters) colormap: 5 stops mapped to t in [0, 1] where t = (ndwi + 1) / 2
+# ndwi=-1.0 → t=0.00 → deep red    (severe drought)
+# ndwi=-0.3 → t=0.35 → tan/beige   (non-aqueous transition)
+# ndwi= 0.0 → t=0.50 → pale        (boundary)
+# ndwi= 0.2 → t=0.60 → light blue  (flooding / humidity)
+# ndwi= 1.0 → t=1.00 → deep blue   (open water)
+_NDWI_STOPS_T = np.array([0.00, 0.35, 0.50, 0.60, 1.00], dtype=np.float32)
+_NDWI_STOPS_RGB = np.array([
+    [160,  30,  30],   # deep red      (drought)
+    [220, 170, 110],   # tan/beige     (non-aqueous)
+    [235, 225, 200],   # pale          (zero boundary)
+    [100, 180, 240],   # light blue    (flooding/humidity)
+    [  0,  40, 160],   # deep blue     (open water)
+], dtype=np.float32)
+
+
+def _build_ndwi_lut() -> np.ndarray:
+    """Pre-build a 256×3 uint8 lookup table for the NDWI colormap."""
+    lut = np.zeros((256, 3), dtype=np.uint8)
+    ts = np.linspace(0.0, 1.0, 256)
+    for i, t in enumerate(ts):
+        idx = np.searchsorted(_NDWI_STOPS_T, t, side="right") - 1
+        idx = int(np.clip(idx, 0, len(_NDWI_STOPS_T) - 2))
+        t0, t1 = _NDWI_STOPS_T[idx], _NDWI_STOPS_T[idx + 1]
+        alpha = (t - t0) / (t1 - t0 + 1e-9)
+        rgb = _NDWI_STOPS_RGB[idx] * (1 - alpha) + _NDWI_STOPS_RGB[idx + 1] * alpha
+        lut[i] = np.clip(rgb, 0, 255).astype(np.uint8)
+    return lut
+
+
+_NDWI_LUT = _build_ndwi_lut()
+
+
 def _to_png_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
@@ -60,6 +93,23 @@ def band_to_b64(arr: np.ndarray, scale: int = 4) -> str:
         arr = np.zeros_like(arr)
     pixels = (arr * 255).astype(np.uint8)
     img = Image.fromarray(pixels, mode="L")
+    if scale > 1:
+        img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
+    return _to_b64(_to_png_bytes(img))
+
+
+def ndwi_to_b64(green: np.ndarray, nir: np.ndarray, scale: int = 4) -> str:
+    """Compute NDWI (McFeeters) from GREEN and NIR arrays and render with the NDWI colormap."""
+    green = green.astype(np.float32)
+    nir = nir.astype(np.float32)
+    denom = green + nir
+    with np.errstate(invalid="ignore", divide="ignore"):
+        ndwi = np.where(denom > 0, (green - nir) / denom, np.nan)
+    ndwi = np.nan_to_num(ndwi, nan=0.0)
+    # Map ndwi [-1, 1] → lut index [0, 255]
+    idx = np.clip(((ndwi + 1) / 2 * 255).astype(np.int32), 0, 255)
+    rgb = _NDWI_LUT[idx]  # (H, W, 3)
+    img = Image.fromarray(rgb, mode="RGB")
     if scale > 1:
         img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
     return _to_b64(_to_png_bytes(img))

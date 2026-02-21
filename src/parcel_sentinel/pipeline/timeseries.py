@@ -8,7 +8,7 @@ import numpy as np
 import shapely
 
 from ..compute.aggregation import MonthlyRecord, Observation, aggregate_monthly
-from ..compute.indices import compute_ndvi, compute_ndwi_gao, spatial_mean
+from ..compute.indices import compute_ndvi, compute_ndwi, spatial_mean
 from ..config import settings
 from ..geometry.normalize import geojson_to_shapely, geometry_hash
 from ..geometry.reproject import get_utm_crs, reproject_geometry
@@ -60,8 +60,8 @@ async def _process_scene(
     scene_id = item.id
 
     band_keys = ["B04", "B08", "SCL"]
-    if MetricName.ndwi in metrics and "swir16" in item.assets:
-        band_keys.append("B11")
+    if MetricName.ndwi in metrics and "green" in item.assets:
+        band_keys.append("B03")
 
     epsg = _extract_epsg(item)
     bounds = _get_bounds_in_scene_crs(geom, epsg)
@@ -124,12 +124,12 @@ async def _process_scene(
             )
 
     if MetricName.ndwi in metrics:
+        green = scene_data.bands.get("B03")
         nir = scene_data.bands.get("B08")
-        swir = scene_data.bands.get("B11")
-        if nir is not None and swir is not None:
+        if green is not None and nir is not None:
+            green_masked = mask_band(green, valid_mask)
             nir_masked = mask_band(nir, valid_mask)
-            swir_masked = mask_band(swir, valid_mask)
-            ndwi = compute_ndwi_gao(nir_masked, swir_masked)
+            ndwi = compute_ndwi(green_masked, nir_masked)
             results["ndwi"] = Observation(
                 month_key=scene_ref.month_key,
                 mean_value=spatial_mean(ndwi),

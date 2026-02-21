@@ -10,13 +10,15 @@ def compute_ndvi(nir: np.ndarray, red: np.ndarray) -> np.ndarray:
     return ndvi
 
 
-def compute_ndwi_gao(nir: np.ndarray, swir: np.ndarray) -> np.ndarray:
-    """NDWI (Gao) = (NIR - SWIR) / (NIR + SWIR). NaN-safe.
+def compute_ndwi(green: np.ndarray, nir: np.ndarray) -> np.ndarray:
+    """NDWI (McFeeters 1996) = (GREEN - NIR) / (GREEN + NIR). NaN-safe.
 
-    Uses the Gao (1996) moisture index definition locked in processing version s2l2a-v1.0.0.
+    Sentinel-2 bands: B03 (Green) and B08 (NIR).
+    Positive values indicate open water; negative values indicate soil and vegetation.
+    Locked in processing version s2l2a-v1.1.0.
     """
     with np.errstate(divide="ignore", invalid="ignore"):
-        ndwi = (nir - swir) / (nir + swir)
+        ndwi = (green - nir) / (green + nir)
     return ndwi
 
 
