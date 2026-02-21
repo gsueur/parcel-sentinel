@@ -13,7 +13,7 @@ class TestNormalize:
         h1 = geometry_hash(sample_polygon)
         h2 = geometry_hash(sample_polygon)
         assert h1 == h2
-        assert h1.startswith("sha256:")
+        assert len(h1) == 6
 
     def test_hash_includes_buffers(self, sample_polygon):
         h_no_buf = geometry_hash(sample_polygon)

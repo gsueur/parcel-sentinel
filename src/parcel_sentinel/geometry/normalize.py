@@ -23,7 +23,7 @@ def geometry_hash(geom: shapely.Geometry, buffers_m: list[int] | None = None) ->
     h = hashlib.sha256(wkb)
     if buffers_m:
         h.update(",".join(str(b) for b in sorted(buffers_m)).encode())
-    return f"sha256:{h.hexdigest()}"
+    return h.hexdigest()[:6]
 
 
 def geojson_to_shapely(geojson: dict) -> shapely.Geometry:
