@@ -15,10 +15,10 @@ async def run_score(
     geom_geojson: dict,
     date_end: str,
     lookback_years: int = 5,
-) -> tuple[str, ScoreResult]:
+) -> tuple:
     """Run scoring pipeline: derive date range, compute features, score.
 
-    Returns (location_key, score_result).
+    Returns (location_key, score_result, features, quality, date_start, series).
     """
     d_end = date.fromisoformat(date_end)
     d_start = date(d_end.year - lookback_years, d_end.month, d_end.day)
@@ -31,7 +31,7 @@ async def run_score(
     ]
     buffers_m = [50, 200]
 
-    location_key, features, quality = await run_features(
+    location_key, features, quality, series = await run_features(
         geom_geojson=geom_geojson,
         date_start=date_start,
         date_end=date_end,
@@ -40,4 +40,4 @@ async def run_score(
     )
 
     result = compute_scores(features)
-    return location_key, result, features, quality, date_start
+    return location_key, result, features, quality, date_start, series

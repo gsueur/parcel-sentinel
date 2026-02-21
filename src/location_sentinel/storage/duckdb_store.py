@@ -592,11 +592,17 @@ class DuckDBStore:
         """
         if self._conn is None:
             return []
-        # Get distinct (scene_id, month_key) ordered by month desc
+        # One scene per month: pick the scene with lowest cloud fraction.
         scenes = self._conn.execute(
             """
-            SELECT DISTINCT scene_id, month_key FROM scene_bands
-            WHERE location_key = ? AND processing_version = ?
+            SELECT scene_id, month_key FROM (
+                SELECT scene_id, month_key, MIN(cloud_fraction) AS cf,
+                       ROW_NUMBER() OVER (PARTITION BY month_key ORDER BY MIN(cloud_fraction) ASC) AS rn
+                FROM scene_bands
+                WHERE location_key = ? AND processing_version = ?
+                GROUP BY scene_id, month_key
+            )
+            WHERE rn = 1
             ORDER BY month_key DESC
             LIMIT ?
             """,

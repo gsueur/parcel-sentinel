@@ -36,7 +36,7 @@ async def post_score(req: ScoreRequest):
             return cached
 
     try:
-        location_key, score_result, features, quality, date_start = await run_score(
+        location_key, score_result, features, quality, date_start, series = await run_score(
             geom_geojson=req.geometry.model_dump(),
             date_end=de,
             lookback_years=req.lookback_years,
@@ -90,5 +90,6 @@ async def post_score(req: ScoreRequest):
         date_start, de,
         features, quality.model_dump(),
     )
+    store.save_timeseries(location_key, settings.PROCESSING_VERSION, "monthly", series)
 
     return response

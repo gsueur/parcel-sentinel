@@ -28,7 +28,7 @@ async def run_features(
     date_end: str,
     metrics: list[MetricName],
     buffers_m: list[int],
-) -> tuple[str, dict[str, float | None], QualityInfo]:
+) -> tuple[str, dict[str, float | None], QualityInfo, dict[str, list[dict]]]:
     """Run features pipeline: timeseries -> derived features.
 
     Returns (location_key, features_dict, quality).
@@ -102,4 +102,4 @@ async def run_features(
         quality.mean_cloud_fraction,
     )
 
-    return location_key, features, quality
+    return location_key, features, quality, series

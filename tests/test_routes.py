@@ -157,6 +157,7 @@ class TestScore:
             {"ndvi_mean_5y": 0.42},  # features
             mock_quality,             # quality
             "2019-01-31",             # date_start
+            {"ndvi": [{"month": "2019-01", "mean": 0.42, "obs": 1, "cloud": 0.05}]},  # series dict
         )
 
         resp = client.post("/v1/location/score", json={

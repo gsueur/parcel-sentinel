@@ -40,7 +40,7 @@ async def post_features(req: FeaturesRequest):
             return cached
 
     try:
-        location_key, features, quality = await run_features(
+        location_key, features, quality, series = await run_features(
             geom_geojson=req.geometry.model_dump(),
             date_start=ds,
             date_end=de,
@@ -79,5 +79,6 @@ async def post_features(req: FeaturesRequest):
         ds, de,
         features, quality.model_dump(),
     )
+    store.save_timeseries(location_key, settings.PROCESSING_VERSION, "monthly", series)
 
     return response
