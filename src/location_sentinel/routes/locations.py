@@ -1,9 +1,22 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+import logging
+import uuid
+
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from ..config import settings
+from ..geometry.validate import GeometryValidationError
+from ..models.requests import LocationRequest
+from ..models.responses import LocationResponse
+from ..models.common import DateWindow
+from ..pipeline.score_pipeline import run_score
+from ..storage.cache import cache
 from ..storage.duckdb_store import store
+from ..thumbnails.links import build_map_links
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -33,6 +46,75 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 .updated { font-size: 0.75rem; color: #4b5563; flex-shrink: 0; text-align: right; }
 .empty { color: #4b5563; font-style: italic; padding: 24px 0; }
 """
+
+
+@router.post("/locations", response_model=LocationResponse)
+async def create_location(req: LocationRequest):
+    """Create or refresh a location: runs the full pipeline in one call.
+
+    Computes scores, derived features, and monthly timeseries, persists
+    everything, and returns a unified response with a direct report link.
+    """
+    trace_id = uuid.uuid4().hex[:12]
+    de = req.date_end.isoformat()
+
+    cache_key = (
+        f"location|{req.geometry.model_dump_json()}"
+        f"|{de}|{req.lookback_years}"
+        f"|{settings.SCORE_VERSION}|{settings.PROCESSING_VERSION}"
+    )
+
+    if not req.force_recompute:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+    try:
+        location_key, score_result, features, quality, date_start, series = await run_score(
+            geom_geojson=req.geometry.model_dump(),
+            date_end=de,
+            lookback_years=req.lookback_years,
+        )
+    except GeometryValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception:
+        logger.exception("Computation failed trace_id=%s", trace_id)
+        raise HTTPException(status_code=500, detail=f"Computation failed (trace_id={trace_id})")
+
+    geom_dict = req.geometry.model_dump()
+    store.save_geometry(location_key, geom_dict, name=req.name, customer_id=req.customer_id)
+    store.save_scores(location_key, settings.SCORE_VERSION, req.lookback_years, {
+        "drought_score": score_result.drought_score,
+        "wetness_score": score_result.wetness_score,
+        "fire_exposure_score": score_result.fire_exposure_score,
+        "heat_mitigation_score": score_result.heat_mitigation_score,
+        "composite_score": score_result.composite_score,
+    })
+    store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,
+                        features, quality.model_dump())
+    store.save_timeseries(location_key, settings.PROCESSING_VERSION, "monthly", series)
+
+    response = LocationResponse(
+        location_key=location_key,
+        name=req.name,
+        processing_version=settings.PROCESSING_VERSION,
+        score_version=settings.SCORE_VERSION,
+        date_window=DateWindow(start=date_start, end=de),
+        scores={
+            "drought_score": score_result.drought_score,
+            "wetness_score": score_result.wetness_score,
+            "fire_exposure_score": score_result.fire_exposure_score,
+            "heat_mitigation_score": score_result.heat_mitigation_score,
+            "composite_score": score_result.composite_score,
+        },
+        features=features,
+        quality=quality,
+        map_links=build_map_links(location_key, geom_dict),
+    )
+    cache.set(cache_key, response)
+    return response
 
 
 @router.get("/locations")

@@ -44,6 +44,19 @@ class ScoreResponse(BaseModel):
     map_links: MapLinks | None = None
 
 
+class LocationResponse(BaseModel):
+    """Unified response from POST /v1/locations."""
+    location_key: str
+    name: str | None = None
+    processing_version: str
+    score_version: str
+    date_window: DateWindow
+    scores: dict[str, int]
+    features: dict[str, float | None]
+    quality: QualityInfo
+    map_links: MapLinks
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     version: str = ""

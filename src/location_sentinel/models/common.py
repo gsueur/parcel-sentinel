@@ -43,6 +43,7 @@ class QualityInfo(BaseModel):
 
 
 class MapLinks(BaseModel):
+    report_url: str | None = None
     geojson_io_url: str | None = None
     thumbnail_url: str | None = None
 

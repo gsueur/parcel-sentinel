@@ -17,6 +17,7 @@ def build_map_links(location_key: str, geojson_geometry: dict) -> MapLinks:
     thumbnail_url = f"/v1/thumbnail/{location_key}.png"
 
     return MapLinks(
+        report_url=f"/v1/location/{location_key}/report",
         geojson_io_url=geojson_url,
         thumbnail_url=thumbnail_url,
     )
