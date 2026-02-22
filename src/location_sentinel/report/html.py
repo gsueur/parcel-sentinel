@@ -346,7 +346,15 @@ def _index_reference_html(index_stats: dict) -> str:
 </div>"""
 
 
-def _score_bar(label: str, value: int | None, css_class: str) -> str:
+def _score_bar(label: str, value: int | None, css_class: str, suppressed: bool = False) -> str:
+    if suppressed:
+        return (
+            f'<div class="score-item">'
+            f'<label>{label}</label>'
+            f'<div class="value" style="color:#4b5563;font-size:1rem">N/A</div>'
+            f'<div style="font-size:0.72rem;color:#4b5563;margin-top:4px">Not applicable &mdash; urban location</div>'
+            f'</div>'
+        )
     if value is None:
         return f'<div class="score-item"><label>{label}</label><div class="value">—</div></div>'
     pct = max(0, min(100, value))
@@ -506,14 +514,23 @@ def _mini_bar(v: float, fmt: str, color: str) -> str:
     )
 
 
-def _features_html(features: dict) -> str:
+# Feature groups where vegetation-based signals are unreliable on impervious surfaces
+_URBAN_SUPPRESSED_GROUPS = {"Vegetation Health", "Vegetation Moisture", "Fire History"}
+
+# Keys to omit from the feature table (shown elsewhere in the report)
+_FEAT_SKIP = {"is_urban"}
+
+
+def _features_html(features: dict, is_urban: bool = False) -> str:
     """Render the Derived Features section as grouped, annotated cards."""
     if not features:
         return '<p class="no-data">No features computed yet.</p>'
 
-    # Bucket features into groups (preserving _GROUP_ORDER)
+    # Bucket features into groups (preserving _GROUP_ORDER), skipping control keys
     grouped: dict[str, list[tuple[str, float]]] = {g: [] for g in _GROUP_ORDER}
     for k, v in features.items():
+        if k in _FEAT_SKIP:
+            continue
         if not isinstance(v, (int, float)):
             continue
         meta = _FM.get(k)
@@ -533,12 +550,25 @@ def _features_html(features: dict) -> str:
             f'<span class="feat-group-idx">{g_index}</span>' if g_index else ""
         )
 
+        # Urban notice for suppressed groups
+        urban_notice = ""
+        if is_urban and group_name in _URBAN_SUPPRESSED_GROUPS:
+            g_color = "#4b5563"  # dim the group header
+            urban_notice = (
+                '<div style="padding:6px 14px;font-size:0.74rem;color:#6b7280;'
+                'border-top:1px solid #141824;background:#0d1018">'
+                'Values reflect impervious surfaces, not vegetation. '
+                'These signals are suppressed in the risk scores for this urban location.'
+                '</div>'
+            )
+
         parts.append(
             f'<div class="feat-group">'
             f'<div class="feat-group-hdr">'
             f'<span class="feat-group-dot" style="background:{g_color}"></span>'
             f'{group_name}{idx_badge}'
             f'</div>'
+            f'{urban_notice}'
         )
 
         for k, v in rows:
@@ -547,7 +577,11 @@ def _features_html(features: dict) -> str:
                 label = meta["label"]
                 desc = f'<div class="feat-desc">{meta["desc"]}</div>'
                 fmt = meta["fmt"]
-                color = _feat_color(v, meta["signal"], meta["thr1"], meta["thr2"])
+                # Gray out color coding for urban-suppressed groups
+                if is_urban and group_name in _URBAN_SUPPRESSED_GROUPS:
+                    color = "#4b5563"
+                else:
+                    color = _feat_color(v, meta["signal"], meta["thr1"], meta["thr2"])
                 val_str = _fmt_feat_value(v, fmt)
                 bar = _mini_bar(v, fmt, color)
             else:
@@ -708,16 +742,37 @@ def build_report_html(
     else:
         thumb_html = '<div class="no-thumb">No geometry stored</div>'
 
+    # Urban flag
+    feat = features or {}
+    is_urban = (feat.get("is_urban") or 0.0) > 0.5
+
     # Scores
     s = scores or {}
     composite = s.get("composite_score")
     composite_html = f'<div class="composite-big">{composite}</div>' if composite is not None else '<div class="composite-big">—</div>'
     score_bars = (
-        _score_bar("Drought", s.get("drought_score"), "drought") +
+        _score_bar("Drought", s.get("drought_score"), "drought", suppressed=is_urban) +
         _score_bar("Wetness", s.get("wetness_score"), "wetness") +
-        _score_bar("Fire exposure", s.get("fire_exposure_score"), "fire") +
+        _score_bar("Fire exposure", s.get("fire_exposure_score"), "fire", suppressed=is_urban) +
         _score_bar("Heat mitigation", s.get("heat_mitigation_score"), "heat")
     )
+
+    # Urban banner and composite formula note
+    if is_urban:
+        urban_banner = (
+            '<div style="background:#1a1f2e;border:1px solid #2d3a5a;border-radius:6px;'
+            'padding:10px 14px;margin-bottom:16px">'
+            '<div style="font-size:0.82rem;font-weight:600;color:#93c5fd;margin-bottom:4px">'
+            'Urban / Impervious Surface Detected</div>'
+            '<div style="font-size:0.74rem;color:#6b7280;line-height:1.5">'
+            'Drought and fire scores are not applicable on impervious surfaces and are suppressed. '
+            'Composite risk = <strong style="color:#e5e7eb">60% heat island</strong> (canopy deficit) '
+            '+ <strong style="color:#e5e7eb">40% surface wetness</strong> (flooding / waterlogging).'
+            '</div>'
+            '</div>'
+        )
+    else:
+        urban_banner = ""
 
     # Quality
     q = quality or {}
@@ -734,8 +789,7 @@ def build_report_html(
     )
 
     # Feature rows
-    feat = features or {}
-    features_html = _features_html(feat)
+    features_html = _features_html(feat, is_urban=is_urban)
 
     # Per-index min/max from timeseries (used by the index reference legend bars)
     index_stats: dict[str, dict] = {}
@@ -803,6 +857,7 @@ def build_report_html(
     <div class="card thumbnail">{thumb_html}</div>
     <div class="card">
       <h2>Composite score</h2>
+      {urban_banner}
       {composite_html}
       <div style="margin-top:20px">
         <h2>Sub-scores</h2>
