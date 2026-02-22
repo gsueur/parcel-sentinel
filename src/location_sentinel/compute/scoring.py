@@ -32,6 +32,7 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
     - heat_mitigation:     Canopy proxy (higher = more shade = lower heat risk)
     """
     factors: list[dict] = []
+    is_urban = (features.get("is_urban") or 0.0) > 0.5
 
     # --- Drought score (0-100) ---
     # Combines NDVI vegetation health with NDMI leaf moisture stress.
@@ -70,7 +71,9 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
         if ndmi_stress > 0.2:
             factors.append({"name": "ndmi_moisture_stress_freq_5y", "direction": "positive", "weight": 0.30})
 
-    if drought_components:
+    if is_urban:
+        drought_score = 0.0
+    elif drought_components:
         total_w = sum(drought_weights)
         drought_score = sum(c * w for c, w in zip(drought_components, drought_weights)) / total_w
     else:
@@ -90,7 +93,9 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
     # Fraction of months where NBR indicates burn signal (NBR < 0.1).
     # 0 = no fire history; 100 = burned nearly every month (extreme).
     nbr_burn_freq = features.get("nbr_burn_freq_5y")
-    if nbr_burn_freq is not None:
+    if is_urban:
+        fire_exposure_score = 0.0
+    elif nbr_burn_freq is not None:
         fire_exposure_score = nbr_burn_freq * 100
         if nbr_burn_freq > 0.05:
             factors.append({"name": "nbr_burn_freq_5y", "direction": "positive", "weight": 0.20})
@@ -106,13 +111,20 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
         heat_mitigation_score = 50.0
 
     # --- Composite (0-100) ---
-    # Heat mitigation is inverted: high mitigation reduces composite risk.
-    composite = (
-        0.35 * drought_score
-        + 0.25 * wetness_score
-        + 0.20 * fire_exposure_score
-        + 0.20 * (100 - heat_mitigation_score)
-    )
+    if is_urban:
+        # Urban: heat island (canopy deficit) + flooding are the primary risks.
+        composite = (
+            0.60 * (100 - heat_mitigation_score)
+            + 0.40 * wetness_score
+        )
+    else:
+        # Heat mitigation is inverted: high mitigation reduces composite risk.
+        composite = (
+            0.35 * drought_score
+            + 0.25 * wetness_score
+            + 0.20 * fire_exposure_score
+            + 0.20 * (100 - heat_mitigation_score)
+        )
 
     return ScoreResult(
         drought_score=_clamp(drought_score),

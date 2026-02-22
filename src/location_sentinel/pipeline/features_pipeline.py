@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from ..compute.canopy import compute_canopy_proxy_from_series
+from ..compute.urban import detect_urban
 from ..compute.features import (
     compute_anomaly_frequency,
     compute_bare_soil_frequency,
@@ -101,5 +102,11 @@ async def run_features(
         quality.months_observed,
         quality.mean_cloud_fraction,
     )
+
+    # Urban detection
+    is_urban = detect_urban(features)
+    features["is_urban"] = 1.0 if is_urban else 0.0
+    if is_urban:
+        quality.flags.append("urban_location")
 
     return location_key, features, quality, series

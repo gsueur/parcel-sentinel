@@ -89,6 +89,46 @@ class TestScoring:
         assert r1.fire_exposure_score == r2.fire_exposure_score
         assert r1.composite_score == r2.composite_score
 
+    def test_urban_drought_zeroed(self):
+        features = {
+            "is_urban": 1.0,
+            "ndvi_mean_5y": 0.10,
+            "ndvi_anomaly_freq_5y": 0.5,
+            "ndvi_trend_slope_5y": -0.04,
+            "ndmi_moisture_stress_freq_5y": 0.6,
+            "canopy_proxy_200m": 0.12,
+        }
+        result = compute_scores(features)
+        assert result.drought_score == 0
+
+    def test_urban_fire_zeroed(self):
+        features = {
+            "is_urban": 1.0,
+            "nbr_burn_freq_5y": 0.3,
+            "canopy_proxy_200m": 0.12,
+        }
+        result = compute_scores(features)
+        assert result.fire_exposure_score == 0
+
+    def test_urban_composite_formula(self):
+        # composite = 0.60*(100-heat_mitigation) + 0.40*wetness
+        # heat_mitigation = 70/80*100 ≈ 87.5 → clamped 87
+        # wetness = 20*100 = 20
+        # composite = 0.60*(100-87) + 0.40*20 = 7.8 + 8 = 15.8 → 16
+        # Use exact values: canopy=0.56 → heat_mitigation=0.56/0.8*100=70
+        # composite = 0.60*(100-70) + 0.40*20 = 18+8 = 26
+        features = {
+            "is_urban": 1.0,
+            "ndwi_wetness_persistence_5y": 0.20,
+            "canopy_proxy_200m": 0.56,  # → heat_mitigation = 70
+        }
+        result = compute_scores(features)
+        assert result.heat_mitigation_score == 70
+        assert result.wetness_score == 20
+        assert result.drought_score == 0
+        assert result.fire_exposure_score == 0
+        assert result.composite_score == 26  # 0.60*(100-70) + 0.40*20
+
     def test_scores_in_range(self):
         features = {
             "ndvi_mean_5y": 0.42,
