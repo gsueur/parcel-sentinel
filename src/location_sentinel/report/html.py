@@ -749,7 +749,42 @@ def build_report_html(
     # Scores
     s = scores or {}
     composite = s.get("composite_score")
-    composite_html = f'<div class="composite-big">{composite}</div>' if composite is not None else '<div class="composite-big">—</div>'
+
+    # Risk level label and color for composite score
+    if composite is not None:
+        if composite < 25:
+            risk_label, risk_color = "Low risk", "#22c55e"
+        elif composite < 50:
+            risk_label, risk_color = "Moderate risk", "#f59e0b"
+        elif composite < 75:
+            risk_label, risk_color = "Elevated risk", "#f97316"
+        else:
+            risk_label, risk_color = "High risk", "#ef4444"
+        risk_badge = (
+            f'<span style="display:inline-block;font-size:0.78rem;font-weight:600;'
+            f'color:{risk_color};background:{risk_color}18;border:1px solid {risk_color}44;'
+            f'border-radius:4px;padding:2px 9px;margin-left:10px;vertical-align:middle">'
+            f'{risk_label}</span>'
+        )
+    else:
+        risk_badge = ""
+
+    composite_html = (
+        f'<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">'
+        f'<div class="composite-big">{composite if composite is not None else "—"}</div>'
+        f'<span style="color:#6b7280;font-size:0.82rem;align-self:flex-end;padding-bottom:6px">'
+        f'/ 100</span>'
+        f'{risk_badge}'
+        f'</div>'
+        f'<div style="font-size:0.74rem;color:#6b7280;margin-top:6px;line-height:1.5">'
+        f'Higher score = more climate risk. Scale: '
+        f'<span style="color:#22c55e">0&ndash;24 low</span> &bull; '
+        f'<span style="color:#f59e0b">25&ndash;49 moderate</span> &bull; '
+        f'<span style="color:#f97316">50&ndash;74 elevated</span> &bull; '
+        f'<span style="color:#ef4444">75&ndash;100 high</span>'
+        f'</div>'
+    )
+
     score_bars = (
         _score_bar("Drought", s.get("drought_score"), "drought", suppressed=is_urban) +
         _score_bar("Wetness", s.get("wetness_score"), "wetness") +
@@ -757,22 +792,41 @@ def build_report_html(
         _score_bar("Heat mitigation", s.get("heat_mitigation_score"), "heat")
     )
 
-    # Urban banner and composite formula note
+    # Urban banner + formula note
+    _pill = (
+        'display:inline-block;font-size:0.72rem;font-weight:500;'
+        'border-radius:3px;padding:1px 7px;margin:2px 3px 2px 0'
+    )
     if is_urban:
         urban_banner = (
             '<div style="background:#1a1f2e;border:1px solid #2d3a5a;border-radius:6px;'
             'padding:10px 14px;margin-bottom:16px">'
-            '<div style="font-size:0.82rem;font-weight:600;color:#93c5fd;margin-bottom:4px">'
+            '<div style="font-size:0.82rem;font-weight:600;color:#93c5fd;margin-bottom:6px">'
             'Urban / Impervious Surface Detected</div>'
-            '<div style="font-size:0.74rem;color:#6b7280;line-height:1.5">'
-            'Drought and fire scores are not applicable on impervious surfaces and are suppressed. '
-            'Composite risk = <strong style="color:#e5e7eb">60% heat island</strong> (canopy deficit) '
-            '+ <strong style="color:#e5e7eb">40% surface wetness</strong> (flooding / waterlogging).'
+            '<div style="font-size:0.74rem;color:#6b7280;line-height:1.8">'
+            'Drought and fire scores are suppressed (not applicable on impervious surfaces).<br>'
+            'Composite = '
+            f'<span style="{_pill};background:#22c55e22;color:#4ade80">60% heat island</span>'
+            '(canopy deficit) + '
+            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">40% wetness</span>'
+            '(flooding / waterlogging)'
             '</div>'
             '</div>'
         )
+        formula_note = ""
     else:
         urban_banner = ""
+        formula_note = (
+            '<div style="font-size:0.72rem;color:#4b5563;margin-bottom:14px;line-height:1.8">'
+            'Composite = '
+            f'<span style="{_pill};background:#ef444422;color:#f87171">35% drought</span>'
+            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">25% wetness</span>'
+            f'<span style="{_pill};background:#f9731622;color:#fb923c">20% fire</span>'
+            f'<span style="{_pill};background:#22c55e22;color:#4ade80">20% heat island</span>'
+            '<br><span style="color:#374151">Heat mitigation score is inverted: '
+            'higher canopy = lower heat contribution to composite.</span>'
+            '</div>'
+        )
 
     # Quality
     q = quality or {}
@@ -861,6 +915,7 @@ def build_report_html(
       {composite_html}
       <div style="margin-top:20px">
         <h2>Sub-scores</h2>
+        {formula_note}
         <div class="scores">{score_bars}</div>
       </div>
     </div>
