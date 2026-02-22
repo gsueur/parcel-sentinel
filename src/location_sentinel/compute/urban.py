@@ -15,7 +15,7 @@ def detect_urban(features: dict[str, float | None]) -> bool:
     """
     bsi = features.get("bsi_mean_5y")
     ndvi = features.get("ndvi_mean_5y")
-    canopy = features.get("canopy_proxy_200m") or features.get("canopy_proxy_50m")
+    canopy = features.get("canopy_proxy")
 
     if bsi is None or ndvi is None:
         return False

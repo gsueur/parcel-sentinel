@@ -104,7 +104,7 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
 
     # --- Heat mitigation score (0-100) ---
     # Higher canopy = better heat mitigation (higher score = more mitigation = LESS risk).
-    canopy = features.get("canopy_proxy_200m") or features.get("canopy_proxy_50m")
+    canopy = features.get("canopy_proxy")
     if canopy is not None:
         heat_mitigation_score = max(0, min(100, canopy / 0.8 * 100))
     else:

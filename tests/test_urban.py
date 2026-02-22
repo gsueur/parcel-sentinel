@@ -8,7 +8,7 @@ class TestDetectUrban:
         features = {
             "bsi_mean_5y": 0.15,
             "ndvi_mean_5y": 0.10,
-            "canopy_proxy_200m": 0.12,
+            "canopy_proxy": 0.12,
         }
         assert detect_urban(features) is True
 
@@ -16,7 +16,7 @@ class TestDetectUrban:
         features = {
             "bsi_mean_5y": -0.05,
             "ndvi_mean_5y": 0.55,
-            "canopy_proxy_200m": 0.65,
+            "canopy_proxy": 0.65,
         }
         assert detect_urban(features) is False
 
@@ -24,14 +24,14 @@ class TestDetectUrban:
         # Missing bsi → safe default: non-urban
         features = {
             "ndvi_mean_5y": 0.10,
-            "canopy_proxy_200m": 0.12,
+            "canopy_proxy": 0.12,
         }
         assert detect_urban(features) is False
 
     def test_urban_false_missing_ndvi(self):
         features = {
             "bsi_mean_5y": 0.15,
-            "canopy_proxy_200m": 0.12,
+            "canopy_proxy": 0.12,
         }
         assert detect_urban(features) is False
 
@@ -48,7 +48,7 @@ class TestDetectUrban:
         features = {
             "bsi_mean_5y": 0.15,
             "ndvi_mean_5y": 0.40,
-            "canopy_proxy_200m": 0.12,
+            "canopy_proxy": 0.12,
         }
         assert detect_urban(features) is False
 
@@ -57,6 +57,6 @@ class TestDetectUrban:
         features = {
             "bsi_mean_5y": 0.02,
             "ndvi_mean_5y": 0.10,
-            "canopy_proxy_200m": 0.12,
+            "canopy_proxy": 0.12,
         }
         assert detect_urban(features) is False

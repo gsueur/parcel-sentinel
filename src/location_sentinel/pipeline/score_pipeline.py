@@ -29,14 +29,12 @@ async def run_score(
         MetricName.nbr, MetricName.ndsi, MetricName.bsi,
         MetricName.canopy_proxy,
     ]
-    buffers_m = [50, 200]
 
     location_key, features, quality, series = await run_features(
         geom_geojson=geom_geojson,
         date_start=date_start,
         date_end=date_end,
         metrics=metrics,
-        buffers_m=buffers_m,
     )
 
     result = compute_scores(features)

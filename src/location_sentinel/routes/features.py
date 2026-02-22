@@ -30,7 +30,6 @@ async def post_features(req: FeaturesRequest):
         f"feat|{req.geometry.model_dump_json()}"
         f"|{ds}|{de}"
         f"|{','.join(m.value for m in req.metrics)}"
-        f"|{','.join(str(b) for b in req.buffers_m)}"
         f"|{settings.PROCESSING_VERSION}"
     )
 
@@ -45,7 +44,6 @@ async def post_features(req: FeaturesRequest):
             date_start=ds,
             date_end=de,
             metrics=req.metrics,
-            buffers_m=req.buffers_m,
         )
     except GeometryValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))

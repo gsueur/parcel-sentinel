@@ -16,7 +16,7 @@ from ..compute.features import (
     compute_wetness_persistence,
 )
 from ..config import settings
-from ..geometry.normalize import geojson_to_shapely, geometry_hash
+from ..geometry.normalize import geojson_to_shapely
 from ..models.common import MetricName, QualityInfo
 from .timeseries import run_timeseries
 
@@ -28,7 +28,6 @@ async def run_features(
     date_start: str,
     date_end: str,
     metrics: list[MetricName],
-    buffers_m: list[int],
 ) -> tuple[str, dict[str, float | None], QualityInfo, dict[str, list[dict]]]:
     """Run features pipeline: timeseries -> derived features.
 
@@ -93,8 +92,7 @@ async def run_features(
         # We use the location NDVI as the proxy for the location itself,
         # and approximate buffer values with the same series (documented limitation).
         canopy_val = compute_canopy_proxy_from_series(ndvi_records, latitude)
-        for buf in sorted(buffers_m):
-            features[f"canopy_proxy_{buf}m"] = canopy_val
+        features["canopy_proxy"] = canopy_val
 
     # Quality score
     features["quality_score"] = compute_quality_score(

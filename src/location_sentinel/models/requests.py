@@ -20,7 +20,6 @@ class FeaturesRequest(BaseModel):
         default_factory=lambda: [MetricName.ndvi, MetricName.ndwi, MetricName.canopy_proxy]
     )
     cadence: Cadence = Cadence.monthly
-    buffers_m: list[int] = Field(default_factory=lambda: [50, 200])
     force_recompute: bool = False
 
     @model_validator(mode="after")

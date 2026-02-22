@@ -12,7 +12,7 @@ class TestScoring:
             "ndwi_wetness_persistence_5y": 0.1,
             "ndmi_moisture_stress_freq_5y": 0.05,
             "nbr_burn_freq_5y": 0.0,
-            "canopy_proxy_200m": 0.6,
+            "canopy_proxy": 0.6,
             "quality_score": 0.9,
         }
         result = compute_scores(features)
@@ -30,7 +30,7 @@ class TestScoring:
             "ndwi_wetness_persistence_5y": 0.05,
             "ndmi_moisture_stress_freq_5y": 0.6,
             "nbr_burn_freq_5y": 0.0,
-            "canopy_proxy_200m": 0.15,
+            "canopy_proxy": 0.15,
             "quality_score": 0.7,
         }
         result = compute_scores(features)
@@ -45,7 +45,7 @@ class TestScoring:
             "ndvi_anomaly_freq_5y": 0.1,
             "ndwi_wetness_persistence_5y": 0.8,
             "ndmi_moisture_stress_freq_5y": 0.1,
-            "canopy_proxy_200m": 0.4,
+            "canopy_proxy": 0.4,
             "quality_score": 0.85,
         }
         result = compute_scores(features)
@@ -81,7 +81,7 @@ class TestScoring:
             "ndwi_wetness_persistence_5y": 0.09,
             "ndmi_moisture_stress_freq_5y": 0.25,
             "nbr_burn_freq_5y": 0.05,
-            "canopy_proxy_200m": 0.41,
+            "canopy_proxy": 0.41,
         }
         r1 = compute_scores(features)
         r2 = compute_scores(features)
@@ -96,7 +96,7 @@ class TestScoring:
             "ndvi_anomaly_freq_5y": 0.5,
             "ndvi_trend_slope_5y": -0.04,
             "ndmi_moisture_stress_freq_5y": 0.6,
-            "canopy_proxy_200m": 0.12,
+            "canopy_proxy": 0.12,
         }
         result = compute_scores(features)
         assert result.drought_score == 0
@@ -105,7 +105,7 @@ class TestScoring:
         features = {
             "is_urban": 1.0,
             "nbr_burn_freq_5y": 0.3,
-            "canopy_proxy_200m": 0.12,
+            "canopy_proxy": 0.12,
         }
         result = compute_scores(features)
         assert result.fire_exposure_score == 0
@@ -120,7 +120,7 @@ class TestScoring:
         features = {
             "is_urban": 1.0,
             "ndwi_wetness_persistence_5y": 0.20,
-            "canopy_proxy_200m": 0.56,  # → heat_mitigation = 70
+            "canopy_proxy": 0.56,  # → heat_mitigation = 70
         }
         result = compute_scores(features)
         assert result.heat_mitigation_score == 70
@@ -137,7 +137,7 @@ class TestScoring:
             "ndwi_wetness_persistence_5y": 0.09,
             "ndmi_moisture_stress_freq_5y": 0.3,
             "nbr_burn_freq_5y": 0.1,
-            "canopy_proxy_200m": 0.41,
+            "canopy_proxy": 0.41,
         }
         result = compute_scores(features)
         for score in [

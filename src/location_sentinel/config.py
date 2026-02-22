@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT_SECONDS: int = 60
 
     # Urban detection thresholds
-    URBAN_BSI_THRESHOLD: float = 0.08
+    URBAN_BSI_THRESHOLD: float = 0.05
     URBAN_NDVI_THRESHOLD: float = 0.25
     URBAN_CANOPY_THRESHOLD: float = 0.25
 

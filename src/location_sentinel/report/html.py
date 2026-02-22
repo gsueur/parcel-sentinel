@@ -444,17 +444,11 @@ _FM: dict[str, dict] = {
              "Can reflect land degradation, erosion risk, or seasonal tillage patterns.",
         fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
     ),
-    "canopy_proxy_50m": dict(
-        label="Canopy density — 50 m buffer",
+    "canopy_proxy": dict(
+        label="Canopy density",
         group="Canopy & Context", group_color="#4ade80", group_index="NDVI",
-        desc="Peak-season NDVI averaged within a 50 m buffer around the location boundary. "
-             "Proxies immediate tree cover, shading potential, and micro-climate buffering.",
-        fmt="float3", signal="high_good", thr1=0.2, thr2=0.4,
-    ),
-    "canopy_proxy_200m": dict(
-        label="Canopy density — 200 m buffer",
-        group="Canopy & Context", group_color="#4ade80", group_index="NDVI",
-        desc="Peak-season NDVI averaged within a 200 m buffer. Broader landscape context. "
+        desc="Peak-season NDVI averaged over the location's growing season. "
+             "Proxies tree cover, shading potential, and micro-climate buffering. "
              "Drives the heat mitigation sub-score.",
         fmt="float3", signal="high_good", thr1=0.2, thr2=0.4,
     ),
