@@ -66,7 +66,7 @@ async def render_location_thumbnail(geojson_geometry: dict) -> bytes:
 
     logger.info("Mapbox Static fetch style=%s bbox=%s", settings.MAPBOX_STYLE, bbox)
     async with httpx.AsyncClient(timeout=10.0) as client:
-        resp = await client.get(url, params={"padding": "40", "access_token": settings.MAPBOX_TOKEN})
+        resp = await client.get(url, params={"access_token": settings.MAPBOX_TOKEN})
         resp.raise_for_status()
 
     return resp.content
