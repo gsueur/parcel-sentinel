@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -45,7 +44,8 @@ async def get_location_report(location_key: str):
         score_version=settings.SCORE_VERSION,
     )
 
-    return HTMLResponse(content=html, status_code=200)
+    headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
+    return HTMLResponse(content=html, status_code=200, headers=headers)
 
 
 def _get_any_features(location_key: str) -> dict | None:

@@ -4,6 +4,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     model_config = {"env_prefix": "", "case_sensitive": True}
 
+    # Environment
+    ENV: str = "development"  # "development" | "production"
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
@@ -46,6 +49,7 @@ class Settings(BaseSettings):
 
     # Urban detection thresholds
     URBAN_BSI_FREQ_THRESHOLD: float = 0.50  # fraction of months with BSI > 0 (impervious signal)
+    URBAN_BSI_FREQ_STRONG_THRESHOLD: float = 0.65  # high-confidence impervious signal alone (e.g. tropical cities with vegetation)
     URBAN_NDVI_THRESHOLD: float = 0.25
     URBAN_CANOPY_THRESHOLD: float = 0.25
 

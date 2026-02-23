@@ -428,5 +428,4 @@ Regional LST from Sentinel-3 or other thermal sources
 Batch processing endpoint for portfolio runs
 Async job queue for long requests
 Prewarming for frequently requested regions
-
-claude --resume b57a2772-e743-49a1-8721-fb861b95223a
+claude --resume dc39b256-c4ed-48dd-b52c-ea1fa8281937

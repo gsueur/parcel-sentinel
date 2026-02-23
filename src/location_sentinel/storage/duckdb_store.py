@@ -303,6 +303,7 @@ class DuckDBStore:
             [location_key, processing_version, date_start, date_end,
              json.dumps(features), json.dumps(quality), now],
         )
+        self._conn.commit()
 
     def get_features(
         self, location_key: str, processing_version: str, date_start: str, date_end: str
@@ -346,6 +347,7 @@ class DuckDBStore:
                 """,
                 [location_key, processing_version, cadence, metric, serialized, now],
             )
+        self._conn.commit()
 
     def save_geometry(
         self,
@@ -398,6 +400,7 @@ class DuckDBStore:
             """,
             [location_key, json.dumps(geojson), name, customer_id, climate_code, now],
         )
+        self._conn.commit()
 
     def get_geometry(self, location_key: str) -> dict | None:
         if self._conn is None:
@@ -431,6 +434,7 @@ class DuckDBStore:
             "INSERT INTO customers (customer_id, name, created_at) VALUES (?, ?, ?)",
             [customer_id, name, now],
         )
+        self._conn.commit()
         return {"customer_id": customer_id, "name": name, "created_at": now}
 
     def get_customer(self, customer_id: str) -> dict | None:
@@ -545,7 +549,7 @@ class DuckDBStore:
             """,
             [location_key, score_version, lookback_years, json.dumps(scores), now],
         )
-
+        self._conn.commit()
 
     def get_timeseries(
         self,
@@ -726,6 +730,7 @@ class DuckDBStore:
                 [location_key],
             ).fetchall()
             deleted[table] = len(result)
+        self._conn.commit()
         return deleted
 
 
