@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from src.location_sentinel.compute.scoring import compute_scores
+from src.location_sentinel.compute.scoring import (
+    climate_profile_label,
+    climate_weights_for_code,
+    compute_scores,
+)
 
 
 class TestScoring:
@@ -128,6 +132,80 @@ class TestScoring:
         assert result.drought_score == 0
         assert result.fire_exposure_score == 0
         assert result.composite_score == 26  # 0.60*(100-70) + 0.40*20
+
+    # --- Climate profile tests ---
+
+    def test_climate_weights_arid(self):
+        w = climate_weights_for_code("BWh")
+        assert w["drought"] == 0.50
+        assert w["fire"] == 0.20
+        assert abs(sum(w.values()) - 1.0) < 1e-9
+
+    def test_climate_weights_mediterranean(self):
+        w = climate_weights_for_code("Csa")
+        assert w["fire"] == 0.40
+        assert w["drought"] == 0.30
+
+    def test_climate_weights_csb(self):
+        # Csb should resolve to the Cs profile, not generic C
+        w = climate_weights_for_code("Csb")
+        assert w["fire"] == 0.40
+
+    def test_climate_weights_tropical(self):
+        w = climate_weights_for_code("Af")
+        assert w["wetness"] == 0.45
+        assert w["drought"] == 0.10
+
+    def test_climate_weights_fallback_none(self):
+        w = climate_weights_for_code(None)
+        assert w["drought"] == 0.35
+        assert w["wetness"] == 0.25
+
+    def test_climate_weights_fallback_unknown(self):
+        w = climate_weights_for_code("XX")
+        assert w == climate_weights_for_code(None)
+
+    def test_climate_profile_label(self):
+        assert climate_profile_label("Csa") == "Mediterranean"
+        assert climate_profile_label("BWh") == "Arid"
+        assert climate_profile_label("Af") == "Tropical"
+        assert climate_profile_label(None) == "Generic"
+
+    def test_climate_weights_sum_to_one(self):
+        for code in ["Af", "BWh", "Csa", "Cfb", "Dfa", "ET", None]:
+            w = climate_weights_for_code(code)
+            assert abs(sum(w.values()) - 1.0) < 1e-9, f"weights don't sum to 1 for {code}"
+
+    def test_arid_composite_dominated_by_drought(self):
+        # Arid profile: drought weight 50% -- a high drought score should drive composite up
+        features_high_drought = {
+            "ndvi_mean_5y": 0.1,
+            "ndvi_anomaly_freq_5y": 0.6,
+            "ndvi_trend_slope_5y": -0.04,
+            "ndmi_moisture_stress_freq_5y": 0.7,
+            "ndwi_wetness_persistence_5y": 0.0,
+            "canopy_proxy": 0.2,
+        }
+        r_arid = compute_scores(features_high_drought, climate_code="BWh")
+        r_default = compute_scores(features_high_drought)
+        assert r_arid.composite_score > r_default.composite_score
+        assert r_arid.climate_profile == "Arid"
+
+    def test_mediterranean_composite_dominated_by_fire(self):
+        features_fire = {
+            "nbr_burn_freq_5y": 0.5,
+            "ndvi_mean_5y": 0.4,
+            "ndwi_wetness_persistence_5y": 0.05,
+            "canopy_proxy": 0.3,
+        }
+        r_med = compute_scores(features_fire, climate_code="Csa")
+        r_default = compute_scores(features_fire)
+        assert r_med.composite_score > r_default.composite_score
+        assert r_med.climate_profile == "Mediterranean"
+
+    def test_climate_profile_in_result(self):
+        result = compute_scores({"ndvi_mean_5y": 0.5}, climate_code="Dfa")
+        assert result.climate_profile == "Continental / Boreal"
 
     def test_scores_in_range(self):
         features = {

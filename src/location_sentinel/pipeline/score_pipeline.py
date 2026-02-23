@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date
+
+from shapely.geometry import shape as shapely_shape
 
 from ..compute.scoring import ScoreResult, compute_scores
 from ..config import settings
 from ..models.common import MetricName
+from ..storage.duckdb_store import store
 from .features_pipeline import run_features
 
 logger = logging.getLogger(__name__)
@@ -37,5 +40,13 @@ async def run_score(
         metrics=metrics,
     )
 
-    result = compute_scores(features)
+    # Look up climate zone from centroid
+    climate_code: str | None = None
+    try:
+        centroid = shapely_shape(geom_geojson).centroid
+        climate_code = store.lookup_climate(centroid.y, centroid.x)
+    except Exception:
+        logger.warning("Climate lookup failed for location_key=%s", location_key)
+
+    result = compute_scores(features, climate_code=climate_code)
     return location_key, result, features, quality, date_start, series

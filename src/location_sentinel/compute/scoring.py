@@ -1,8 +1,54 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..config import settings
+
+# ---------------------------------------------------------------------------
+# Climate-zone weight profiles for the composite score
+# ---------------------------------------------------------------------------
+# Keys: drought, wetness, fire, heat_inv (= 100 - heat_mitigation_score)
+# All four weights must sum to 1.0.
+# Resolution order: "Cs" prefix first, then major letter, then "default".
+_CLIMATE_WEIGHTS: dict[str, dict[str, float]] = {
+    "A":       {"drought": 0.10, "wetness": 0.45, "fire": 0.15, "heat_inv": 0.30},
+    "B":       {"drought": 0.50, "wetness": 0.05, "fire": 0.20, "heat_inv": 0.25},
+    "Cs":      {"drought": 0.30, "wetness": 0.10, "fire": 0.40, "heat_inv": 0.20},
+    "C":       {"drought": 0.25, "wetness": 0.25, "fire": 0.20, "heat_inv": 0.30},
+    "D":       {"drought": 0.20, "wetness": 0.20, "fire": 0.35, "heat_inv": 0.25},
+    "E":       {"drought": 0.10, "wetness": 0.20, "fire": 0.05, "heat_inv": 0.65},
+    "default": {"drought": 0.35, "wetness": 0.25, "fire": 0.20, "heat_inv": 0.20},
+}
+
+_CLIMATE_PROFILE_LABELS: dict[str, str] = {
+    "A":       "Tropical",
+    "B":       "Arid",
+    "Cs":      "Mediterranean",
+    "C":       "Temperate humid",
+    "D":       "Continental / Boreal",
+    "E":       "Polar / Alpine",
+    "default": "Generic",
+}
+
+
+def _resolve_climate_key(code: str | None) -> str:
+    if code:
+        if code.startswith("Cs"):
+            return "Cs"
+        major = code[0]
+        if major in _CLIMATE_WEIGHTS:
+            return major
+    return "default"
+
+
+def climate_profile_label(code: str | None) -> str:
+    """Return human-readable profile name for a Köppen code."""
+    return _CLIMATE_PROFILE_LABELS[_resolve_climate_key(code)]
+
+
+def climate_weights_for_code(code: str | None) -> dict[str, float]:
+    """Return composite weight dict for a Köppen code (for display / reporting)."""
+    return _CLIMATE_WEIGHTS[_resolve_climate_key(code)]
 
 
 @dataclass
@@ -13,13 +59,14 @@ class ScoreResult:
     heat_mitigation_score: int
     composite_score: int
     top_factors: list[dict]
+    climate_profile: str = field(default="Generic")
 
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> int:
     return int(max(lo, min(hi, round(value))))
 
 
-def compute_scores(features: dict[str, float | None]) -> ScoreResult:
+def compute_scores(features: dict[str, float | None], climate_code: str | None = None) -> ScoreResult:
     """Compute risk sub-scores and composite from derived features.
 
     All scores are 0-100. Higher = more risk (except heat_mitigation where higher = more mitigation).
@@ -33,6 +80,9 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
     """
     factors: list[dict] = []
     is_urban = (features.get("is_urban") or 0.0) > 0.5
+    climate_key = _resolve_climate_key(climate_code)
+    w = _CLIMATE_WEIGHTS[climate_key]
+    profile = _CLIMATE_PROFILE_LABELS[climate_key]
 
     # --- Drought score (0-100) ---
     # Combines NDVI vegetation health with NDMI leaf moisture stress.
@@ -113,17 +163,19 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
     # --- Composite (0-100) ---
     if is_urban:
         # Urban: heat island (canopy deficit) + flooding are the primary risks.
+        # Climate zone weights are irrelevant on impervious surfaces.
         composite = (
             0.60 * (100 - heat_mitigation_score)
             + 0.40 * wetness_score
         )
     else:
-        # Heat mitigation is inverted: high mitigation reduces composite risk.
+        # Climate-zone-weighted composite. Heat mitigation is inverted:
+        # high canopy = lower heat contribution to composite risk.
         composite = (
-            0.35 * drought_score
-            + 0.25 * wetness_score
-            + 0.20 * fire_exposure_score
-            + 0.20 * (100 - heat_mitigation_score)
+            w["drought"]  * drought_score
+            + w["wetness"]  * wetness_score
+            + w["fire"]     * fire_exposure_score
+            + w["heat_inv"] * (100 - heat_mitigation_score)
         )
 
     return ScoreResult(
@@ -133,4 +185,5 @@ def compute_scores(features: dict[str, float | None]) -> ScoreResult:
         heat_mitigation_score=_clamp(heat_mitigation_score),
         composite_score=_clamp(composite),
         top_factors=sorted(factors, key=lambda f: f["weight"], reverse=True)[:3],
+        climate_profile=profile,
     )

@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # Versions
     PROCESSING_VERSION: str = "s2l2a-v1.2.0"
-    SCORE_VERSION: str = "risk-v1.1.0"
+    SCORE_VERSION: str = "risk-v1.2.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"

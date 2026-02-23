@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from .render import band_to_b64, bsi_to_b64, nbr_to_b64, ndmi_to_b64, ndsi_to_b64, ndvi_to_b64, ndwi_to_b64
+from ..compute.scoring import climate_profile_label, climate_weights_for_code
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -816,13 +817,16 @@ def build_report_html(
         formula_note = ""
     else:
         urban_banner = ""
+        _climate_code = climate.get("code") if climate else None
+        _w = climate_weights_for_code(_climate_code)
+        _profile = climate_profile_label(_climate_code)
         formula_note = (
             '<div style="font-size:0.72rem;color:#4b5563;margin-bottom:14px;line-height:1.8">'
-            'Composite = '
-            f'<span style="{_pill};background:#ef444422;color:#f87171">35% drought</span>'
-            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">25% wetness</span>'
-            f'<span style="{_pill};background:#f9731622;color:#fb923c">20% fire</span>'
-            f'<span style="{_pill};background:#22c55e22;color:#4ade80">20% heat island</span>'
+            f'Composite <span style="color:#4b5563;font-style:italic">({_profile} profile)</span> = '
+            f'<span style="{_pill};background:#ef444422;color:#f87171">{_w["drought"]:.0%} drought</span>'
+            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">{_w["wetness"]:.0%} wetness</span>'
+            f'<span style="{_pill};background:#f9731622;color:#fb923c">{_w["fire"]:.0%} fire</span>'
+            f'<span style="{_pill};background:#22c55e22;color:#4ade80">{_w["heat_inv"]:.0%} heat island</span>'
             '<br><span style="color:#374151">Heat mitigation score is inverted: '
             'higher canopy = lower heat contribution to composite.</span>'
             '</div>'
