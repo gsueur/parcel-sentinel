@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.2.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.3.0"
     SCORE_VERSION: str = "risk-v1.2.0"
 
     # Storage
@@ -63,7 +63,10 @@ class Settings(BaseSettings):
     SUBTROPICAL_SEASON_MONTHS: list[int] = [3, 4, 5, 6, 7, 8, 9, 10, 11]
 
     # SCL valid classes
-    SCL_VALID_CLASSES: list[int] = [4, 5, 6, 7]
+    # 4=Vegetation, 5=Bare soils, 6=Water, 7=Unclassified (low cloud prob)
+    # 11=Snow/Ice -- included because snow is a valid land surface observation,
+    # not a cloud artifact. Excluding it would mask winter scenes and zero-out NDSI.
+    SCL_VALID_CLASSES: list[int] = [4, 5, 6, 7, 11]
 
     # Minimum valid pixel fraction to accept an observation
     MIN_VALID_PIXEL_FRACTION: float = 0.1
