@@ -117,6 +117,34 @@ async def create_location(req: LocationRequest):
     return response
 
 
+@router.delete("/location/{location_key}")
+async def delete_location(location_key: str):
+    """Delete all stored data for a location (features, scores, timeseries, scene bands, geometry).
+
+    Returns a summary of rows deleted per table.
+    Idempotent: deleting an unknown key returns zeros without error.
+    """
+    deleted = store.delete_location(location_key)
+    cache.clear()  # evict any cached responses for this key
+    return {"location_key": location_key, "deleted": deleted}
+
+
+@router.delete("/locations")
+async def delete_all_locations():
+    """Delete ALL stored locations.
+
+    Returns a summary of total rows deleted per table.
+    """
+    locations = store.get_all_locations()
+    totals: dict[str, int] = {}
+    for loc in locations:
+        counts = store.delete_location(loc["location_key"])
+        for table, n in counts.items():
+            totals[table] = totals.get(table, 0) + n
+    cache.clear()
+    return {"deleted_locations": len(locations), "deleted": totals}
+
+
 @router.get("/locations")
 async def list_locations(format: str = Query(default="json", pattern="^(json|html)$")):
     """List all stored locations.

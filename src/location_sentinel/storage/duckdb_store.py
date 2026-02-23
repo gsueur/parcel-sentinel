@@ -705,5 +705,28 @@ class DuckDBStore:
             [location_key, scene_id, processing_version],
         )
 
+    def delete_location(self, location_key: str) -> dict[str, int]:
+        """Delete all data for a location from every table.
+
+        Returns a dict of table → rows deleted.
+        """
+        if self._conn is None:
+            return {}
+        tables = [
+            "scene_bands",
+            "location_timeseries",
+            "location_scores",
+            "location_features",
+            "location_geometries",
+        ]
+        deleted: dict[str, int] = {}
+        for table in tables:
+            result = self._conn.execute(
+                f"DELETE FROM {table} WHERE location_key = ? RETURNING 1",
+                [location_key],
+            ).fetchall()
+            deleted[table] = len(result)
+        return deleted
+
 
 store = DuckDBStore()
