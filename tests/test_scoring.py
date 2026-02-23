@@ -115,12 +115,10 @@ class TestScoring:
         assert result.fire_exposure_score == 0
 
     def test_urban_composite_formula(self):
-        # composite = 0.60*(100-heat_mitigation) + 0.40*wetness
-        # heat_mitigation = 70/80*100 ≈ 87.5 → clamped 87
-        # wetness = 20*100 = 20
-        # composite = 0.60*(100-87) + 0.40*20 = 7.8 + 8 = 15.8 → 16
-        # Use exact values: canopy=0.56 → heat_mitigation=0.56/0.8*100=70
-        # composite = 0.60*(100-70) + 0.40*20 = 18+8 = 26
+        # composite = 0.80*(100-heat_mitigation) + 0.20*wetness
+        # canopy=0.56 → heat_mitigation=0.56/0.8*100=70
+        # wetness = 0.20*100 = 20
+        # composite = 0.80*(100-70) + 0.20*20 = 24+4 = 28
         features = {
             "is_urban": 1.0,
             "ndwi_wetness_persistence_5y": 0.20,
@@ -131,7 +129,7 @@ class TestScoring:
         assert result.wetness_score == 20
         assert result.drought_score == 0
         assert result.fire_exposure_score == 0
-        assert result.composite_score == 26  # 0.60*(100-70) + 0.40*20
+        assert result.composite_score == 28  # 0.80*(100-70) + 0.20*20
 
     # --- Climate profile tests ---
 

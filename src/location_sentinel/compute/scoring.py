@@ -162,11 +162,11 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
 
     # --- Composite (0-100) ---
     if is_urban:
-        # Urban: heat island (canopy deficit) + flooding are the primary risks.
+        # Urban: heat island (canopy deficit) dominates; wetness is secondary.
         # Climate zone weights are irrelevant on impervious surfaces.
         composite = (
-            0.60 * (100 - heat_mitigation_score)
-            + 0.40 * wetness_score
+            0.80 * (100 - heat_mitigation_score)
+            + 0.20 * wetness_score
         )
     else:
         # Climate-zone-weighted composite. Heat mitigation is inverted:
