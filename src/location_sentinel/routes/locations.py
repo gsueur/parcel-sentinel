@@ -14,6 +14,7 @@ from ..models.common import DateWindow
 from ..pipeline.score_pipeline import run_score
 from ..storage.cache import cache
 from ..storage.duckdb_store import store
+from ..geometry.normalize import geojson_to_shapely, make_location_key
 from ..thumbnails.links import build_map_links
 
 logger = logging.getLogger(__name__)
@@ -58,8 +59,17 @@ async def create_location(req: LocationRequest):
     trace_id = uuid.uuid4().hex[:12]
     de = req.date_end.isoformat()
 
+    # Stable location key: same (customer_id, name, centroid) always → same key
+    geom = geojson_to_shapely(req.geometry.model_dump())
+    centroid = geom.centroid
+    stable_key = make_location_key(
+        name=req.name,
+        centroid=(centroid.x, centroid.y),
+        customer_id=req.customer_id,
+    )
+
     cache_key = (
-        f"location|{req.geometry.model_dump_json()}"
+        f"location|{stable_key}"
         f"|{de}|{req.lookback_years}"
         f"|{settings.SCORE_VERSION}|{settings.PROCESSING_VERSION}"
     )
@@ -74,6 +84,7 @@ async def create_location(req: LocationRequest):
             geom_geojson=req.geometry.model_dump(),
             date_end=de,
             lookback_years=req.lookback_years,
+            location_key=stable_key,
         )
     except GeometryValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))

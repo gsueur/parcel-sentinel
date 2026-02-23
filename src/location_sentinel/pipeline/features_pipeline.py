@@ -32,6 +32,7 @@ async def run_features(
     date_start: str,
     date_end: str,
     metrics: list[MetricName],
+    location_key: str | None = None,
 ) -> tuple[str, dict[str, float | None], QualityInfo, dict[str, list[dict]]]:
     """Run features pipeline: timeseries -> derived features.
 
@@ -49,6 +50,7 @@ async def run_features(
             date_start=date_start,
             date_end=date_end,
             metrics=ts_metrics,
+            location_key=location_key,
         ),
         run_sar_features(
             geom_geojson=geom_geojson,

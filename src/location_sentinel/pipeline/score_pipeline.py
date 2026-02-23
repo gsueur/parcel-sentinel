@@ -18,6 +18,7 @@ async def run_score(
     geom_geojson: dict,
     date_end: str,
     lookback_years: int = 5,
+    location_key: str | None = None,
 ) -> tuple:
     """Run scoring pipeline: derive date range, compute features, score.
 
@@ -38,6 +39,7 @@ async def run_score(
         date_start=date_start,
         date_end=date_end,
         metrics=metrics,
+        location_key=location_key,
     )
 
     # Look up climate zone from centroid

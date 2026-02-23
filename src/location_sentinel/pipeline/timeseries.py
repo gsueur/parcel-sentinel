@@ -223,14 +223,18 @@ async def run_timeseries(
     date_end: str,
     metrics: list[MetricName],
     max_scenes_per_month: int = settings.MAX_SCENES_PER_MONTH,
+    location_key: str | None = None,
 ) -> tuple[str, dict[str, list[MonthlyRecord]], QualityInfo]:
     """Core timeseries pipeline: STAC search -> async COG read -> mask -> index -> aggregate.
 
     Returns (location_key, series_by_metric, quality).
+    If location_key is provided it is used as-is; otherwise it is derived from
+    the geometry hash (legacy / standalone usage).
     """
     geom = geojson_to_shapely(geom_geojson)
     geom = validate_geometry(geom)
-    location_key = geometry_hash(geom)
+    if location_key is None:
+        location_key = geometry_hash(geom)
 
     # STAC search (synchronous pystac-client call; run in executor to avoid blocking)
     loop = asyncio.get_event_loop()
