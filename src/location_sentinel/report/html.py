@@ -221,7 +221,8 @@ def _index_reference_html(index_stats: dict) -> str:
       <div class="index-range-row"><div class="index-swatch" style="background:#654321"></div>&lt; &minus;0.1 &mdash; Water, snow, clouds</div>
     </div>
     <span class="score-badge badge-scoring">Drought score</span>
-    <span class="score-badge badge-scoring">Heat mitigation</span>
+    <span class="score-badge badge-scoring">Heat mitigation score</span>
+    <span class="score-badge badge-scoring">Canopy deficit (composite)</span>
   </div>
 
   <!-- NDWI -->
@@ -790,7 +791,7 @@ def build_report_html(
         _score_bar("Drought", s.get("drought_score"), "drought", suppressed=is_urban) +
         _score_bar("Wetness", s.get("wetness_score"), "wetness") +
         _score_bar("Fire exposure", s.get("fire_exposure_score"), "fire", suppressed=is_urban) +
-        _score_bar("Heat mitigation", s.get("heat_mitigation_score"), "heat")
+        _score_bar("Heat mitigation (higher = more canopy = safer)", s.get("heat_mitigation_score"), "heat")
     )
 
     # Urban banner + formula note
@@ -807,8 +808,8 @@ def build_report_html(
             '<div style="font-size:0.74rem;color:#6b7280;line-height:1.8">'
             'Drought and fire scores are suppressed (not applicable on impervious surfaces).<br>'
             'Composite = '
-            f'<span style="{_pill};background:#22c55e22;color:#4ade80">80% heat island</span>'
-            '(canopy deficit) + '
+            f'<span style="{_pill};background:#22c55e22;color:#4ade80">80% canopy deficit</span>'
+            '(= 100 &minus; heat mitigation) + '
             f'<span style="{_pill};background:#3b82f622;color:#60a5fa">20% wetness</span>'
             '(flooding / waterlogging)'
             '</div>'
@@ -826,9 +827,9 @@ def build_report_html(
             f'<span style="{_pill};background:#ef444422;color:#f87171">{_w["drought"]:.0%} drought</span>'
             f'<span style="{_pill};background:#3b82f622;color:#60a5fa">{_w["wetness"]:.0%} wetness</span>'
             f'<span style="{_pill};background:#f9731622;color:#fb923c">{_w["fire"]:.0%} fire</span>'
-            f'<span style="{_pill};background:#22c55e22;color:#4ade80">{_w["heat_inv"]:.0%} heat island</span>'
-            '<br><span style="color:#374151">Heat mitigation score is inverted: '
-            'higher canopy = lower heat contribution to composite.</span>'
+            f'<span style="{_pill};background:#22c55e22;color:#4ade80">{_w["heat_inv"]:.0%} canopy deficit</span>'
+            '<br><span style="color:#374151">Canopy deficit = 100 &minus; heat mitigation score. '
+            'Low canopy raises the composite risk.</span>'
             '</div>'
         )
 
