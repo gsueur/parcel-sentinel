@@ -22,11 +22,19 @@ class Settings(BaseSettings):
     SAR_STAC_COLLECTION: str = "sentinel-1-grd"
     SAR_AWS_BUCKET: str = "sentinel-s1-l1c"
     SAR_AWS_REGION: str = "eu-central-1"
-    # Water detection threshold in uint16 DN (~-20 dB sigma0).
-    # Calibration: sigma0_dB ≈ 10 * log10(DN²) - 83. Tune per deployment.
-    SAR_WATER_DN_THRESHOLD: int = 300
-    # Minimum fraction of window pixels showing water for a scene to count as flooded
-    SAR_MIN_WATER_PIXEL_FRACTION: float = 0.05
+    # Water detection threshold in uint16 DN.
+    # Calibration: sigma0_dB = 20 * log10(DN) - 83.
+    # Empirical DN ranges for sentinel-s1-l1c IW GRD:
+    #   Thermal noise floor:  ~35 DN  (~-52 dB)
+    #   Calm water (specular): 35–70 DN  (~-52 to -45 dB)
+    #   Vegetated land:       100–250 DN (~-43 to -37 dB)
+    #   Land mean observed:   ~141 DN  (~-40 dB)
+    #   Urban/corner reflect: 500+ DN  (~-30 dB and above)
+    # Threshold at 75 DN sits above noise floor but below land mean.
+    SAR_WATER_DN_THRESHOLD: int = 75
+    # Minimum fraction of window pixels below threshold for a scene to count as flooded.
+    # Raised from 0.05 to 0.35 to avoid false positives from mixed land/shadow pixels.
+    SAR_MIN_WATER_PIXEL_FRACTION: float = 0.35
     SAR_MAX_SCENES_PER_MONTH: int = 2
     SAR_MAX_TOTAL_SCENES: int = 120
 
