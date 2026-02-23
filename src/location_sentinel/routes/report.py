@@ -29,6 +29,7 @@ async def get_location_report(location_key: str):
     timeseries = store.get_timeseries(location_key, settings.PROCESSING_VERSION)
     scene_months = store.get_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
     sar_scene_months = store.get_sar_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
+    sar_scene_fracs = store.get_sar_scene_fracs(location_key, settings.PROCESSING_VERSION)
 
     html = build_report_html(
         location_key=location_key,
@@ -42,6 +43,7 @@ async def get_location_report(location_key: str):
         timeseries=timeseries,
         scene_months=scene_months,
         sar_scene_months=sar_scene_months,
+        sar_scene_fracs=sar_scene_fracs,
         processing_version=settings.PROCESSING_VERSION,
         score_version=settings.SCORE_VERSION,
     )

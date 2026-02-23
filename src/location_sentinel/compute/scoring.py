@@ -162,19 +162,22 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         heat_mitigation_score = 50.0
 
     # --- Flood risk score (0-100) ---
-    # Derived from Sentinel-1 SAR VV backscatter: cloud-independent.
-    # Not suppressed for urban locations (urban flooding is a primary risk).
-    sar_water_freq = features.get("sar_water_freq_5y")
-    if sar_water_freq is not None:
-        flood_risk_score = sar_water_freq * 100
-        if sar_water_freq > 0.1:
-            factors.append({
-                "name": "sar_water_freq_5y",
-                "direction": "positive",
-                "weight": w.get("flood", 0.15),
-            })
-    else:
-        flood_risk_score = 0.0  # safe default -- no SAR data
+    # Two components, both from Sentinel-1 SAR VV backscatter (cloud-independent):
+    #   chronic: sar_water_freq_5y  -- persistent/recurring water over 5 years
+    #   anomaly: sar_flood_anomaly  -- recent water_frac spike above seasonal baseline
+    # The anomaly detects sudden flood events missed by the chronic metric when
+    # flood months are excluded by the NDSI snow filter (flooded fields look like snow).
+    # Not suppressed for urban locations.
+    sar_water_freq = features.get("sar_water_freq_5y") or 0.0
+    sar_flood_anomaly = features.get("sar_flood_anomaly") or 0.0
+    flood_risk_score = max(sar_water_freq * 100, sar_flood_anomaly * 100)
+    if flood_risk_score > 10:
+        driver = "sar_flood_anomaly" if sar_flood_anomaly * 100 >= sar_water_freq * 100 else "sar_water_freq_5y"
+        factors.append({
+            "name": driver,
+            "direction": "positive",
+            "weight": w.get("flood", 0.15),
+        })
 
     # --- Composite (0-100) ---
     if is_urban:

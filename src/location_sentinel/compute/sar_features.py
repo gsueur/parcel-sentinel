@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections import defaultdict
+from statistics import median
+
 import numpy as np
 
 from ..config import settings
@@ -31,3 +34,69 @@ def compute_sar_water_frequency(
         return None
     flooded = sum(1 for f in water_fracs if f > threshold)
     return float(flooded) / len(water_fracs)
+
+
+def compute_sar_flood_anomaly(
+    scene_fracs: list[tuple[str, float]],
+    date_end: str,
+    recent_months: int = 2,
+    min_baseline_count: int = 2,
+) -> float | None:
+    """Anomaly-based flood detection: compare recent water_frac to seasonal baseline.
+
+    Uses ALL scene fracs (no snow suppression) to avoid excluding flood months that
+    happen to trigger the S2 NDSI snow filter (flooded fields and snow look similar
+    in optical). Compares each recent scene to the historical median for the same
+    calendar month across previous years.
+
+    Args:
+        scene_fracs: list of (month_key "YYYY-MM", water_frac) for all scenes.
+        date_end: end of the analysis window "YYYY-MM-DD".
+        recent_months: how many of the most recent calendar months count as "recent".
+        min_baseline_count: minimum number of historical scenes required to compute
+            a baseline for a given calendar month.
+
+    Returns:
+        Peak anomaly (max water_frac - seasonal_median) in recent window,
+        clamped to [0, 1]. Returns None if insufficient data.
+    """
+    if not scene_fracs:
+        return None
+
+    # Build the set of recent calendar month keys
+    end_year, end_month = int(date_end[:4]), int(date_end[5:7])
+    recent_month_keys: set[str] = set()
+    y, m = end_year, end_month
+    for _ in range(recent_months):
+        recent_month_keys.add(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+
+    # Separate recent observations from historical baseline data
+    historical_by_cal: defaultdict[int, list[float]] = defaultdict(list)
+    recent_pairs: list[tuple[int, float]] = []  # (calendar_month, water_frac)
+
+    for month_key, wf in scene_fracs:
+        cal_month = int(month_key[5:7])  # extract MM from "YYYY-MM"
+        if month_key in recent_month_keys:
+            recent_pairs.append((cal_month, wf))
+        else:
+            historical_by_cal[cal_month].append(wf)
+
+    if not recent_pairs:
+        return None
+
+    # For each recent observation compute anomaly vs same-month historical median
+    anomalies: list[float] = []
+    for cal_month, wf in recent_pairs:
+        hist = historical_by_cal.get(cal_month, [])
+        if len(hist) >= min_baseline_count:
+            baseline = median(hist)
+            anomalies.append(max(0.0, wf - baseline))
+
+    if not anomalies:
+        return None
+
+    return round(min(max(anomalies), 1.0), 4)

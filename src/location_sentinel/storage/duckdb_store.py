@@ -196,6 +196,18 @@ class DuckDBStore:
             )
         """)
 
+        # Migrate: drop old sar_scene_bands if it was created with USMALLINT column
+        # (float32 storage is required to match the scene_bands pattern)
+        try:
+            col = self._conn.execute(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name='sar_scene_bands' AND column_name='vv_data'"
+            ).fetchone()
+            if col and "SMALLINT" in col[0].upper():
+                self._conn.execute("DROP TABLE sar_scene_bands")
+        except Exception:
+            pass
+
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS sar_scene_bands (
                 location_key VARCHAR NOT NULL,
@@ -204,7 +216,7 @@ class DuckDBStore:
                 processing_version VARCHAR NOT NULL,
                 width UTINYINT NOT NULL DEFAULT 64,
                 height UTINYINT NOT NULL DEFAULT 64,
-                vv_data USMALLINT[4096] NOT NULL,
+                vv_data FLOAT[4096] NOT NULL,
                 water_frac DOUBLE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (location_key, scene_id, processing_version)
@@ -737,7 +749,7 @@ class DuckDBStore:
         if self._conn is None:
             return
         h, w = vv_dn.shape
-        flat = vv_dn.flatten().tolist()
+        flat = vv_dn.astype(np.float32).flatten().tolist()
         now = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
             """
@@ -781,7 +793,7 @@ class DuckDBStore:
         ).fetchall()
         result = []
         for scene_id, month_key, w, h, vv_data, water_frac in scenes:
-            vv_dn = np.array(vv_data, dtype=np.uint16).reshape(h, w)
+            vv_dn = np.array(vv_data, dtype=np.float32).reshape(h, w).astype(np.uint16)
             result.append({
                 "scene_id": scene_id,
                 "month_key": month_key,
@@ -789,6 +801,29 @@ class DuckDBStore:
                 "water_frac": water_frac,
             })
         return result
+
+    def get_sar_scene_fracs(
+        self,
+        location_key: str,
+        processing_version: str,
+    ) -> list[tuple[str, float]]:
+        """Return all (month_key, water_frac) pairs for SAR scenes, ordered chronologically.
+
+        One entry per scene (not deduplicated by month). Used for time series charting
+        and anomaly detection visualisation in the report.
+        """
+        if self._conn is None:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT month_key, water_frac
+            FROM sar_scene_bands
+            WHERE location_key = ? AND processing_version = ?
+            ORDER BY month_key ASC
+            """,
+            [location_key, processing_version],
+        ).fetchall()
+        return [(row[0], row[1]) for row in rows if row[1] is not None]
 
     def delete_location(self, location_key: str) -> dict[str, int]:
         """Delete all data for a location from every table.

@@ -479,15 +479,26 @@ _FM: dict[str, dict] = {
         fmt="score", signal="high_good", thr1=0.4, thr2=0.7,
     ),
     "sar_water_freq_5y": dict(
-        label="SAR flood frequency",
+        label="SAR flood frequency (chronic)",
         group="SAR Flood", group_color="#06b6d4", group_index=None,
-        desc="Fraction of Sentinel-1 SAR scenes where water pixels (VV backscatter below DN threshold) "
-             "exceeded 5% of the analysis window. Cloud-independent: SAR penetrates clouds, detecting "
-             "flood events invisible to optical sensors. "
+        desc="Fraction of Sentinel-1 SAR scenes (snow months excluded) where water pixels exceeded 35% "
+             "of the analysis window. Cloud-independent: SAR penetrates clouds, detecting flood events "
+             "invisible to optical sensors. Chronic metric: measures long-term recurrence. "
              "Below 5%: near-zero flood history &bull; 5&ndash;15%: seasonal or episodic flooding &bull; "
              "above 15%: recurrent flood exposure. "
-             "Threshold calibration: default ~&minus;20 dB sigma0 (DN 300); tunable per deployment.",
+             "Threshold: empirical DN&nbsp;75 (~above noise floor, well below vegetated land).",
         fmt="pct", signal="low_good", thr1=0.05, thr2=0.15,
+    ),
+    "sar_flood_anomaly": dict(
+        label="SAR flood anomaly (acute event)",
+        group="SAR Flood", group_color="#06b6d4", group_index=None,
+        desc="Peak excess water coverage in recent scenes (last 2 calendar months) vs the historical "
+             "median for the same calendar month across prior years. Uses <em>all</em> SAR scenes &mdash; "
+             "not affected by snow/flood NDSI confusion that can suppress the chronic metric. "
+             "Detects sudden flood events even in winter months. "
+             "Below 10%: within seasonal norm &bull; 10&ndash;30%: notable wet anomaly &bull; "
+             "above 30%: acute flood signal detected.",
+        fmt="pct", signal="low_good", thr1=0.10, thr2=0.30,
     ),
 }
 
@@ -736,6 +747,72 @@ def _sar_scene_rows(sar_scene_months: list[dict], water_threshold: int) -> str:
     return "\n".join(rows)
 
 
+def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float]], threshold: float) -> str:
+    """Chart.js bar chart of SAR water fraction per scene with flood threshold line."""
+    if not sar_scene_fracs:
+        return '<p class="no-data">No SAR water fraction data available.</p>'
+    labels = [mk for mk, _ in sar_scene_fracs]
+    data = [round(wf * 100, 2) for _, wf in sar_scene_fracs]
+    thr_pct = round(threshold * 100, 1)
+    n = len(data)
+    # Blue fill: opaque for scenes at or above threshold (flooded), faint otherwise
+    colors = [
+        "rgba(30,100,220,0.75)" if wf * 100 >= thr_pct else "rgba(30,100,220,0.30)"
+        for _, wf in sar_scene_fracs
+    ]
+    labels_json = json.dumps(labels)
+    data_json = json.dumps(data)
+    colors_json = json.dumps(colors)
+    threshold_line = json.dumps([thr_pct] * n)
+    return f"""
+    <div class="chart-wrap" style="height:220px;margin-bottom:20px">
+      <canvas id="sarFracChart"></canvas>
+    </div>
+    <script>
+    new Chart(document.getElementById('sarFracChart'), {{
+      type: 'bar',
+      data: {{
+        labels: {labels_json},
+        datasets: [
+          {{
+            label: 'Water fraction %',
+            data: {data_json},
+            backgroundColor: {colors_json},
+            borderColor: 'rgba(30,100,220,0.4)',
+            borderWidth: 0.5,
+            order: 2,
+          }},
+          {{
+            label: 'Flood threshold ({thr_pct}%)',
+            data: {threshold_line},
+            type: 'line',
+            borderColor: '#ef4444',
+            borderDash: [5, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: false,
+            tension: 0,
+            order: 1,
+          }},
+        ]
+      }},
+      options: {{
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {{ legend: {{ labels: {{ color: '#9ca3af' }} }} }},
+        scales: {{
+          x: {{ ticks: {{ color: '#6b7280', maxTicksLimit: 18, maxRotation: 45 }},
+                grid: {{ color: '#1e2130' }} }},
+          y: {{ min: 0, max: 100,
+                ticks: {{ color: '#6b7280', callback: function(v) {{ return v + '%'; }} }},
+                grid: {{ color: '#1e2130' }},
+                title: {{ display: true, text: 'Water fraction (%)', color: '#6b7280' }} }}
+        }}
+      }}
+    }});
+    </script>"""
+
+
 def build_report_html(
     location_key: str,
     name: str | None,
@@ -750,6 +827,7 @@ def build_report_html(
     score_version: str,
     climate: dict | None = None,
     sar_scene_months: list[dict] | None = None,
+    sar_scene_fracs: list[tuple[str, float]] | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -939,6 +1017,34 @@ def build_report_html(
     from ..config import settings as _cfg
     sar_rows = _sar_scene_rows(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD)
 
+    # SAR water fraction chart
+    sar_frac_chart = _sar_frac_chart_html(sar_scene_fracs or [], _cfg.SAR_MIN_WATER_PIXEL_FRACTION)
+
+    # Flood alert banner (shown when acute anomaly is elevated)
+    flood_anomaly_val = feat.get("sar_flood_anomaly") or 0.0
+    if flood_anomaly_val > 0.30:
+        _al_color, _al_bg = "#ef4444", "#2d1515"
+        _al_title = "Acute flood event detected"
+    elif flood_anomaly_val > 0.10:
+        _al_color, _al_bg = "#f97316", "#2d1e0f"
+        _al_title = "Elevated SAR flood anomaly"
+    else:
+        _al_color = _al_bg = _al_title = ""
+    if _al_title:
+        flood_alert_html = (
+            f'<div style="background:{_al_bg};border:1px solid {_al_color}55;border-radius:6px;'
+            f'padding:10px 14px;margin-bottom:14px">'
+            f'<div style="font-size:0.85rem;font-weight:600;color:{_al_color}">{_al_title}</div>'
+            f'<div style="font-size:0.76rem;color:#9ca3af;margin-top:4px">'
+            f'SAR water coverage anomaly: {flood_anomaly_val * 100:.1f}% above seasonal baseline. '
+            f'Recent SAR scenes show significantly higher water fraction than historical norm '
+            f'for the same calendar months.'
+            f'</div>'
+            f'</div>'
+        )
+    else:
+        flood_alert_html = ""
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1044,13 +1150,20 @@ def build_report_html(
     </div>
   </div>
 
-  <!-- SAR Scene images -->
+  <!-- SAR Flood Analysis -->
   <div class="card">
-    <h2>Sentinel-1 SAR scenes (most recent {len(sar_scene_months or [])})</h2>
+    <h2>Sentinel-1 SAR &mdash; Flood Analysis</h2>
+    {flood_alert_html}
+    <div style="font-size:0.76rem;color:#6b7280;margin-bottom:10px">
+      Water fraction per SAR scene (chronological). Bars at or above the red threshold line
+      ({round(_cfg.SAR_MIN_WATER_PIXEL_FRACTION * 100, 0):.0f}%) count as flooded for the chronic frequency score.
+      Opaque blue = flooded scene; faint blue = below threshold.
+    </div>
+    {sar_frac_chart}
+    <h2 style="margin-top:20px;margin-bottom:12px">SAR scene images (most recent {len(sar_scene_months or [])})</h2>
     <div style="font-size:0.76rem;color:#6b7280;margin-bottom:12px">
-      VV backscatter &mdash; log-scaled grayscale. Blue pixels: DN &lt; {_cfg.SAR_WATER_DN_THRESHOLD} (water detection threshold).
-      Dark areas = low backscatter (calm water, specular surfaces).
-      Bright areas = high backscatter (vegetation, urban, rough terrain).
+      VV backscatter &mdash; log-scaled grayscale. Blue pixels: DN &lt; {_cfg.SAR_WATER_DN_THRESHOLD} (water threshold).
+      Dark = calm water / specular &bull; Bright = vegetation / urban / rough terrain.
     </div>
     <div class="scene-grid">
       <table class="scenes">

@@ -21,7 +21,7 @@ from ..geometry.normalize import geojson_to_shapely
 from ..models.common import MetricName, QualityInfo
 from .timeseries import run_timeseries
 from .sar_pipeline import run_sar_features
-from ..compute.sar_features import compute_sar_water_frequency
+from ..compute.sar_features import compute_sar_flood_anomaly, compute_sar_water_frequency
 from ..storage.duckdb_store import store
 
 logger = logging.getLogger(__name__)
@@ -119,7 +119,15 @@ async def run_features(
     # scenes from months where co-located S2 NDSI confirms snow cover (NDSI > 0.4).
     sar_scene_fracs: list[tuple[str, float]] = sar_features.pop("_sar_scene_fracs", [])
     sar_scene_arrays: list[tuple[str, str, object, float]] = sar_features.pop("_sar_scene_arrays", [])
+
     if sar_scene_fracs:
+        # -- Chronic water frequency (snow-suppressed) --
+        # Exclude months where co-located S2 NDSI confirms actual snow cover.
+        # Note: flooded fields also produce high NDSI (specular reflection), so
+        # snow suppression is intentionally limited to locations where persistent
+        # snow is physically plausible (high elevation / high latitude).
+        # For flood-prone lowland sites the suppression may over-exclude; the
+        # anomaly metric below is immune to this because it uses all scenes.
         snow_months: set[str] = {
             rec.month for rec in ndsi_records
             if rec.mean is not None and rec.mean > settings.NDSI_SNOW_THRESHOLD
@@ -133,6 +141,14 @@ async def run_features(
             sar_features["sar_water_freq_5y"] = (
                 compute_sar_water_frequency(non_snow_fracs) if non_snow_fracs else None
             )
+
+        # -- Flood anomaly (uses ALL scenes, no snow suppression) --
+        # Compares recent water_frac to historical seasonal baseline for the same
+        # calendar month. Detects sudden flood events even when they coincide with
+        # months that NDSI falsely flags as snow (flooded floodplains).
+        flood_anomaly = compute_sar_flood_anomaly(sar_scene_fracs, date_end)
+        if flood_anomaly is not None:
+            sar_features["sar_flood_anomaly"] = flood_anomaly
 
     features.update(sar_features)
     if sar_features.get("sar_water_freq_5y") is None:
