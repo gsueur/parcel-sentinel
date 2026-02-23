@@ -31,10 +31,6 @@ h2 { font-size: 1rem; font-weight: 600; color: #9ca3af; text-transform: uppercas
 .score-item .value { font-size: 1.6rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
 .bar-bg { height: 6px; background: #1e2130; border-radius: 3px; }
 .bar-fill { height: 6px; border-radius: 3px; }
-.drought  { background: #ef4444; }
-.wetness  { background: #3b82f6; }
-.fire     { background: #f97316; }
-.heat     { background: #22c55e; }
 .composite{ background: #a855f7; }
 
 /* Features table */
@@ -347,11 +343,12 @@ def _index_reference_html(index_stats: dict) -> str:
 </div>"""
 
 
-def _score_bar(label: str, value: int | None, css_class: str, suppressed: bool = False, inverted: bool = False) -> str:
-    """Render a sub-score bar.
+def _score_bar(label: str, value: int | None, suppressed: bool = False, inverted: bool = False) -> str:
+    """Render a sub-score bar with value-based color coding.
 
-    inverted=True means higher value is better (heat mitigation): color goes green→red as value drops.
-    inverted=False means higher value is worse (drought, wetness, fire): bar color is fixed per metric.
+    inverted=True  (heat mitigation): higher is safer -- green ≥60, amber ≥30, red <30.
+    inverted=False (drought, wetness, fire): higher is riskier -- green <25, amber <50, orange <75, red ≥75.
+    Both cases use the same color for the value number and bar fill.
     """
     if suppressed:
         return (
@@ -365,19 +362,14 @@ def _score_bar(label: str, value: int | None, css_class: str, suppressed: bool =
         return f'<div class="score-item"><label>{label}</label><div class="value">—</div></div>'
     pct = max(0, min(100, value))
     if inverted:
-        # Higher = better: green when high, amber when mid, red when low
         color = "#22c55e" if value >= 60 else ("#f59e0b" if value >= 30 else "#ef4444")
-        return f"""
+    else:
+        color = "#22c55e" if value < 25 else ("#f59e0b" if value < 50 else ("#f97316" if value < 75 else "#ef4444"))
+    return f"""
     <div class="score-item">
       <label>{label}</label>
       <div class="value" style="color:{color}">{value}</div>
       <div class="bar-bg"><div class="bar-fill" style="width:{pct}%;background:{color}"></div></div>
-    </div>"""
-    return f"""
-    <div class="score-item">
-      <label>{label}</label>
-      <div class="value">{value}</div>
-      <div class="bar-bg"><div class="bar-fill {css_class}" style="width:{pct}%"></div></div>
     </div>"""
 
 
@@ -802,10 +794,10 @@ def build_report_html(
     )
 
     score_bars = (
-        _score_bar("Drought", s.get("drought_score"), "drought", suppressed=is_urban) +
-        _score_bar("Wetness", s.get("wetness_score"), "wetness") +
-        _score_bar("Fire exposure", s.get("fire_exposure_score"), "fire", suppressed=is_urban) +
-        _score_bar("Heat mitigation (higher = more canopy = safer)", s.get("heat_mitigation_score"), "heat", inverted=True)
+        _score_bar("Drought", s.get("drought_score"), suppressed=is_urban) +
+        _score_bar("Wetness", s.get("wetness_score")) +
+        _score_bar("Fire exposure", s.get("fire_exposure_score"), suppressed=is_urban) +
+        _score_bar("Heat mitigation (higher = more canopy = safer)", s.get("heat_mitigation_score"), inverted=True)
     )
 
     # Urban banner + formula note
