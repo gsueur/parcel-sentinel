@@ -119,6 +119,7 @@ class TestFeatures:
                 "quality_score": 0.87,
             },
             QualityInfo(months_total=60, months_observed=55, mean_cloud_fraction=0.12),
+            {"ndvi": []},  # series (4th return value)
         )
 
         resp = client.post("/v1/location/features", json={
@@ -149,6 +150,7 @@ class TestScore:
                 wetness_score=28,
                 fire_exposure_score=15,
                 heat_mitigation_score=71,
+                flood_risk_score=5,
                 composite_score=54,
                 top_factors=[
                     {"name": "ndvi_trend_slope_5y", "direction": "negative", "weight": 0.35},

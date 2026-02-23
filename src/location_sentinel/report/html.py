@@ -478,6 +478,17 @@ _FM: dict[str, dict] = {
              "Below 50: low confidence &mdash; features may be unreliable.",
         fmt="score", signal="high_good", thr1=0.4, thr2=0.7,
     ),
+    "sar_water_freq_5y": dict(
+        label="SAR flood frequency",
+        group="SAR Flood", group_color="#06b6d4", group_index=None,
+        desc="Fraction of Sentinel-1 SAR scenes where water pixels (VV backscatter below DN threshold) "
+             "exceeded 5% of the analysis window. Cloud-independent: SAR penetrates clouds, detecting "
+             "flood events invisible to optical sensors. "
+             "Below 5%: near-zero flood history &bull; 5&ndash;15%: seasonal or episodic flooding &bull; "
+             "above 15%: recurrent flood exposure. "
+             "Threshold calibration: default ~&minus;20 dB sigma0 (DN 300); tunable per deployment.",
+        fmt="pct", signal="low_good", thr1=0.05, thr2=0.15,
+    ),
 }
 
 _GROUP_ORDER = [
@@ -488,6 +499,7 @@ _GROUP_ORDER = [
     "Snow Cover",
     "Bare Soil",
     "Canopy & Context",
+    "SAR Flood",
     "Quality",
     "Other",
 ]
@@ -801,6 +813,7 @@ def build_report_html(
         _score_bar("Drought", s.get("drought_score"), suppressed=is_urban) +
         _score_bar("Wetness", s.get("wetness_score")) +
         _score_bar("Fire exposure", s.get("fire_exposure_score"), suppressed=is_urban) +
+        _score_bar("Flood risk (SAR)", s.get("flood_risk_score")) +
         _score_bar("Heat mitigation (higher = more canopy = safer)", s.get("heat_mitigation_score"), inverted=True)
     )
 
@@ -818,10 +831,12 @@ def build_report_html(
             '<div style="font-size:0.74rem;color:#6b7280;line-height:1.8">'
             'Drought and fire scores are suppressed (not applicable on impervious surfaces).<br>'
             'Composite = '
-            f'<span style="{_pill};background:#22c55e22;color:#4ade80">80% canopy deficit</span>'
+            f'<span style="{_pill};background:#22c55e22;color:#4ade80">70% canopy deficit</span>'
             '(= 100 &minus; heat mitigation) + '
-            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">20% wetness</span>'
-            '(flooding / waterlogging)'
+            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">15% wetness</span>'
+            '(flooding / waterlogging) + '
+            f'<span style="{_pill};background:#06b6d422;color:#22d3ee">15% flood risk</span>'
+            '(SAR water frequency)'
             '</div>'
             '</div>'
         )
@@ -838,6 +853,7 @@ def build_report_html(
             f'<span style="{_pill};background:#3b82f622;color:#60a5fa">{_w["wetness"]:.0%} wetness</span>'
             f'<span style="{_pill};background:#f9731622;color:#fb923c">{_w["fire"]:.0%} fire</span>'
             f'<span style="{_pill};background:#22c55e22;color:#4ade80">{_w["heat_inv"]:.0%} canopy deficit</span>'
+            f'<span style="{_pill};background:#06b6d422;color:#22d3ee">{_w.get("flood", 0.15):.0%} flood</span>'
             '<br><span style="color:#374151">Canopy deficit = 100 &minus; heat mitigation score. '
             'Low canopy raises the composite risk.</span>'
             '</div>'

@@ -115,10 +115,11 @@ class TestScoring:
         assert result.fire_exposure_score == 0
 
     def test_urban_composite_formula(self):
-        # composite = 0.80*(100-heat_mitigation) + 0.20*wetness
+        # composite = 0.70*(100-heat_mitigation) + 0.15*wetness + 0.15*flood
         # canopy=0.56 → heat_mitigation=0.56/0.8*100=70
         # wetness = 0.20*100 = 20
-        # composite = 0.80*(100-70) + 0.20*20 = 24+4 = 28
+        # flood = 0 (no SAR data)
+        # composite = 0.70*(100-70) + 0.15*20 + 0.15*0 = 21+3+0 = 24
         features = {
             "is_urban": 1.0,
             "ndwi_wetness_persistence_5y": 0.20,
@@ -129,35 +130,35 @@ class TestScoring:
         assert result.wetness_score == 20
         assert result.drought_score == 0
         assert result.fire_exposure_score == 0
-        assert result.composite_score == 28  # 0.80*(100-70) + 0.20*20
+        assert result.composite_score == 24  # 0.70*(100-70) + 0.15*20 + 0.15*0
 
     # --- Climate profile tests ---
 
     def test_climate_weights_arid(self):
         w = climate_weights_for_code("BWh")
-        assert w["drought"] == 0.50
+        assert w["drought"] == 0.45
         assert w["fire"] == 0.20
         assert abs(sum(w.values()) - 1.0) < 1e-9
 
     def test_climate_weights_mediterranean(self):
         w = climate_weights_for_code("Csa")
-        assert w["fire"] == 0.40
-        assert w["drought"] == 0.30
+        assert w["fire"] == 0.35
+        assert w["drought"] == 0.25
 
     def test_climate_weights_csb(self):
         # Csb should resolve to the Cs profile, not generic C
         w = climate_weights_for_code("Csb")
-        assert w["fire"] == 0.40
+        assert w["fire"] == 0.35
 
     def test_climate_weights_tropical(self):
         w = climate_weights_for_code("Af")
-        assert w["wetness"] == 0.45
-        assert w["drought"] == 0.10
+        assert w["wetness"] == 0.37
+        assert w["drought"] == 0.08
 
     def test_climate_weights_fallback_none(self):
         w = climate_weights_for_code(None)
-        assert w["drought"] == 0.35
-        assert w["wetness"] == 0.25
+        assert w["drought"] == 0.28
+        assert w["wetness"] == 0.20
 
     def test_climate_weights_fallback_unknown(self):
         w = climate_weights_for_code("XX")

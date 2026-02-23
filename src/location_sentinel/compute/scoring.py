@@ -7,17 +7,17 @@ from ..config import settings
 # ---------------------------------------------------------------------------
 # Climate-zone weight profiles for the composite score
 # ---------------------------------------------------------------------------
-# Keys: drought, wetness, fire, heat_inv (= 100 - heat_mitigation_score)
-# All four weights must sum to 1.0.
+# Keys: drought, wetness, fire, heat_inv (= 100 - heat_mitigation_score), flood
+# All five weights must sum to 1.0.
 # Resolution order: "Cs" prefix first, then major letter, then "default".
 _CLIMATE_WEIGHTS: dict[str, dict[str, float]] = {
-    "A":       {"drought": 0.10, "wetness": 0.45, "fire": 0.15, "heat_inv": 0.30},
-    "B":       {"drought": 0.50, "wetness": 0.05, "fire": 0.20, "heat_inv": 0.25},
-    "Cs":      {"drought": 0.30, "wetness": 0.10, "fire": 0.40, "heat_inv": 0.20},
-    "C":       {"drought": 0.25, "wetness": 0.25, "fire": 0.20, "heat_inv": 0.30},
-    "D":       {"drought": 0.20, "wetness": 0.20, "fire": 0.35, "heat_inv": 0.25},
-    "E":       {"drought": 0.10, "wetness": 0.20, "fire": 0.05, "heat_inv": 0.65},
-    "default": {"drought": 0.35, "wetness": 0.25, "fire": 0.20, "heat_inv": 0.20},
+    "A":       {"drought": 0.08, "wetness": 0.37, "fire": 0.10, "heat_inv": 0.25, "flood": 0.20},
+    "B":       {"drought": 0.45, "wetness": 0.05, "fire": 0.20, "heat_inv": 0.25, "flood": 0.05},
+    "Cs":      {"drought": 0.25, "wetness": 0.08, "fire": 0.35, "heat_inv": 0.17, "flood": 0.15},
+    "C":       {"drought": 0.20, "wetness": 0.20, "fire": 0.15, "heat_inv": 0.25, "flood": 0.20},
+    "D":       {"drought": 0.15, "wetness": 0.15, "fire": 0.30, "heat_inv": 0.25, "flood": 0.15},
+    "E":       {"drought": 0.08, "wetness": 0.17, "fire": 0.05, "heat_inv": 0.55, "flood": 0.15},
+    "default": {"drought": 0.28, "wetness": 0.20, "fire": 0.17, "heat_inv": 0.20, "flood": 0.15},
 }
 
 _CLIMATE_PROFILE_LABELS: dict[str, str] = {
@@ -57,6 +57,7 @@ class ScoreResult:
     wetness_score: int
     fire_exposure_score: int
     heat_mitigation_score: int
+    flood_risk_score: int
     composite_score: int
     top_factors: list[dict]
     climate_profile: str = field(default="Generic")
@@ -160,13 +161,29 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     else:
         heat_mitigation_score = 50.0
 
+    # --- Flood risk score (0-100) ---
+    # Derived from Sentinel-1 SAR VV backscatter: cloud-independent.
+    # Not suppressed for urban locations (urban flooding is a primary risk).
+    sar_water_freq = features.get("sar_water_freq_5y")
+    if sar_water_freq is not None:
+        flood_risk_score = sar_water_freq * 100
+        if sar_water_freq > 0.1:
+            factors.append({
+                "name": "sar_water_freq_5y",
+                "direction": "positive",
+                "weight": w.get("flood", 0.15),
+            })
+    else:
+        flood_risk_score = 0.0  # safe default -- no SAR data
+
     # --- Composite (0-100) ---
     if is_urban:
-        # Urban: heat island (canopy deficit) dominates; wetness is secondary.
+        # Urban: canopy deficit dominates; wetness and flood are secondary.
         # Climate zone weights are irrelevant on impervious surfaces.
         composite = (
-            0.80 * (100 - heat_mitigation_score)
-            + 0.20 * wetness_score
+            0.70 * (100 - heat_mitigation_score)
+            + 0.15 * wetness_score
+            + 0.15 * flood_risk_score
         )
     else:
         # Climate-zone-weighted composite. Heat mitigation is inverted:
@@ -176,6 +193,7 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             + w["wetness"]  * wetness_score
             + w["fire"]     * fire_exposure_score
             + w["heat_inv"] * (100 - heat_mitigation_score)
+            + w["flood"]    * flood_risk_score
         )
 
     return ScoreResult(
@@ -183,6 +201,7 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         wetness_score=_clamp(wetness_score),
         fire_exposure_score=_clamp(fire_exposure_score),
         heat_mitigation_score=_clamp(heat_mitigation_score),
+        flood_risk_score=_clamp(flood_risk_score),
         composite_score=_clamp(composite),
         top_factors=sorted(factors, key=lambda f: f["weight"], reverse=True)[:3],
         climate_profile=profile,

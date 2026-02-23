@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from ..compute.canopy import compute_canopy_proxy_from_series
@@ -19,6 +20,7 @@ from ..config import settings
 from ..geometry.normalize import geojson_to_shapely
 from ..models.common import MetricName, QualityInfo
 from .timeseries import run_timeseries
+from .sar_pipeline import run_sar_features
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +40,19 @@ async def run_features(
     if not ts_metrics:
         ts_metrics = [MetricName.ndvi]
 
-    location_key, series, quality = await run_timeseries(
-        geom_geojson=geom_geojson,
-        date_start=date_start,
-        date_end=date_end,
-        metrics=ts_metrics,
+    # Run S2 timeseries and SAR pipelines concurrently to keep wall-clock time flat
+    (location_key, series, quality), sar_features = await asyncio.gather(
+        run_timeseries(
+            geom_geojson=geom_geojson,
+            date_start=date_start,
+            date_end=date_end,
+            metrics=ts_metrics,
+        ),
+        run_sar_features(
+            geom_geojson=geom_geojson,
+            date_start=date_start,
+            date_end=date_end,
+        ),
     )
 
     features: dict[str, float | None] = {}
@@ -100,6 +110,11 @@ async def run_features(
         quality.months_observed,
         quality.mean_cloud_fraction,
     )
+
+    # SAR features (Sentinel-1 flood detection, cloud-independent)
+    features.update(sar_features)
+    if sar_features.get("sar_water_freq_5y") is None:
+        quality.flags.append("no_sar_data")
 
     # Urban detection
     is_urban = detect_urban(features)

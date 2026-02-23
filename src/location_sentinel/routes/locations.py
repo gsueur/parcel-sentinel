@@ -90,6 +90,7 @@ async def create_location(req: LocationRequest):
         "wetness_score": score_result.wetness_score,
         "fire_exposure_score": score_result.fire_exposure_score,
         "heat_mitigation_score": score_result.heat_mitigation_score,
+        "flood_risk_score": score_result.flood_risk_score,
         "composite_score": score_result.composite_score,
     })
     store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,
@@ -107,6 +108,7 @@ async def create_location(req: LocationRequest):
             "wetness_score": score_result.wetness_score,
             "fire_exposure_score": score_result.fire_exposure_score,
             "heat_mitigation_score": score_result.heat_mitigation_score,
+            "flood_risk_score": score_result.flood_risk_score,
             "composite_score": score_result.composite_score,
         },
         features=features,

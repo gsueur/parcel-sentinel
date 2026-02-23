@@ -14,9 +14,21 @@ class Settings(BaseSettings):
     STAC_ENDPOINTS: str = "https://earth-search.aws.element84.com/v1"
     STAC_COLLECTION: str = "sentinel-2-l2a"
 
-    # AWS COG source (public bucket, no auth)
+    # AWS COG source for Sentinel-2 (public bucket, no auth)
     AWS_SENTINEL_BUCKET: str = "sentinel-cogs"
     AWS_SENTINEL_REGION: str = "us-west-2"
+
+    # SAR / Sentinel-1 GRD
+    SAR_STAC_COLLECTION: str = "sentinel-1-grd"
+    SAR_AWS_BUCKET: str = "sentinel-s1-l1c"
+    SAR_AWS_REGION: str = "eu-central-1"
+    # Water detection threshold in uint16 DN (~-20 dB sigma0).
+    # Calibration: sigma0_dB ≈ 10 * log10(DN²) - 83. Tune per deployment.
+    SAR_WATER_DN_THRESHOLD: int = 300
+    # Minimum fraction of window pixels showing water for a scene to count as flooded
+    SAR_MIN_WATER_PIXEL_FRACTION: float = 0.05
+    SAR_MAX_SCENES_PER_MONTH: int = 2
+    SAR_MAX_TOTAL_SCENES: int = 120
 
     # Standardized window size for all raster reads
     COG_WINDOW_SIZE: int = 64
@@ -38,8 +50,8 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.3.0"
-    SCORE_VERSION: str = "risk-v1.2.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.4.0"
+    SCORE_VERSION: str = "risk-v1.3.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"

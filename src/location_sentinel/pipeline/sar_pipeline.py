@@ -1,0 +1,187 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from functools import partial
+
+import numpy as np
+import pyproj
+import shapely
+
+from ..compute.sar_features import compute_sar_water_frequency, compute_water_fraction
+from ..config import settings
+from ..geometry.normalize import geojson_to_shapely
+from ..geometry.reproject import get_utm_crs, reproject_geometry
+from ..geometry.validate import validate_geometry
+from ..stac.s1_client import SARSceneRef, search_sar_scenes
+
+logger = logging.getLogger(__name__)
+
+# GDAL environment for anonymous S3 access (Sentinel-1 public bucket)
+_GDAL_ENV = {
+    "AWS_NO_SIGN_REQUEST": "YES",
+    "AWS_REGION": settings.SAR_AWS_REGION,
+    # Avoid expensive directory listings on every open
+    "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+    "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tiff,.tif",
+}
+
+
+def _parse_s1_s3_key(href: str) -> str:
+    """Extract S3 object key from a Sentinel-1 asset href.
+
+    Handles:
+      - https://sentinel-s1-l1c.s3.eu-central-1.amazonaws.com/{key}
+      - https://sentinel-s1-l1c.s3.amazonaws.com/{key}
+      - https://sentinel-s1-l1c.s3-eu-central-1.amazonaws.com/{key}
+      - s3://sentinel-s1-l1c/{key}
+    """
+    if href.startswith("s3://"):
+        return href.split("/", 3)[3]
+    for marker in (
+        "sentinel-s1-l1c.s3.eu-central-1.amazonaws.com/",
+        "sentinel-s1-l1c.s3.amazonaws.com/",
+        "sentinel-s1-l1c.s3-eu-central-1.amazonaws.com/",
+    ):
+        if marker in href:
+            return href.split(marker, 1)[1]
+    # Generic fallback: drop scheme + host
+    parts = href.split("/", 3)
+    return parts[3] if len(parts) > 3 else href
+
+
+def _read_vv_dn_sync(
+    href: str,
+    geom_centroid: shapely.Point,
+) -> np.ndarray | None:
+    """Read a 64x64 window of VV uint16 DN from a Sentinel-1 GRD file.
+
+    S1 GRD Level-1 files use GCP-based geolocation (no affine transform).
+    rasterio's WarpedVRT handles GCPs transparently: it warps the data into a
+    projected UTM CRS, producing a virtual raster with a proper affine transform
+    from which a window read can be done using standard (x, y) coordinates.
+
+    Runs synchronously -- call from an asyncio executor.
+    """
+    import rasterio
+    from rasterio.crs import CRS as RioCRS
+    from rasterio.vrt import WarpedVRT
+    from rasterio.windows import Window
+
+    key = _parse_s1_s3_key(href)
+    vsis3_path = f"/vsis3/{settings.SAR_AWS_BUCKET}/{key}"
+
+    # Derive UTM CRS and project centroid once
+    wgs84 = pyproj.CRS.from_epsg(4326)
+    utm_crs = get_utm_crs(geom_centroid.x, geom_centroid.y)
+    proj = reproject_geometry(geom_centroid, wgs84, utm_crs)
+    cx, cy = proj.x, proj.y
+
+    target_crs = RioCRS.from_epsg(utm_crs.to_epsg())
+    size = settings.COG_WINDOW_SIZE
+
+    try:
+        with rasterio.Env(**_GDAL_ENV):
+            with rasterio.open(vsis3_path) as src:
+                # WarpedVRT projects GCP-based source into the target UTM CRS.
+                # GDAL only reads and reprojects the scanlines needed for the window.
+                with WarpedVRT(src, crs=target_crs) as vrt:
+                    inv = ~vrt.transform
+                    col, row = inv * (cx, cy)
+                    col_off = max(0, int(round(col)) - size // 2)
+                    row_off = max(0, int(round(row)) - size // 2)
+                    window = Window(
+                        col_off=col_off,
+                        row_off=row_off,
+                        width=size,
+                        height=size,
+                    )
+                    data = vrt.read(1, window=window)
+                    logger.debug(
+                        "SAR read OK key=%.80s shape=%s min=%d max=%d",
+                        key, data.shape, int(data.min()), int(data.max()),
+                    )
+                    return data.astype(np.uint16)
+    except Exception as exc:
+        logger.warning("SAR VV read failed key=%.80s err=%s", key, exc)
+        return None
+
+
+async def _process_sar_scene(
+    scene_ref: SARSceneRef,
+    geom: shapely.Geometry,
+    loop: asyncio.AbstractEventLoop,
+) -> float | None:
+    """Read VV band for one S1 scene; return water fraction or None."""
+    item = scene_ref.item
+    vv_asset = item.assets.get("vv")
+    if vv_asset is None:
+        logger.warning("No VV asset in S1 item %s", item.id)
+        return None
+
+    centroid = geom.centroid
+    vv_dn = await loop.run_in_executor(
+        None,
+        partial(_read_vv_dn_sync, vv_asset.href, centroid),
+    )
+    if vv_dn is None:
+        return None
+
+    return compute_water_fraction(vv_dn)
+
+
+async def run_sar_features(
+    geom_geojson: dict,
+    date_start: str,
+    date_end: str,
+) -> dict[str, float | None]:
+    """Search S1 GRD scenes, read VV COGs, compute sar_water_freq_5y.
+
+    Returns {"sar_water_freq_5y": value} where value is None when no SAR
+    data was found or the pipeline encountered an unrecoverable error.
+    """
+    try:
+        geom = geojson_to_shapely(geom_geojson)
+        geom = validate_geometry(geom)
+
+        loop = asyncio.get_event_loop()
+        t0 = time.monotonic()
+        search_result = await loop.run_in_executor(
+            None,
+            partial(search_sar_scenes, geom, date_start, date_end),
+        )
+        logger.info(
+            "S1 STAC search %.1fs scenes=%d",
+            time.monotonic() - t0, len(search_result.scenes),
+        )
+
+        if not search_result.scenes:
+            logger.info("No S1 scenes found -- no_sar_data")
+            return {"sar_water_freq_5y": None}
+
+        sem = asyncio.Semaphore(settings.MAX_CONCURRENT_COG_READS)
+
+        async def _process_one(sr: SARSceneRef) -> float | None:
+            async with sem:
+                return await _process_sar_scene(sr, geom, loop)
+
+        t1 = time.monotonic()
+        scene_fracs = await asyncio.gather(*[_process_one(sr) for sr in search_result.scenes])
+        logger.info(
+            "SAR reads %.1fs scenes=%d valid=%d",
+            time.monotonic() - t1,
+            len(search_result.scenes),
+            sum(1 for f in scene_fracs if f is not None),
+        )
+
+        valid_fracs = [f for f in scene_fracs if f is not None]
+        if not valid_fracs:
+            return {"sar_water_freq_5y": None}
+
+        water_freq = compute_sar_water_frequency(valid_fracs)
+        return {"sar_water_freq_5y": water_freq}
+
+    except Exception as exc:
+        logger.warning("SAR pipeline failed: %s -- returning no_sar_data", exc)
+        return {"sar_water_freq_5y": None}
