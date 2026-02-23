@@ -397,16 +397,16 @@ _FM: dict[str, dict] = {
     "ndvi_anomaly_freq_5y": dict(
         label="Drought anomaly frequency",
         group="Vegetation Health", group_color="#22c55e", group_index="NDVI",
-        desc="Share of months where NDVI fell more than 0.1 units below its seasonal climatological baseline. "
-             "High values indicate recurring drought or stress episodes.",
+        desc="Share of months where NDVI fell more than 0.1 NDVI units below its seasonal baseline. "
+             "Below 10%: occasional stress &bull; 10&ndash;30%: recurring anomalies &bull; above 30%: frequent drought.",
         fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
     ),
     "ndwi_wetness_persistence_5y": dict(
         label="Open-water persistence",
         group="Open Water", group_color="#3b82f6", group_index="NDWI",
         desc="Share of months with open water detected (NDWI &gt; 0, McFeeters). "
-             "Chronically high values indicate flooding risk or permanent water bodies. "
-             "Context-dependent: expected to be high for wetlands and riparian locations.",
+             "Below 20%: dry land &bull; 20&ndash;50%: seasonal flooding or riparian influence &bull; above 50%: near-permanent water. "
+             "Context-dependent: expected to be high for wetlands and floodplains.",
         fmt="pct", signal="context", thr1=0.2, thr2=0.5,
     ),
     "ndmi_mean_5y": dict(
@@ -420,6 +420,7 @@ _FM: dict[str, dict] = {
         label="Moisture stress frequency",
         group="Vegetation Moisture", group_color="#06b6d4", group_index="NDMI",
         desc="Share of months where vegetation water stress was detected (NDMI &lt; 0). "
+             "Below 10%: well-watered &bull; 10&ndash;30%: moderate recurring deficit &bull; above 30%: significant chronic stress. "
              "Contributes directly to the drought risk sub-score.",
         fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
     ),
@@ -434,15 +435,17 @@ _FM: dict[str, dict] = {
         label="Burn signal frequency",
         group="Fire History", group_color="#f97316", group_index="NBR",
         desc="Share of months where a burn signal was present (NBR &lt; 0.1). "
-             "Directly sets the fire exposure score. Even low frequencies are significant.",
+             "Above 5%: notable fire history &bull; above 15%: recurrent fire events. "
+             "Directly sets the fire exposure score.",
         fmt="pct", signal="low_good", thr1=0.05, thr2=0.15,
     ),
     "ndsi_snow_persistence_5y": dict(
         label="Snow-cover persistence",
         group="Snow Cover", group_color="#a5f3fc", group_index="NDSI",
         desc="Share of months with snow detected (NDSI &gt; 0.4). "
+             "Below 10%: rare snow &bull; 10&ndash;40%: seasonal snowpack &bull; above 40%: persistent snow cover. "
              "Note: open water bodies can produce high NDSI values similar to snow &mdash; "
-             "high readings in low-elevation or coastal locations may indicate water, not snowpack.",
+             "high readings at low elevations may indicate water, not snowpack.",
         fmt="pct", signal="context", thr1=0.1, thr2=0.4,
     ),
     "bsi_mean_5y": dict(
@@ -456,6 +459,7 @@ _FM: dict[str, dict] = {
         label="Bare soil frequency",
         group="Bare Soil", group_color="#d97706", group_index="BSI",
         desc="Share of months with bare soil dominant (BSI &gt; 0). "
+             "Below 10%: well-vegetated &bull; 10&ndash;30%: mixed or seasonal exposure &bull; above 30%: dominantly bare. "
              "Can reflect land degradation, erosion risk, or seasonal tillage patterns.",
         fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
     ),
@@ -470,8 +474,8 @@ _FM: dict[str, dict] = {
     "quality_score": dict(
         label="Data quality",
         group="Quality", group_color="#9ca3af", group_index=None,
-        desc="Composite 0&ndash;1 score based on scene coverage, cloud fraction, and valid pixel ratio. "
-             "Below 0.5: low confidence &mdash; features may be unreliable.",
+        desc="Composite 0&ndash;100 score based on scene coverage, cloud fraction, and valid pixel ratio. "
+             "Below 50: low confidence &mdash; features may be unreliable.",
         fmt="score", signal="high_good", thr1=0.4, thr2=0.7,
     ),
 }
