@@ -21,6 +21,8 @@ from ..geometry.normalize import geojson_to_shapely
 from ..models.common import MetricName, QualityInfo
 from .timeseries import run_timeseries
 from .sar_pipeline import run_sar_features
+from ..compute.sar_features import compute_sar_water_frequency
+from ..storage.duckdb_store import store
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +114,36 @@ async def run_features(
     )
 
     # SAR features (Sentinel-1 flood detection, cloud-independent)
+    # Apply snow-month suppression: S1 VV specular reflection from smooth snow/ice
+    # is indistinguishable from open water at the DN threshold level. Exclude SAR
+    # scenes from months where co-located S2 NDSI confirms snow cover (NDSI > 0.4).
+    sar_scene_fracs: list[tuple[str, float]] = sar_features.pop("_sar_scene_fracs", [])
+    sar_scene_arrays: list[tuple[str, str, object, float]] = sar_features.pop("_sar_scene_arrays", [])
+    if sar_scene_fracs:
+        snow_months: set[str] = {
+            rec.month for rec in ndsi_records
+            if rec.mean is not None and rec.mean > settings.NDSI_SNOW_THRESHOLD
+        }
+        if snow_months:
+            non_snow_fracs = [f for mk, f in sar_scene_fracs if mk not in snow_months]
+            logger.info(
+                "SAR snow suppression: kept %d/%d scenes, excluded %d snow months",
+                len(non_snow_fracs), len(sar_scene_fracs), len(snow_months),
+            )
+            sar_features["sar_water_freq_5y"] = (
+                compute_sar_water_frequency(non_snow_fracs) if non_snow_fracs else None
+            )
+
     features.update(sar_features)
     if sar_features.get("sar_water_freq_5y") is None:
         quality.flags.append("no_sar_data")
+
+    # Persist SAR VV arrays for report visualization
+    for month_key, scene_id, vv_dn, water_frac in sar_scene_arrays:
+        store.store_sar_scene(
+            location_key, scene_id, month_key,
+            settings.PROCESSING_VERSION, vv_dn, water_frac,
+        )
 
     # Urban detection
     is_urban = detect_urban(features)

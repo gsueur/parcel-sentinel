@@ -28,6 +28,7 @@ async def get_location_report(location_key: str):
     scores = store.get_scores(location_key, settings.SCORE_VERSION)
     timeseries = store.get_timeseries(location_key, settings.PROCESSING_VERSION)
     scene_months = store.get_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
+    sar_scene_months = store.get_sar_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
 
     html = build_report_html(
         location_key=location_key,
@@ -40,6 +41,7 @@ async def get_location_report(location_key: str):
         quality=features_data.get("quality") if features_data else None,
         timeseries=timeseries,
         scene_months=scene_months,
+        sar_scene_months=sar_scene_months,
         processing_version=settings.PROCESSING_VERSION,
         score_version=settings.SCORE_VERSION,
     )

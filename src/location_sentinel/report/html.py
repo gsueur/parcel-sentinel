@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from .render import band_to_b64, bsi_to_b64, nbr_to_b64, ndmi_to_b64, ndsi_to_b64, ndvi_to_b64, ndwi_to_b64
+from .render import band_to_b64, bsi_to_b64, nbr_to_b64, ndmi_to_b64, ndsi_to_b64, ndvi_to_b64, ndwi_to_b64, vv_dn_to_b64
 from ..compute.scoring import climate_profile_label, climate_weights_for_code
 
 _CSS = """
@@ -716,6 +716,26 @@ def _scene_rows(scene_months: list[dict]) -> str:
     return "\n".join(rows)
 
 
+def _sar_scene_rows(sar_scene_months: list[dict], water_threshold: int) -> str:
+    if not sar_scene_months:
+        return '<tr><td colspan="3" class="no-data">No SAR scene images cached yet.</td></tr>'
+    from ..config import settings as _s
+    rows = []
+    for entry in sar_scene_months:
+        month = entry["month_key"]
+        vv_dn = entry["vv_dn"]
+        water_frac = entry.get("water_frac")
+        frac_str = f"{water_frac * 100:.1f}%" if water_frac is not None else "—"
+        vv_b64 = vv_dn_to_b64(vv_dn, water_threshold)
+        rows.append(f"""
+        <tr>
+          <td>{month}</td>
+          <td><img src="data:image/png;base64,{vv_b64}" alt="VV {month}"></td>
+          <td style="font-family:monospace;font-size:0.82rem">{frac_str}</td>
+        </tr>""")
+    return "\n".join(rows)
+
+
 def build_report_html(
     location_key: str,
     name: str | None,
@@ -729,6 +749,7 @@ def build_report_html(
     processing_version: str,
     score_version: str,
     climate: dict | None = None,
+    sar_scene_months: list[dict] | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -914,6 +935,10 @@ def build_report_html(
     # Scene image rows
     scene_rows = _scene_rows(scene_months)
 
+    # SAR scene rows
+    from ..config import settings as _cfg
+    sar_rows = _sar_scene_rows(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD)
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -996,9 +1021,9 @@ def build_report_html(
     {_index_reference_html(index_stats)}
   </div>
 
-  <!-- Scene images -->
+  <!-- S2 Scene images -->
   <div class="card">
-    <h2>Scene images (most recent {len(scene_months)})</h2>
+    <h2>Sentinel-2 scenes (most recent {len(scene_months)})</h2>
     <div class="scene-grid">
       <table class="scenes">
         <thead>
@@ -1015,6 +1040,28 @@ def build_report_html(
           </tr>
         </thead>
         <tbody>{scene_rows}</tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SAR Scene images -->
+  <div class="card">
+    <h2>Sentinel-1 SAR scenes (most recent {len(sar_scene_months or [])})</h2>
+    <div style="font-size:0.76rem;color:#6b7280;margin-bottom:12px">
+      VV backscatter &mdash; log-scaled grayscale. Blue pixels: DN &lt; {_cfg.SAR_WATER_DN_THRESHOLD} (water detection threshold).
+      Dark areas = low backscatter (calm water, specular surfaces).
+      Bright areas = high backscatter (vegetation, urban, rough terrain).
+    </div>
+    <div class="scene-grid">
+      <table class="scenes">
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>VV backscatter</th>
+            <th>Water fraction</th>
+          </tr>
+        </thead>
+        <tbody>{sar_rows}</tbody>
       </table>
     </div>
   </div>

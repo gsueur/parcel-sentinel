@@ -319,3 +319,38 @@ def bsi_to_b64(
     with np.errstate(invalid="ignore", divide="ignore"):
         bsi = np.where(den > 0, num / den, np.nan)
     return _index_to_b64(bsi, _BSI_LUT, scale)
+
+
+def vv_dn_to_b64(vv_dn: np.ndarray, water_threshold: int, scale: int = 4) -> str:
+    """Render a Sentinel-1 VV uint16 DN array as a log-scaled grayscale PNG.
+
+    Water pixels (DN < water_threshold and DN > 0) are highlighted in blue.
+    Nodata pixels (DN == 0) are rendered dark.
+    Log scale is used because SAR backscatter is multiplicative / Rayleigh distributed.
+    """
+    arr = vv_dn.astype(np.float32)
+    valid = arr > 0
+
+    log_arr = np.where(valid, np.log1p(arr), 0.0)
+    valid_log = log_arr[valid]
+    if valid_log.size > 0:
+        p2, p98 = np.percentile(valid_log, [2, 98])
+        denom = max(p98 - p2, 1e-6)
+        normalized = np.clip((log_arr - p2) / denom, 0.0, 1.0)
+    else:
+        normalized = np.zeros_like(log_arr)
+
+    gray = (normalized * 210).astype(np.uint8)
+    rgb = np.stack([gray, gray, gray], axis=-1)
+
+    # Blue overlay for water pixels
+    water_mask = valid & (vv_dn < water_threshold)
+    rgb[water_mask] = [30, 100, 220]
+
+    # Very dark for nodata
+    rgb[~valid] = [15, 15, 15]
+
+    img = Image.fromarray(rgb, mode="RGB")
+    if scale > 1:
+        img = img.resize((img.width * scale, img.height * scale), Image.NEAREST)
+    return _to_b64(_to_png_bytes(img))

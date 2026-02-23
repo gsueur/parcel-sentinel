@@ -196,6 +196,21 @@ class DuckDBStore:
             )
         """)
 
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS sar_scene_bands (
+                location_key VARCHAR NOT NULL,
+                scene_id VARCHAR NOT NULL,
+                month_key VARCHAR NOT NULL,
+                processing_version VARCHAR NOT NULL,
+                width UTINYINT NOT NULL DEFAULT 64,
+                height UTINYINT NOT NULL DEFAULT 64,
+                vv_data USMALLINT[4096] NOT NULL,
+                water_frac DOUBLE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (location_key, scene_id, processing_version)
+            )
+        """)
+
         # Climate reference tables
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS climate_descriptions (
@@ -709,6 +724,72 @@ class DuckDBStore:
             [location_key, scene_id, processing_version],
         )
 
+    def store_sar_scene(
+        self,
+        location_key: str,
+        scene_id: str,
+        month_key: str,
+        processing_version: str,
+        vv_dn: "np.ndarray",
+        water_frac: float,
+    ) -> None:
+        """Persist a 64×64 VV uint16 array for one S1 scene."""
+        if self._conn is None:
+            return
+        h, w = vv_dn.shape
+        flat = vv_dn.flatten().tolist()
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO sar_scene_bands
+                (location_key, scene_id, month_key, processing_version,
+                 width, height, vv_data, water_frac, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [location_key, scene_id, month_key, processing_version, w, h, flat, water_frac, now],
+        )
+        self._conn.commit()
+
+    def get_sar_scene_months(
+        self,
+        location_key: str,
+        processing_version: str,
+        limit: int = 12,
+    ) -> list[dict]:
+        """Return up to `limit` most recent SAR scenes with VV array and water_frac.
+
+        One scene per month (lowest water_frac first so we show the most
+        land-like scene, giving visual context for what is and isn't water).
+        Each entry: {"scene_id": str, "month_key": str, "vv_dn": np.ndarray, "water_frac": float}
+        """
+        if self._conn is None:
+            return []
+        scenes = self._conn.execute(
+            """
+            SELECT scene_id, month_key, width, height, vv_data, water_frac
+            FROM (
+                SELECT scene_id, month_key, width, height, vv_data, water_frac,
+                       ROW_NUMBER() OVER (PARTITION BY month_key ORDER BY water_frac ASC) AS rn
+                FROM sar_scene_bands
+                WHERE location_key = ? AND processing_version = ?
+            )
+            WHERE rn = 1
+            ORDER BY month_key DESC
+            LIMIT ?
+            """,
+            [location_key, processing_version, limit],
+        ).fetchall()
+        result = []
+        for scene_id, month_key, w, h, vv_data, water_frac in scenes:
+            vv_dn = np.array(vv_data, dtype=np.uint16).reshape(h, w)
+            result.append({
+                "scene_id": scene_id,
+                "month_key": month_key,
+                "vv_dn": vv_dn,
+                "water_frac": water_frac,
+            })
+        return result
+
     def delete_location(self, location_key: str) -> dict[str, int]:
         """Delete all data for a location from every table.
 
@@ -718,6 +799,7 @@ class DuckDBStore:
             return {}
         tables = [
             "scene_bands",
+            "sar_scene_bands",
             "location_timeseries",
             "location_scores",
             "location_features",

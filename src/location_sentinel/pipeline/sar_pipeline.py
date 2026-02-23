@@ -98,9 +98,10 @@ def _read_vv_dn_sync(
                         height=size,
                     )
                     data = vrt.read(1, window=window)
-                    logger.debug(
-                        "SAR read OK key=%.80s shape=%s min=%d max=%d",
-                        key, data.shape, int(data.min()), int(data.max()),
+                    logger.info(
+                        "SAR read OK key=%.80s shape=%s dtype=%s min=%d max=%d mean=%.1f",
+                        key, data.shape, data.dtype,
+                        int(data.min()), int(data.max()), float(data.mean()),
                     )
                     return data.astype(np.uint16)
     except Exception as exc:
@@ -112,13 +113,13 @@ async def _process_sar_scene(
     scene_ref: SARSceneRef,
     geom: shapely.Geometry,
     loop: asyncio.AbstractEventLoop,
-) -> float | None:
-    """Read VV band for one S1 scene; return water fraction or None."""
+) -> tuple[float | None, np.ndarray | None]:
+    """Read VV band for one S1 scene; return (water_frac, vv_dn) or (None, None)."""
     item = scene_ref.item
     vv_asset = item.assets.get("vv")
     if vv_asset is None:
         logger.warning("No VV asset in S1 item %s", item.id)
-        return None
+        return None, None
 
     centroid = geom.centroid
     vv_dn = await loop.run_in_executor(
@@ -126,9 +127,9 @@ async def _process_sar_scene(
         partial(_read_vv_dn_sync, vv_asset.href, centroid),
     )
     if vv_dn is None:
-        return None
+        return None, None
 
-    return compute_water_fraction(vv_dn)
+    return compute_water_fraction(vv_dn), vv_dn
 
 
 async def run_sar_features(
@@ -158,16 +159,18 @@ async def run_sar_features(
 
         if not search_result.scenes:
             logger.info("No S1 scenes found -- no_sar_data")
-            return {"sar_water_freq_5y": None}
+            return {"sar_water_freq_5y": None, "_sar_scene_fracs": []}
 
         sem = asyncio.Semaphore(settings.MAX_CONCURRENT_COG_READS)
 
-        async def _process_one(sr: SARSceneRef) -> float | None:
+        async def _process_one(sr: SARSceneRef) -> tuple[float | None, np.ndarray | None]:
             async with sem:
                 return await _process_sar_scene(sr, geom, loop)
 
         t1 = time.monotonic()
-        scene_fracs = await asyncio.gather(*[_process_one(sr) for sr in search_result.scenes])
+        results = await asyncio.gather(*[_process_one(sr) for sr in search_result.scenes])
+        scene_fracs = [r[0] for r in results]
+        scene_dns   = [r[1] for r in results]
         logger.info(
             "SAR reads %.1fs scenes=%d valid=%d",
             time.monotonic() - t1,
@@ -175,13 +178,30 @@ async def run_sar_features(
             sum(1 for f in scene_fracs if f is not None),
         )
 
-        valid_fracs = [f for f in scene_fracs if f is not None]
-        if not valid_fracs:
-            return {"sar_water_freq_5y": None}
+        # Pair each water fraction with its month_key for downstream snow masking
+        scene_pairs: list[tuple[str, float]] = [
+            (sr.month_key, frac)
+            for sr, frac in zip(search_result.scenes, scene_fracs)
+            if frac is not None
+        ]
+        if not scene_pairs:
+            return {"sar_water_freq_5y": None, "_sar_scene_fracs": [], "_sar_scene_arrays": []}
 
+        # Tuples of (month_key, scene_id, vv_dn, water_frac) for storage / visualization
+        sar_scene_arrays: list[tuple[str, str, np.ndarray, float]] = [
+            (sr.month_key, sr.item.id, vv_dn, frac)
+            for sr, frac, vv_dn in zip(search_result.scenes, scene_fracs, scene_dns)
+            if frac is not None and vv_dn is not None
+        ]
+
+        valid_fracs = [f for _, f in scene_pairs]
         water_freq = compute_sar_water_frequency(valid_fracs)
-        return {"sar_water_freq_5y": water_freq}
+        return {
+            "sar_water_freq_5y": water_freq,
+            "_sar_scene_fracs": scene_pairs,
+            "_sar_scene_arrays": sar_scene_arrays,
+        }
 
     except Exception as exc:
         logger.warning("SAR pipeline failed: %s -- returning no_sar_data", exc)
-        return {"sar_water_freq_5y": None}
+        return {"sar_water_freq_5y": None, "_sar_scene_fracs": []}
