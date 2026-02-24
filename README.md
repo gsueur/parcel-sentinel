@@ -38,6 +38,8 @@ Given a point or polygon geometry, this service:
 
 Typical cold-start time (5-year window): 15-40 seconds. Cached results return instantly.
 
+![Report screenshot](docs/report-screenshot.png)
+
 ---
 
 ## Architecture overview
