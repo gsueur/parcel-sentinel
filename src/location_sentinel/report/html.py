@@ -9,72 +9,76 @@ from ..compute.scoring import climate_profile_label, climate_weights_for_code
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-       background: #0f1117; color: #e0e0e0; font-size: 14px; }
-h1 { font-size: 1.3rem; font-weight: 600; color: #fff; }
-h2 { font-size: 1rem; font-weight: 600; color: #9ca3af; text-transform: uppercase;
-     letter-spacing: 0.08em; margin-bottom: 12px; }
-.header { padding: 20px 24px 16px; border-bottom: 1px solid #1e2130; }
-.header small { color: #6b7280; font-size: 0.78rem; font-family: monospace; }
+       background: #f1f5f9; color: #1e293b; font-size: 14px; }
+h1 { font-size: 1.3rem; font-weight: 700; color: #0f172a; }
+h2 { font-size: 0.72rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;
+     letter-spacing: 0.1em; margin-bottom: 14px; }
+.header { padding: 20px 24px 16px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+.header small { color: #94a3b8; font-size: 0.78rem; font-family: monospace; }
 .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-.grid-2 { display: grid; grid-template-columns: auto 1fr; gap: 24px;
-          align-items: start; margin-bottom: 28px; }
-.card { background: #161b27; border: 1px solid #1e2130; border-radius: 8px;
-        padding: 20px; margin-bottom: 24px; }
+.grid-2 { display: grid; grid-template-columns: auto 1fr; gap: 20px;
+          align-items: start; margin-bottom: 24px; }
+.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+        padding: 22px; margin-bottom: 20px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
 .thumbnail img { border-radius: 6px; display: block; max-width: 300px; }
-.thumbnail .no-thumb { width: 300px; height: 200px; background: #1e2130;
-                        border-radius: 6px; display: flex; align-items: center;
-                        justify-content: center; color: #4b5563; font-size: 0.8rem; }
+.thumbnail .no-thumb { width: 300px; height: 200px; background: #f8fafc;
+                        border: 1px solid #e2e8f0; border-radius: 6px;
+                        display: flex; align-items: center;
+                        justify-content: center; color: #94a3b8; font-size: 0.8rem; }
 
 /* Scores */
-.scores { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.score-item label { display: block; color: #9ca3af; font-size: 0.8rem; margin-bottom: 4px; }
-.score-item .value { font-size: 1.6rem; font-weight: 700; color: #fff; margin-bottom: 6px; }
-.bar-bg { height: 6px; background: #1e2130; border-radius: 3px; }
+.scores { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.score-item label { display: block; color: #64748b; font-size: 0.8rem; margin-bottom: 4px; }
+.score-item .value { font-size: 1.6rem; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+.bar-bg { height: 6px; background: #e2e8f0; border-radius: 3px; }
 .bar-fill { height: 6px; border-radius: 3px; }
-.composite{ background: #a855f7; }
 
 /* Features table */
 .feat-table { width: 100%; border-collapse: collapse; }
-.feat-table td { padding: 7px 10px; border-bottom: 1px solid #1e2130; }
-.feat-table td:first-child { color: #9ca3af; font-family: monospace; font-size: 0.82rem; }
+.feat-table td { padding: 7px 10px; border-bottom: 1px solid #f1f5f9; }
+.feat-table td:first-child { color: #64748b; font-family: monospace; font-size: 0.82rem; }
 .feat-table td:last-child  { text-align: right; font-weight: 500; }
 
 /* Quality */
 .quality-row { display: flex; gap: 24px; flex-wrap: wrap; }
 .quality-item { flex: 1; min-width: 120px; }
-.quality-item .q-val { font-size: 1.4rem; font-weight: 700; color: #fff; }
-.quality-item .q-lbl { font-size: 0.78rem; color: #6b7280; margin-top: 2px; }
-.flag { display: inline-block; background: #7c2d12; color: #fca5a5;
+.quality-item .q-val { font-size: 1.4rem; font-weight: 700; color: #0f172a; }
+.quality-item .q-lbl { font-size: 0.78rem; color: #94a3b8; margin-top: 2px; }
+.flag { display: inline-block; background: #fef2f2; color: #b91c1c;
+        border: 1px solid #fecaca;
         font-size: 0.72rem; border-radius: 4px; padding: 2px 6px; margin-top: 6px; }
 
 /* Scene grid */
 .scene-grid { overflow-x: auto; }
 table.scenes { border-collapse: collapse; min-width: 100%; }
-table.scenes th { padding: 6px 8px; text-align: left; color: #6b7280;
-                  font-size: 0.75rem; font-weight: 500; border-bottom: 1px solid #1e2130; }
-table.scenes td { padding: 6px 8px; border-bottom: 1px solid #141824;
+table.scenes th { padding: 7px 8px; text-align: left; color: #94a3b8;
+                  font-size: 0.75rem; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
+table.scenes td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9;
                   vertical-align: middle; }
-table.scenes td:first-child { font-family: monospace; font-size: 0.78rem; color: #9ca3af;
+table.scenes tr:hover td { background: #f8fafc; }
+table.scenes td:first-child { font-family: monospace; font-size: 0.78rem; color: #64748b;
                                white-space: nowrap; padding-right: 12px; }
 table.scenes img { display: block; width: 96px; height: 96px;
-                   image-rendering: pixelated; border-radius: 4px; }
-.no-img { width: 96px; height: 96px; background: #1e2130; border-radius: 4px;
-          display: flex; align-items: center; justify-content: center;
-          color: #4b5563; font-size: 0.65rem; }
+                   image-rendering: pixelated; border-radius: 4px;
+                   border: 1px solid #e2e8f0; }
+.no-img { width: 96px; height: 96px; background: #f8fafc; border: 1px solid #e2e8f0;
+          border-radius: 4px; display: flex; align-items: center; justify-content: center;
+          color: #94a3b8; font-size: 0.65rem; }
 
 /* Index reference */
 .index-ref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 720px) { .index-ref-grid { grid-template-columns: 1fr; } }
-.index-card { background: #0f1117; border: 1px solid #1e2130; border-radius: 6px; padding: 14px; }
-.index-card h3 { font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 6px;
+.index-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+.index-card h3 { font-size: 0.9rem; font-weight: 600; color: #0f172a; margin-bottom: 8px;
                   display: flex; align-items: center; gap: 8px; }
-.index-acronym { font-family: monospace; font-size: 0.75rem; background: #1e2130;
-                  padding: 2px 7px; border-radius: 3px; color: #60a5fa; }
-.index-formula { font-family: monospace; font-size: 0.8rem; background: #0a0d14;
-                  padding: 7px 10px; border-radius: 4px; color: #60a5fa; margin-bottom: 8px;
-                  white-space: nowrap; overflow-x: auto; }
-.index-bands { font-size: 0.74rem; color: #6b7280; margin-bottom: 8px; }
-.index-desc { font-size: 0.81rem; color: #d1d5db; line-height: 1.55; margin-bottom: 10px; }
+.index-acronym { font-family: monospace; font-size: 0.75rem; background: #dbeafe;
+                  padding: 2px 7px; border-radius: 3px; color: #1d4ed8; }
+.index-formula { font-family: monospace; font-size: 0.8rem; background: #eff6ff;
+                  border: 1px solid #bfdbfe; padding: 7px 10px; border-radius: 4px;
+                  color: #1d4ed8; margin-bottom: 8px; white-space: nowrap; overflow-x: auto; }
+.index-bands { font-size: 0.74rem; color: #94a3b8; margin-bottom: 8px; }
+.index-desc { font-size: 0.81rem; color: #475569; line-height: 1.6; margin-bottom: 10px; }
 .index-bar { height: 14px; border-radius: 3px; }
 .index-bar-wrap { position: relative; margin-bottom: 20px; }
 .index-marker { position: absolute; top: 0; width: 2px; height: 14px;
@@ -82,21 +86,21 @@ table.scenes img { display: block; width: 96px; height: 96px;
 .index-marker-label { position: absolute; top: 16px; font-size: 0.6rem;
                       transform: translateX(-50%); white-space: nowrap; font-weight: 600; }
 .index-ticks { display: flex; justify-content: space-between;
-               font-size: 0.68rem; color: #6b7280; margin-bottom: 8px; }
+               font-size: 0.68rem; color: #94a3b8; margin-bottom: 8px; }
 .index-ranges { font-size: 0.74rem; margin-bottom: 10px; }
-.index-range-row { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; color: #9ca3af; }
+.index-range-row { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; color: #475569; }
 .index-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 .score-badge { display: inline-block; font-size: 0.68rem; padding: 2px 7px; border-radius: 3px;
                font-weight: 500; margin-right: 4px; }
-.badge-scoring { background: #1e3a5f; color: #60a5fa; }
-.badge-feature { background: #1a2e1a; color: #4ade80; }
+.badge-scoring { background: #dbeafe; color: #1d4ed8; }
+.badge-feature { background: #dcfce7; color: #15803d; }
 
 /* Chart */
 .chart-wrap { position: relative; height: 260px; }
 
 /* NDWI legend */
 .ndwi-legend { margin-top: 16px; }
-.ndwi-legend-label { font-size: 0.78rem; color: #9ca3af; margin-bottom: 6px; }
+.ndwi-legend-label { font-size: 0.78rem; color: #64748b; margin-bottom: 6px; }
 .ndwi-bar {
   height: 16px; border-radius: 4px;
   background: linear-gradient(to right,
@@ -108,30 +112,33 @@ table.scenes img { display: block; width: 96px; height: 96px;
   );
 }
 .ndwi-ticks { display: flex; justify-content: space-between;
-              font-size: 0.7rem; color: #6b7280; margin-top: 3px; }
+              font-size: 0.7rem; color: #94a3b8; margin-top: 3px; }
 .ndwi-ranges { display: flex; margin-top: 8px; gap: 8px; flex-wrap: wrap; }
-.ndwi-range { display: flex; align-items: center; gap: 5px; font-size: 0.75rem; color: #9ca3af; }
+.ndwi-range { display: flex; align-items: center; gap: 5px; font-size: 0.75rem; color: #64748b; }
 .ndwi-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
 
 /* No-data */
-.no-data { color: #4b5563; font-style: italic; font-size: 0.85rem; }
+.no-data { color: #94a3b8; font-style: italic; font-size: 0.85rem; }
 
 /* Feature groups */
-.feat-groups { display: flex; flex-direction: column; gap: 12px; }
-.feat-group { border: 1px solid #1e2130; border-radius: 6px; overflow: hidden; }
-.feat-group-hdr { background: #0d1018; padding: 8px 14px; display: flex; align-items: center;
-                  gap: 8px; font-size: 0.8rem; font-weight: 600; color: #9ca3af; }
+.feat-groups { display: flex; flex-direction: column; gap: 10px; }
+.feat-group { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
+              box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+.feat-group-hdr { background: #f8fafc; padding: 9px 14px; display: flex; align-items: center;
+                  gap: 8px; font-size: 0.8rem; font-weight: 600; color: #64748b;
+                  border-bottom: 1px solid #e2e8f0; }
 .feat-group-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.feat-group-idx { font-family: monospace; font-size: 0.72rem; background: #1e2130;
-                  padding: 1px 6px; border-radius: 3px; color: #60a5fa; margin-left: auto; }
+.feat-group-idx { font-family: monospace; font-size: 0.72rem; background: #dbeafe;
+                  padding: 1px 6px; border-radius: 3px; color: #1d4ed8; margin-left: auto; }
 .feat-row { display: grid; grid-template-columns: 1fr auto; gap: 20px; align-items: center;
-            padding: 10px 14px; border-top: 1px solid #141824; }
-.feat-label { font-size: 0.84rem; font-weight: 500; color: #e5e7eb; margin-bottom: 2px; }
-.feat-desc { font-size: 0.74rem; color: #6b7280; line-height: 1.45; }
+            padding: 11px 14px; border-top: 1px solid #f1f5f9; background: #fff; }
+.feat-row:hover { background: #fafafa; }
+.feat-label { font-size: 0.84rem; font-weight: 500; color: #1e293b; margin-bottom: 2px; }
+.feat-desc { font-size: 0.74rem; color: #64748b; line-height: 1.5; }
 .feat-val-col { text-align: right; min-width: 90px; flex-shrink: 0; }
 .feat-val { font-size: 1.05rem; font-weight: 700; font-family: monospace; line-height: 1.2; }
-.feat-key-mono { font-size: 0.62rem; color: #2d3748; font-family: monospace; margin-top: 3px; }
-.feat-mini-bg { height: 3px; background: #1e2130; border-radius: 2px; margin-top: 5px; }
+.feat-key-mono { font-size: 0.62rem; color: #cbd5e1; font-family: monospace; margin-top: 3px; }
+.feat-mini-bg { height: 3px; background: #e2e8f0; border-radius: 2px; margin-top: 5px; }
 .feat-mini-fill { height: 3px; border-radius: 2px; }
 """
 
@@ -354,17 +361,17 @@ def _score_bar(label: str, value: int | None, suppressed: bool = False, inverted
         return (
             f'<div class="score-item">'
             f'<label>{label}</label>'
-            f'<div class="value" style="color:#4b5563;font-size:1rem">N/A</div>'
-            f'<div style="font-size:0.72rem;color:#4b5563;margin-top:4px">Not applicable &mdash; urban location</div>'
+            f'<div class="value" style="color:#94a3b8;font-size:1rem">N/A</div>'
+            f'<div style="font-size:0.72rem;color:#94a3b8;margin-top:4px">Not applicable &mdash; urban location</div>'
             f'</div>'
         )
     if value is None:
         return f'<div class="score-item"><label>{label}</label><div class="value">—</div></div>'
     pct = max(0, min(100, value))
     if inverted:
-        color = "#22c55e" if value >= 60 else ("#f59e0b" if value >= 30 else "#ef4444")
+        color = "#16a34a" if value >= 60 else ("#d97706" if value >= 30 else "#dc2626")
     else:
-        color = "#22c55e" if value < 25 else ("#f59e0b" if value < 50 else ("#f97316" if value < 75 else "#ef4444"))
+        color = "#16a34a" if value < 25 else ("#d97706" if value < 50 else ("#ea580c" if value < 75 else "#dc2626"))
     return f"""
     <div class="score-item">
       <label>{label}</label>
@@ -529,11 +536,11 @@ def _fmt_feat_value(v: float, fmt: str) -> str:
 def _feat_color(v: float, signal: str, thr1: float, thr2: float) -> str:
     """Return a CSS hex color for the value given the signal direction and thresholds."""
     if signal == "context":
-        return "#9ca3af"
+        return "#64748b"
     if signal == "high_good":
-        return "#22c55e" if v >= thr2 else ("#f59e0b" if v >= thr1 else "#ef4444")
+        return "#16a34a" if v >= thr2 else ("#d97706" if v >= thr1 else "#dc2626")
     # low_good
-    return "#22c55e" if v <= thr1 else ("#f59e0b" if v <= thr2 else "#ef4444")
+    return "#16a34a" if v <= thr1 else ("#d97706" if v <= thr2 else "#dc2626")
 
 
 def _mini_bar(v: float, fmt: str, color: str) -> str:
@@ -587,10 +594,10 @@ def _features_html(features: dict, is_urban: bool = False) -> str:
         # Urban notice for suppressed groups
         urban_notice = ""
         if is_urban and group_name in _URBAN_SUPPRESSED_GROUPS:
-            g_color = "#4b5563"  # dim the group header
+            g_color = "#cbd5e1"  # dim the group header
             urban_notice = (
-                '<div style="padding:6px 14px;font-size:0.74rem;color:#6b7280;'
-                'border-top:1px solid #141824;background:#0d1018">'
+                '<div style="padding:6px 14px;font-size:0.74rem;color:#64748b;'
+                'background:#f8fafc;border-bottom:1px solid #e2e8f0">'
                 'Values reflect impervious surfaces, not vegetation. '
                 'These signals are suppressed in the risk scores for this urban location.'
                 '</div>'
@@ -799,14 +806,14 @@ def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float]], threshold: fl
       options: {{
         responsive: true,
         maintainAspectRatio: false,
-        plugins: {{ legend: {{ labels: {{ color: '#9ca3af' }} }} }},
+        plugins: {{ legend: {{ labels: {{ color: '#64748b' }} }} }},
         scales: {{
-          x: {{ ticks: {{ color: '#6b7280', maxTicksLimit: 18, maxRotation: 45 }},
-                grid: {{ color: '#1e2130' }} }},
+          x: {{ ticks: {{ color: '#94a3b8', maxTicksLimit: 18, maxRotation: 45 }},
+                grid: {{ color: '#f1f5f9' }} }},
           y: {{ min: 0, max: 100,
-                ticks: {{ color: '#6b7280', callback: function(v) {{ return v + '%'; }} }},
-                grid: {{ color: '#1e2130' }},
-                title: {{ display: true, text: 'Water fraction (%)', color: '#6b7280' }} }}
+                ticks: {{ color: '#94a3b8', callback: function(v) {{ return v + '%'; }} }},
+                grid: {{ color: '#f1f5f9' }},
+                title: {{ display: true, text: 'Water fraction (%)', color: '#94a3b8' }} }}
         }}
       }}
     }});
@@ -847,10 +854,10 @@ def build_report_html(
         climate_html = (
             f'<span title="{criterion}" style="'
             f'display:inline-flex;align-items:center;gap:6px;'
-            f'background:#1e2130;border:1px solid #374151;border-radius:6px;'
-            f'padding:3px 10px;font-size:0.82rem;color:#e5e7eb;cursor:default">'
-            f'<span style="font-weight:700;color:#60a5fa;font-family:monospace;font-size:1rem">{code}</span>'
-            f'<span style="color:#9ca3af">&mdash;</span>'
+            f'background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;'
+            f'padding:3px 10px;font-size:0.82rem;color:#1e293b;cursor:default">'
+            f'<span style="font-weight:700;color:#2563eb;font-family:monospace;font-size:1rem">{code}</span>'
+            f'<span style="color:#94a3b8">&mdash;</span>'
             f'<span>{label}</span>'
             f'</span>'
         )
@@ -875,13 +882,13 @@ def build_report_html(
     # Risk level label and color for composite score
     if composite is not None:
         if composite < 25:
-            risk_label, risk_color = "Low risk", "#22c55e"
+            risk_label, risk_color = "Low risk", "#16a34a"
         elif composite < 50:
-            risk_label, risk_color = "Moderate risk", "#f59e0b"
+            risk_label, risk_color = "Moderate risk", "#d97706"
         elif composite < 75:
-            risk_label, risk_color = "Elevated risk", "#f97316"
+            risk_label, risk_color = "Elevated risk", "#ea580c"
         else:
-            risk_label, risk_color = "High risk", "#ef4444"
+            risk_label, risk_color = "High risk", "#dc2626"
         risk_badge = (
             f'<span style="display:inline-block;font-size:0.78rem;font-weight:600;'
             f'color:{risk_color};background:{risk_color}18;border:1px solid {risk_color}44;'
@@ -895,16 +902,16 @@ def build_report_html(
     composite_html = (
         f'<div style="display:flex;align-items:baseline;gap:4px;flex-wrap:wrap">'
         f'<div style="font-size:2.2rem;font-weight:800;color:{_composite_color}">{composite if composite is not None else "—"}</div>'
-        f'<span style="color:#6b7280;font-size:0.82rem;align-self:flex-end;padding-bottom:6px">'
+        f'<span style="color:#94a3b8;font-size:0.82rem;align-self:flex-end;padding-bottom:6px">'
         f'/ 100</span>'
         f'{risk_badge}'
         f'</div>'
-        f'<div style="font-size:0.74rem;color:#6b7280;margin-top:6px;line-height:1.5">'
+        f'<div style="font-size:0.74rem;color:#64748b;margin-top:6px;line-height:1.5">'
         f'Higher score = more climate risk. Scale: '
-        f'<span style="color:#22c55e">0&ndash;24 low</span> &bull; '
-        f'<span style="color:#f59e0b">25&ndash;49 moderate</span> &bull; '
-        f'<span style="color:#f97316">50&ndash;74 elevated</span> &bull; '
-        f'<span style="color:#ef4444">75&ndash;100 high</span>'
+        f'<span style="color:#16a34a">0&ndash;24 low</span> &bull; '
+        f'<span style="color:#d97706">25&ndash;49 moderate</span> &bull; '
+        f'<span style="color:#ea580c">50&ndash;74 elevated</span> &bull; '
+        f'<span style="color:#dc2626">75&ndash;100 high</span>'
         f'</div>'
     )
 
@@ -923,18 +930,18 @@ def build_report_html(
     )
     if is_urban:
         urban_banner = (
-            '<div style="background:#1a1f2e;border:1px solid #2d3a5a;border-radius:6px;'
+            '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;'
             'padding:10px 14px;margin-bottom:16px">'
-            '<div style="font-size:0.82rem;font-weight:600;color:#93c5fd;margin-bottom:6px">'
+            '<div style="font-size:0.82rem;font-weight:600;color:#1d4ed8;margin-bottom:6px">'
             'Urban / Impervious Surface Detected</div>'
-            '<div style="font-size:0.74rem;color:#6b7280;line-height:1.8">'
+            '<div style="font-size:0.74rem;color:#475569;line-height:1.8">'
             'Drought and fire scores are suppressed (not applicable on impervious surfaces).<br>'
             'Composite = '
-            f'<span style="{_pill};background:#22c55e22;color:#4ade80">70% canopy deficit</span>'
+            f'<span style="{_pill};background:#dcfce7;color:#15803d">70% canopy deficit</span>'
             '(= 100 &minus; heat mitigation) + '
-            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">15% wetness</span>'
+            f'<span style="{_pill};background:#dbeafe;color:#1d4ed8">15% wetness</span>'
             '(flooding / waterlogging) + '
-            f'<span style="{_pill};background:#06b6d422;color:#22d3ee">15% flood risk</span>'
+            f'<span style="{_pill};background:#cffafe;color:#0e7490">15% flood risk</span>'
             '(SAR water frequency)'
             '</div>'
             '</div>'
@@ -946,14 +953,14 @@ def build_report_html(
         _w = climate_weights_for_code(_climate_code)
         _profile = climate_profile_label(_climate_code)
         formula_note = (
-            '<div style="font-size:0.72rem;color:#4b5563;margin-bottom:14px;line-height:1.8">'
-            f'Composite <span style="color:#4b5563;font-style:italic">({_profile} profile)</span> = '
-            f'<span style="{_pill};background:#ef444422;color:#f87171">{_w["drought"]:.0%} drought</span>'
-            f'<span style="{_pill};background:#3b82f622;color:#60a5fa">{_w["wetness"]:.0%} wetness</span>'
-            f'<span style="{_pill};background:#f9731622;color:#fb923c">{_w["fire"]:.0%} fire</span>'
-            f'<span style="{_pill};background:#22c55e22;color:#4ade80">{_w["heat_inv"]:.0%} canopy deficit</span>'
-            f'<span style="{_pill};background:#06b6d422;color:#22d3ee">{_w.get("flood", 0.15):.0%} flood</span>'
-            '<br><span style="color:#374151">Canopy deficit = 100 &minus; heat mitigation score. '
+            '<div style="font-size:0.72rem;color:#64748b;margin-bottom:14px;line-height:1.8">'
+            f'Composite <span style="color:#94a3b8;font-style:italic">({_profile} profile)</span> = '
+            f'<span style="{_pill};background:#fee2e2;color:#b91c1c">{_w["drought"]:.0%} drought</span>'
+            f'<span style="{_pill};background:#dbeafe;color:#1d4ed8">{_w["wetness"]:.0%} wetness</span>'
+            f'<span style="{_pill};background:#ffedd5;color:#c2410c">{_w["fire"]:.0%} fire</span>'
+            f'<span style="{_pill};background:#dcfce7;color:#15803d">{_w["heat_inv"]:.0%} canopy deficit</span>'
+            f'<span style="{_pill};background:#cffafe;color:#0e7490">{_w.get("flood", 0.15):.0%} flood</span>'
+            '<br><span style="color:#94a3b8">Canopy deficit = 100 &minus; heat mitigation score. '
             'Low canopy raises the composite risk.</span>'
             '</div>'
         )
@@ -996,12 +1003,12 @@ def build_report_html(
           data: {{ {chart_data} }},
           options: {{
             responsive: true, maintainAspectRatio: false,
-            plugins: {{ legend: {{ labels: {{ color: '#9ca3af' }} }} }},
+            plugins: {{ legend: {{ labels: {{ color: '#64748b' }} }} }},
             scales: {{
-              x: {{ ticks: {{ color: '#6b7280', maxTicksLimit: 12 }},
-                    grid: {{ color: '#1e2130' }} }},
-              y: {{ ticks: {{ color: '#6b7280' }}, grid: {{ color: '#1e2130' }},
-                    title: {{ display: true, text: 'Index value', color: '#6b7280' }} }}
+              x: {{ ticks: {{ color: '#94a3b8', maxTicksLimit: 12 }},
+                    grid: {{ color: '#f1f5f9' }} }},
+              y: {{ ticks: {{ color: '#94a3b8' }}, grid: {{ color: '#f1f5f9' }},
+                    title: {{ display: true, text: 'Index value', color: '#94a3b8' }} }}
             }}
           }}
         }});
@@ -1023,19 +1030,19 @@ def build_report_html(
     # Flood alert banner (shown when acute anomaly is elevated)
     flood_anomaly_val = feat.get("sar_flood_anomaly") or 0.0
     if flood_anomaly_val > 0.30:
-        _al_color, _al_bg = "#ef4444", "#2d1515"
+        _al_color, _al_bg = "#dc2626", "#fef2f2"
         _al_title = "Acute flood event detected"
     elif flood_anomaly_val > 0.10:
-        _al_color, _al_bg = "#f97316", "#2d1e0f"
+        _al_color, _al_bg = "#ea580c", "#fff7ed"
         _al_title = "Elevated SAR flood anomaly"
     else:
         _al_color = _al_bg = _al_title = ""
     if _al_title:
         flood_alert_html = (
-            f'<div style="background:{_al_bg};border:1px solid {_al_color}55;border-radius:6px;'
+            f'<div style="background:{_al_bg};border:1px solid {_al_color}44;border-radius:6px;'
             f'padding:10px 14px;margin-bottom:14px">'
             f'<div style="font-size:0.85rem;font-weight:600;color:{_al_color}">{_al_title}</div>'
-            f'<div style="font-size:0.76rem;color:#9ca3af;margin-top:4px">'
+            f'<div style="font-size:0.76rem;color:#64748b;margin-top:4px">'
             f'SAR water coverage anomaly: {flood_anomaly_val * 100:.1f}% above seasonal baseline. '
             f'Recent SAR scenes show significantly higher water fraction than historical norm '
             f'for the same calendar months.'
@@ -1059,11 +1066,11 @@ def build_report_html(
 <div class="header">
   <h1>{display_name}</h1>
   <div style="margin-top:6px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-    <span style="color:#9ca3af;font-size:0.9rem">&#x1F4CD; {coord_str}</span>
+    <span style="color:#64748b;font-size:0.9rem">&#x1F4CD; {coord_str}</span>
     {climate_html}
-    <small style="color:#4b5563;font-size:0.75rem;font-family:monospace">{location_key}</small>
+    <small style="color:#94a3b8;font-size:0.75rem;font-family:monospace">{location_key}</small>
   </div>
-  <div style="margin-top:4px;color:#4b5563;font-size:0.72rem">generated {generated}</div>
+  <div style="margin-top:4px;color:#94a3b8;font-size:0.72rem">generated {generated}</div>
 </div>
 
 <div class="container">
@@ -1104,7 +1111,7 @@ def build_report_html(
         <div class="q-lbl">Flags</div>
       </div>
     </div>
-    <div style="margin-top:12px;color:#4b5563;font-size:0.78rem">
+    <div style="margin-top:12px;color:#94a3b8;font-size:0.78rem">
       Processing: {processing_version} &nbsp;&bull;&nbsp; Score: {score_version}
     </div>
   </div>
@@ -1154,14 +1161,14 @@ def build_report_html(
   <div class="card">
     <h2>Sentinel-1 SAR &mdash; Flood Analysis</h2>
     {flood_alert_html}
-    <div style="font-size:0.76rem;color:#6b7280;margin-bottom:10px">
+    <div style="font-size:0.76rem;color:#64748b;margin-bottom:10px">
       Water fraction per SAR scene (chronological). Bars at or above the red threshold line
       ({round(_cfg.SAR_MIN_WATER_PIXEL_FRACTION * 100, 0):.0f}%) count as flooded for the chronic frequency score.
       Opaque blue = flooded scene; faint blue = below threshold.
     </div>
     {sar_frac_chart}
     <h2 style="margin-top:20px;margin-bottom:12px">SAR scene images (most recent {len(sar_scene_months or [])})</h2>
-    <div style="font-size:0.76rem;color:#6b7280;margin-bottom:12px">
+    <div style="font-size:0.76rem;color:#64748b;margin-bottom:12px">
       VV backscatter &mdash; log-scaled grayscale. Blue pixels: DN &lt; {_cfg.SAR_WATER_DN_THRESHOLD} (water threshold).
       Dark = calm water / specular &bull; Bright = vegetation / urban / rough terrain.
     </div>
