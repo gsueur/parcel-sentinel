@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import datetime
 import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..geometry.validate import GeometryValidationError
@@ -128,6 +130,76 @@ async def create_location(req: LocationRequest):
     )
     cache.set(cache_key, response)
     return response
+
+
+class _RegenerateRequest(BaseModel):
+    date_end: datetime.date = Field(default_factory=datetime.date.today)
+    lookback_years: int = Field(default=5, ge=1, le=10)
+
+
+@router.post("/location/{location_key}/regenerate", response_model=LocationResponse)
+async def regenerate_location(location_key: str, req: _RegenerateRequest = _RegenerateRequest()):
+    """Recompute and overwrite data for an existing location using its stored geometry.
+
+    The location_key is preserved exactly -- no re-derivation from geometry.
+    Use this instead of re-POSTing to /locations to avoid creating duplicate entries.
+    """
+    trace_id = uuid.uuid4().hex[:12]
+
+    location_info = store.get_location_info(location_key)
+    if location_info is None:
+        raise HTTPException(status_code=404, detail=f"Location {location_key!r} not found")
+
+    geom_dict = location_info["geojson"]
+    name = location_info["name"]
+    de = req.date_end.isoformat()
+
+    try:
+        lk, score_result, features, quality, date_start, series = await run_score(
+            geom_geojson=geom_dict,
+            date_end=de,
+            lookback_years=req.lookback_years,
+            location_key=location_key,
+        )
+    except GeometryValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logger.exception("Regeneration failed location_key=%s trace_id=%s", location_key, trace_id)
+        raise HTTPException(status_code=500, detail=f"Computation failed (trace_id={trace_id})")
+
+    store.save_geometry(location_key, geom_dict, name=name)
+    store.save_scores(location_key, settings.SCORE_VERSION, req.lookback_years, {
+        "drought_score": score_result.drought_score,
+        "wetness_score": score_result.wetness_score,
+        "fire_exposure_score": score_result.fire_exposure_score,
+        "heat_mitigation_score": score_result.heat_mitigation_score,
+        "flood_risk_score": score_result.flood_risk_score,
+        "composite_score": score_result.composite_score,
+    })
+    store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,
+                        features, quality.model_dump())
+    store.save_timeseries(location_key, settings.PROCESSING_VERSION, "monthly", series)
+
+    cache.clear()
+
+    return LocationResponse(
+        location_key=location_key,
+        name=name,
+        processing_version=settings.PROCESSING_VERSION,
+        score_version=settings.SCORE_VERSION,
+        date_window=DateWindow(start=date_start, end=de),
+        scores={
+            "drought_score": score_result.drought_score,
+            "wetness_score": score_result.wetness_score,
+            "fire_exposure_score": score_result.fire_exposure_score,
+            "heat_mitigation_score": score_result.heat_mitigation_score,
+            "flood_risk_score": score_result.flood_risk_score,
+            "composite_score": score_result.composite_score,
+        },
+        features=features,
+        quality=quality,
+        map_links=build_map_links(location_key, geom_dict),
+    )
 
 
 @router.delete("/location/{location_key}")
