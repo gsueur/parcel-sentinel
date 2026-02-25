@@ -152,6 +152,13 @@ Conversion: `sigma0_dB ≈ 20 * log10(DN) - 83`
 
 Current threshold: `SAR_WATER_DN_THRESHOLD = 75` (above noise floor, below land mean). A pixel is classified as water when `0 < DN < 75`. A scene is classified as flooded when at least 35% of the 64x64 window pixels meet this criterion (`SAR_MIN_WATER_PIXEL_FRACTION = 0.35`).
 
+For the chronic frequency metric two thresholds are evaluated and the higher frequency is returned:
+
+- **Absolute:** scene water fraction > 35% (fixed). Works well for inland and open-water locations.
+- **Relative:** scene water fraction > location median + 15pp (`SAR_RELATIVE_FLOOD_DELTA = 0.15`). Handles near-water locations (coastal lagoons, river banks, tidal flats) whose baseline water fraction already sits at 15-25%, making the fixed 35% threshold too strict to detect genuine above-baseline flood episodes.
+
+`sar_water_freq_5y = max(absolute_frequency, relative_frequency)`
+
 ---
 
 ### TerraClimate (monthly gridded climate)
@@ -324,7 +331,7 @@ BSI frequency is also used for urban detection: locations where BSI > 0 in a hig
 ### Two complementary metrics
 
 **Chronic: `sar_water_freq_5y`**
-Fraction of SAR scenes (after snow suppression) where the water pixel fraction exceeds the threshold. Measures persistent or recurring water over the full 5-year window.
+Fraction of SAR scenes (after snow suppression) where the water pixel fraction exceeds the flood threshold. Two thresholds are evaluated -- absolute (35%) and relative (location median + 15pp) -- and the higher frequency is returned. See [SAR calibration](#sentinel-1-grd-sar) for rationale. Measures persistent or recurring water over the full 5-year window.
 
 **Acute: `sar_flood_anomaly`**
 Compares the recent water fraction (last 2 calendar months) to the historical seasonal baseline (median for the same calendar months in prior years). Returns the excess above the seasonal median, clamped to [0, 1]. Detects sudden flood events not captured by the chronic metric.
@@ -799,7 +806,8 @@ All settings are environment variables. Defaults work out of the box.
 | `SAR_AWS_BUCKET` | `sentinel-s1-l1c` | Public S3 bucket for S1 GRD files |
 | `SAR_AWS_REGION` | `eu-central-1` | S1 bucket region |
 | `SAR_WATER_DN_THRESHOLD` | `75` | VV DN below this → water pixel (see calibration table above) |
-| `SAR_MIN_WATER_PIXEL_FRACTION` | `0.35` | Min water pixel fraction to classify a scene as flooded |
+| `SAR_MIN_WATER_PIXEL_FRACTION` | `0.35` | Min water pixel fraction for absolute flood classification |
+| `SAR_RELATIVE_FLOOD_DELTA` | `0.15` | Relative threshold delta: scenes where water_frac > location_median + delta also count as flooded |
 | `SAR_MAX_SCENES_PER_MONTH` | `2` | Max SAR scenes per month |
 | `SAR_MAX_TOTAL_SCENES` | `120` | Hard cap on total SAR scenes |
 
