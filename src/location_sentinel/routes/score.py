@@ -54,6 +54,8 @@ async def post_score(req: ScoreRequest):
         "wetness_score": score_result.wetness_score,
         "fire_exposure_score": score_result.fire_exposure_score,
         "heat_mitigation_score": score_result.heat_mitigation_score,
+        "flood_risk_score": score_result.flood_risk_score,
+        "heat_stress_score": score_result.heat_stress_score,
         "composite_score": score_result.composite_score,
     }
 

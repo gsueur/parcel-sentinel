@@ -496,6 +496,83 @@ _FM: dict[str, dict] = {
              "Threshold: empirical DN&nbsp;75 (~above noise floor, well below vegetated land).",
         fmt="pct", signal="low_good", thr1=0.05, thr2=0.15,
     ),
+    # TerraClimate features (University of Idaho, ~4 km, monthly, 1958–2024)
+    "tmax_mean_5y": dict(
+        label="Average maximum temperature",
+        group="Climate (TerraClimate)", group_color="#f43f5e", group_index=None,
+        desc="Mean monthly maximum temperature (°C) from TerraClimate over the analysis window. "
+             "Context: tropical &gt;30°C &bull; temperate 15&ndash;25°C &bull; polar &lt;5°C.",
+        fmt="temp", signal="context", thr1=20.0, thr2=30.0,
+    ),
+    "tmax_summer_mean_5y": dict(
+        label="Growing-season max temperature",
+        group="Climate (TerraClimate)", group_color="#f43f5e", group_index=None,
+        desc="Mean maximum temperature during the growing season (May&ndash;Sep temperate, "
+             "Mar&ndash;Nov subtropical). Reflects peak heat load on vegetation.",
+        fmt="temp", signal="context", thr1=25.0, thr2=35.0,
+    ),
+    "tmax_anomaly_freq_5y": dict(
+        label="Heat anomaly frequency",
+        group="Climate (TerraClimate)", group_color="#f43f5e", group_index=None,
+        desc="Fraction of months where max temperature exceeded the historical monthly mean by "
+             "more than 1 standard deviation. Higher = more frequent heat anomalies. "
+             "Contributes to the heat stress sub-score.",
+        fmt="pct", signal="low_good", thr1=0.15, thr2=0.30,
+    ),
+    "tmax_trend_slope_5y": dict(
+        label="Temperature warming trend",
+        group="Climate (TerraClimate)", group_color="#f43f5e", group_index=None,
+        desc="Theil&ndash;Sen robust slope of monthly maximum temperature (°C/year). "
+             "Positive = warming. Above 0.05°C/yr is a notable trend at local scale.",
+        fmt="temp_slope", signal="low_good", thr1=0.02, thr2=0.05,
+    ),
+    "tmin_mean_5y": dict(
+        label="Average minimum temperature",
+        group="Climate (TerraClimate)", group_color="#f43f5e", group_index=None,
+        desc="Mean monthly minimum temperature (°C). Indicates overnight cooling and frost risk. "
+             "Context only: high values suggest urban heat island or tropical climate.",
+        fmt="temp", signal="context", thr1=5.0, thr2=20.0,
+    ),
+    "ppt_annual_mean_5y": dict(
+        label="Mean annual precipitation",
+        group="Climate (TerraClimate)", group_color="#3b82f6", group_index=None,
+        desc="Mean annual precipitation total (mm) from TerraClimate monthly sums. "
+             "Context: arid &lt;250 mm &bull; semi-arid 250&ndash;500 mm &bull; "
+             "humid &gt;750 mm.",
+        fmt="mm", signal="context", thr1=250.0, thr2=750.0,
+    ),
+    "vpd_mean_5y": dict(
+        label="Average vapor pressure deficit",
+        group="Climate (TerraClimate)", group_color="#f97316", group_index=None,
+        desc="Mean monthly vapor pressure deficit (kPa). VPD drives plant water demand and "
+             "fire weather. &lt;0.5 kPa: humid &bull; 0.5&ndash;1.5 kPa: moderate &bull; "
+             "&gt;1.5 kPa: high stress.",
+        fmt="vpd", signal="low_good", thr1=0.5, thr2=1.5,
+    ),
+    "vpd_high_freq_5y": dict(
+        label="High-VPD frequency",
+        group="Climate (TerraClimate)", group_color="#f97316", group_index=None,
+        desc="Fraction of months with VPD &gt; 1.5 kPa (high atmospheric drought stress). "
+             "Contributes to the heat stress sub-score. "
+             "Below 15%: rare stress &bull; 15&ndash;30%: recurring &bull; above 30%: chronic.",
+        fmt="pct", signal="low_good", thr1=0.15, thr2=0.30,
+    ),
+    "pdsi_mean_5y": dict(
+        label="Average PDSI",
+        group="Climate (TerraClimate)", group_color="#d97706", group_index=None,
+        desc="Mean Palmer Drought Severity Index. Negative = drier than normal, positive = wetter. "
+             "&lt;&minus;2: moderate drought &bull; &lt;&minus;3: severe &bull; "
+             "&lt;&minus;4: extreme. Scale: &minus;10 to +10.",
+        fmt="pdsi", signal="context", thr1=-2.0, thr2=0.0,
+    ),
+    "pdsi_drought_freq_5y": dict(
+        label="PDSI drought frequency",
+        group="Climate (TerraClimate)", group_color="#d97706", group_index=None,
+        desc="Fraction of months with PDSI &lt; &minus;2 (moderate drought or worse). "
+             "Directly contributes to the drought sub-score (weight 0.25). "
+             "Below 10%: occasional &bull; 10&ndash;25%: recurring &bull; above 25%: chronic drought.",
+        fmt="pct", signal="low_good", thr1=0.10, thr2=0.25,
+    ),
     "sar_flood_anomaly": dict(
         label="SAR flood anomaly (acute event)",
         group="SAR Flood", group_color="#06b6d4", group_index=None,
@@ -518,6 +595,7 @@ _GROUP_ORDER = [
     "Bare Soil",
     "Canopy & Context",
     "SAR Flood",
+    "Climate (TerraClimate)",
     "Quality",
     "Other",
 ]
@@ -530,6 +608,16 @@ def _fmt_feat_value(v: float, fmt: str) -> str:
         return f"{v:+.4f} / yr"
     if fmt == "score":
         return f"{v * 100:.0f} / 100"
+    if fmt == "temp":
+        return f"{v:.1f} °C"
+    if fmt == "temp_slope":
+        return f"{v:+.3f} °C/yr"
+    if fmt == "mm":
+        return f"{v:.0f} mm/yr"
+    if fmt == "vpd":
+        return f"{v:.2f} kPa"
+    if fmt == "pdsi":
+        return f"{v:+.2f}"
     return f"{v:+.3f}"  # float3
 
 
@@ -820,6 +908,192 @@ def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float]], threshold: fl
     </script>"""
 
 
+def _tc_climate_charts_html(
+    tc_monthly: dict[str, list[tuple[int, int, float | None]]] | None,
+) -> str:
+    """Render TerraClimate temperature and precipitation/VPD charts.
+
+    Parameters
+    ----------
+    tc_monthly:
+        {variable: [(year, month, value), ...]} as returned by
+        store.get_all_terraclimate_for_grid().
+    """
+    if not tc_monthly:
+        return '<p class="no-data">TerraClimate data not available for this location.</p>'
+
+    import json as _json
+
+    def _month_label(year: int, month: int) -> str:
+        return f"{year}-{month:02d}"
+
+    def _series_to_monthly(
+        data: list[tuple[int, int, float | None]],
+    ) -> tuple[list[str], list[float | None]]:
+        """Convert [(year, month, value), ...] to aligned (labels, values) lists."""
+        points = sorted(data, key=lambda t: (t[0], t[1]))
+        labels = [_month_label(y, m) for y, m, _ in points]
+        values = [v for _, _, v in points]
+        return labels, values
+
+    tmax_data = tc_monthly.get("tmax", [])
+    tmin_data = tc_monthly.get("tmin", [])
+    ppt_data  = tc_monthly.get("ppt", [])
+    vpd_data  = tc_monthly.get("vpd", [])
+
+    has_temp = bool(tmax_data or tmin_data)
+    has_ppt  = bool(ppt_data)
+    has_vpd  = bool(vpd_data)
+
+    if not has_temp and not has_ppt and not has_vpd:
+        return '<p class="no-data">TerraClimate data not available for this location.</p>'
+
+    parts: list[str] = []
+
+    # ── Temperature chart (tmax + tmin line) ──────────────────────────────────
+    if has_temp:
+        if tmax_data:
+            t_labels, tmax_vals = _series_to_monthly(tmax_data)
+        elif tmin_data:
+            t_labels, _ = _series_to_monthly(tmin_data)
+            tmax_vals = [None] * len(t_labels)
+        if tmin_data:
+            _, tmin_vals = _series_to_monthly(tmin_data)
+            if len(tmin_vals) < len(t_labels):
+                tmin_vals = tmin_vals + [None] * (len(t_labels) - len(tmin_vals))
+        else:
+            tmin_vals = [None] * len(t_labels)
+
+        temp_datasets = [
+            {
+                "label": "Tmax (°C)",
+                "data": tmax_vals,
+                "borderColor": "#ef4444",
+                "backgroundColor": "rgba(239,68,68,0.08)",
+                "fill": False,
+                "tension": 0.3,
+                "spanGaps": True,
+                "pointRadius": 2,
+            },
+            {
+                "label": "Tmin (°C)",
+                "data": tmin_vals,
+                "borderColor": "#3b82f6",
+                "backgroundColor": "rgba(59,130,246,0.08)",
+                "fill": False,
+                "tension": 0.3,
+                "spanGaps": True,
+                "pointRadius": 2,
+            },
+        ]
+        labels_json = _json.dumps(t_labels)
+        datasets_json = _json.dumps(temp_datasets)
+        parts.append(f"""
+        <div style="margin-bottom:8px;font-size:0.78rem;font-weight:600;color:#64748b">
+          Maximum &amp; Minimum Temperature
+        </div>
+        <div class="chart-wrap" style="height:220px;margin-bottom:24px">
+          <canvas id="tcTempChart"></canvas>
+        </div>
+        <script>
+        new Chart(document.getElementById('tcTempChart'), {{
+          type: 'line',
+          data: {{ labels: {labels_json}, datasets: {datasets_json} }},
+          options: {{
+            responsive: true, maintainAspectRatio: false,
+            plugins: {{ legend: {{ labels: {{ color: '#64748b' }} }} }},
+            scales: {{
+              x: {{ ticks: {{ color: '#94a3b8', maxTicksLimit: 18, maxRotation: 45 }},
+                    grid: {{ color: '#f1f5f9' }} }},
+              y: {{ ticks: {{ color: '#94a3b8',
+                              callback: function(v) {{ return v + ' °C'; }} }},
+                    grid: {{ color: '#f1f5f9' }},
+                    title: {{ display: true, text: 'Temperature (°C)', color: '#94a3b8' }} }}
+            }}
+          }}
+        }});
+        </script>""")
+
+    # ── Precipitation + VPD chart (PPT bars + VPD line, dual axis) ────────────
+    if has_ppt or has_vpd:
+        if ppt_data:
+            pv_labels, ppt_vals = _series_to_monthly(ppt_data)
+        else:
+            pv_labels, _ = _series_to_monthly(vpd_data)
+            ppt_vals = [None] * len(pv_labels)
+        if vpd_data:
+            _, vpd_vals = _series_to_monthly(vpd_data)
+            if len(vpd_vals) < len(pv_labels):
+                vpd_vals = vpd_vals + [None] * (len(pv_labels) - len(vpd_vals))
+        else:
+            vpd_vals = [None] * len(pv_labels)
+
+        pv_labels_json = _json.dumps(pv_labels)
+        ppt_vals_json  = _json.dumps(ppt_vals)
+        vpd_vals_json  = _json.dumps(vpd_vals)
+        parts.append(f"""
+        <div style="margin-bottom:8px;font-size:0.78rem;font-weight:600;color:#64748b">
+          Precipitation (mm) &amp; Vapor Pressure Deficit (kPa)
+        </div>
+        <div class="chart-wrap" style="height:220px">
+          <canvas id="tcPptVpdChart"></canvas>
+        </div>
+        <script>
+        new Chart(document.getElementById('tcPptVpdChart'), {{
+          data: {{
+            labels: {pv_labels_json},
+            datasets: [
+              {{
+                type: 'bar',
+                label: 'Precipitation (mm)',
+                data: {ppt_vals_json},
+                backgroundColor: 'rgba(59,130,246,0.45)',
+                borderColor: 'rgba(59,130,246,0.7)',
+                borderWidth: 0.5,
+                yAxisID: 'yPpt',
+                order: 2,
+              }},
+              {{
+                type: 'line',
+                label: 'VPD (kPa)',
+                data: {vpd_vals_json},
+                borderColor: '#f97316',
+                backgroundColor: 'rgba(249,115,22,0.10)',
+                fill: false,
+                tension: 0.3,
+                spanGaps: true,
+                pointRadius: 2,
+                yAxisID: 'yVpd',
+                order: 1,
+              }},
+            ]
+          }},
+          options: {{
+            responsive: true, maintainAspectRatio: false,
+            plugins: {{ legend: {{ labels: {{ color: '#64748b' }} }} }},
+            scales: {{
+              x: {{ ticks: {{ color: '#94a3b8', maxTicksLimit: 18, maxRotation: 45 }},
+                    grid: {{ color: '#f1f5f9' }} }},
+              yPpt: {{
+                type: 'linear', position: 'left',
+                ticks: {{ color: '#3b82f6', callback: function(v) {{ return v + ' mm'; }} }},
+                grid: {{ color: '#f1f5f9' }},
+                title: {{ display: true, text: 'Precip (mm)', color: '#3b82f6' }}
+              }},
+              yVpd: {{
+                type: 'linear', position: 'right',
+                ticks: {{ color: '#f97316', callback: function(v) {{ return v + ' kPa'; }} }},
+                grid: {{ drawOnChartArea: false }},
+                title: {{ display: true, text: 'VPD (kPa)', color: '#f97316' }}
+              }},
+            }}
+          }}
+        }});
+        </script>""")
+
+    return "\n".join(parts)
+
+
 def build_report_html(
     location_key: str,
     name: str | None,
@@ -835,6 +1109,7 @@ def build_report_html(
     climate: dict | None = None,
     sar_scene_months: list[dict] | None = None,
     sar_scene_fracs: list[tuple[str, float]] | None = None,
+    tc_monthly: dict[str, list[tuple[int, int, float | None]]] | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -920,6 +1195,7 @@ def build_report_html(
         _score_bar("Wetness", s.get("wetness_score")) +
         _score_bar("Fire exposure", s.get("fire_exposure_score"), suppressed=is_urban) +
         _score_bar("Flood risk (SAR)", s.get("flood_risk_score")) +
+        _score_bar("Heat stress (TerraClimate)", s.get("heat_stress_score")) +
         _score_bar("Heat mitigation (higher = more canopy = safer)", s.get("heat_mitigation_score"), inverted=True)
     )
 
@@ -937,12 +1213,14 @@ def build_report_html(
             '<div style="font-size:0.74rem;color:#475569;line-height:1.8">'
             'Drought and fire scores are suppressed (not applicable on impervious surfaces).<br>'
             'Composite = '
-            f'<span style="{_pill};background:#dcfce7;color:#15803d">70% canopy deficit</span>'
+            f'<span style="{_pill};background:#dcfce7;color:#15803d">60% canopy deficit</span>'
             '(= 100 &minus; heat mitigation) + '
             f'<span style="{_pill};background:#dbeafe;color:#1d4ed8">15% wetness</span>'
             '(flooding / waterlogging) + '
             f'<span style="{_pill};background:#cffafe;color:#0e7490">15% flood risk</span>'
-            '(SAR water frequency)'
+            '(SAR water frequency) + '
+            f'<span style="{_pill};background:#fef3c7;color:#92400e">10% heat stress</span>'
+            '(TerraClimate)'
             '</div>'
             '</div>'
         )
@@ -959,7 +1237,8 @@ def build_report_html(
             f'<span style="{_pill};background:#dbeafe;color:#1d4ed8">{_w["wetness"]:.0%} wetness</span>'
             f'<span style="{_pill};background:#ffedd5;color:#c2410c">{_w["fire"]:.0%} fire</span>'
             f'<span style="{_pill};background:#dcfce7;color:#15803d">{_w["heat_inv"]:.0%} canopy deficit</span>'
-            f'<span style="{_pill};background:#cffafe;color:#0e7490">{_w.get("flood", 0.15):.0%} flood</span>'
+            f'<span style="{_pill};background:#cffafe;color:#0e7490">{_w.get("flood", 0.12):.0%} flood</span>'
+            f'<span style="{_pill};background:#fef3c7;color:#92400e">{_w.get("heat_stress", 0.20):.0%} heat stress</span>'
             '<br><span style="color:#94a3b8">Canopy deficit = 100 &minus; heat mitigation score. '
             'Low canopy raises the composite risk.</span>'
             '</div>'
@@ -1016,6 +1295,9 @@ def build_report_html(
         """
     else:
         chart_html = '<p class="no-data">No time series stored yet. Call /v1/location/timeseries first.</p>'
+
+    # TerraClimate climate charts
+    tc_chart_html = _tc_climate_charts_html(tc_monthly)
 
     # Scene image rows
     scene_rows = _scene_rows(scene_months)
@@ -1126,6 +1408,16 @@ def build_report_html(
   <div class="card">
     <h2>Derived features</h2>
     {features_html}
+  </div>
+
+  <!-- TerraClimate -->
+  <div class="card">
+    <h2>Climate context (TerraClimate ~4 km monthly)</h2>
+    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:14px">
+      University of Idaho Climatology Lab &mdash; 1/24° global grid.
+      Data retrieved from THREDDS OPeNDAP (single grid cell, no imagery download).
+    </div>
+    {tc_chart_html}
   </div>
 
   <!-- Index Reference -->

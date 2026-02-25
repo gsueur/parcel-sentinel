@@ -104,6 +104,7 @@ async def create_location(req: LocationRequest):
         "fire_exposure_score": score_result.fire_exposure_score,
         "heat_mitigation_score": score_result.heat_mitigation_score,
         "flood_risk_score": score_result.flood_risk_score,
+        "heat_stress_score": score_result.heat_stress_score,
         "composite_score": score_result.composite_score,
     })
     store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,
@@ -122,6 +123,7 @@ async def create_location(req: LocationRequest):
             "fire_exposure_score": score_result.fire_exposure_score,
             "heat_mitigation_score": score_result.heat_mitigation_score,
             "flood_risk_score": score_result.flood_risk_score,
+            "heat_stress_score": score_result.heat_stress_score,
             "composite_score": score_result.composite_score,
         },
         features=features,
@@ -174,6 +176,7 @@ async def regenerate_location(location_key: str, req: _RegenerateRequest = _Rege
         "fire_exposure_score": score_result.fire_exposure_score,
         "heat_mitigation_score": score_result.heat_mitigation_score,
         "flood_risk_score": score_result.flood_risk_score,
+        "heat_stress_score": score_result.heat_stress_score,
         "composite_score": score_result.composite_score,
     })
     store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,
@@ -194,6 +197,7 @@ async def regenerate_location(location_key: str, req: _RegenerateRequest = _Rege
             "fire_exposure_score": score_result.fire_exposure_score,
             "heat_mitigation_score": score_result.heat_mitigation_score,
             "flood_risk_score": score_result.flood_risk_score,
+            "heat_stress_score": score_result.heat_stress_score,
             "composite_score": score_result.composite_score,
         },
         features=features,

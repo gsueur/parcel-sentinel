@@ -7,17 +7,18 @@ from ..config import settings
 # ---------------------------------------------------------------------------
 # Climate-zone weight profiles for the composite score
 # ---------------------------------------------------------------------------
-# Keys: drought, wetness, fire, heat_inv (= 100 - heat_mitigation_score), flood
-# All five weights must sum to 1.0.
+# Keys: drought, wetness, fire, heat_inv (= 100 - heat_mitigation_score), flood,
+#       heat_stress (TerraClimate-derived: tmax anomaly + trend + VPD).
+# All six weights must sum to 1.0.
 # Resolution order: "Cs" prefix first, then major letter, then "default".
 _CLIMATE_WEIGHTS: dict[str, dict[str, float]] = {
-    "A":       {"drought": 0.08, "wetness": 0.37, "fire": 0.10, "heat_inv": 0.25, "flood": 0.20},
-    "B":       {"drought": 0.45, "wetness": 0.05, "fire": 0.20, "heat_inv": 0.25, "flood": 0.05},
-    "Cs":      {"drought": 0.25, "wetness": 0.08, "fire": 0.35, "heat_inv": 0.17, "flood": 0.15},
-    "C":       {"drought": 0.20, "wetness": 0.20, "fire": 0.15, "heat_inv": 0.25, "flood": 0.20},
-    "D":       {"drought": 0.15, "wetness": 0.15, "fire": 0.30, "heat_inv": 0.25, "flood": 0.15},
-    "E":       {"drought": 0.08, "wetness": 0.17, "fire": 0.05, "heat_inv": 0.55, "flood": 0.15},
-    "default": {"drought": 0.28, "wetness": 0.20, "fire": 0.17, "heat_inv": 0.20, "flood": 0.15},
+    "A":       {"drought": 0.07, "wetness": 0.30, "fire": 0.08, "heat_inv": 0.20, "flood": 0.18, "heat_stress": 0.17},
+    "B":       {"drought": 0.38, "wetness": 0.04, "fire": 0.16, "heat_inv": 0.20, "flood": 0.04, "heat_stress": 0.18},
+    "Cs":      {"drought": 0.20, "wetness": 0.06, "fire": 0.28, "heat_inv": 0.14, "flood": 0.12, "heat_stress": 0.20},
+    "C":       {"drought": 0.16, "wetness": 0.16, "fire": 0.12, "heat_inv": 0.20, "flood": 0.16, "heat_stress": 0.20},
+    "D":       {"drought": 0.12, "wetness": 0.12, "fire": 0.24, "heat_inv": 0.20, "flood": 0.12, "heat_stress": 0.20},
+    "E":       {"drought": 0.06, "wetness": 0.14, "fire": 0.04, "heat_inv": 0.44, "flood": 0.12, "heat_stress": 0.20},
+    "default": {"drought": 0.22, "wetness": 0.16, "fire": 0.14, "heat_inv": 0.16, "flood": 0.12, "heat_stress": 0.20},
 }
 
 _CLIMATE_PROFILE_LABELS: dict[str, str] = {
@@ -58,6 +59,7 @@ class ScoreResult:
     fire_exposure_score: int
     heat_mitigation_score: int
     flood_risk_score: int
+    heat_stress_score: int
     composite_score: int
     top_factors: list[dict]
     climate_profile: str = field(default="Generic")
@@ -86,47 +88,55 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     profile = _CLIMATE_PROFILE_LABELS[climate_key]
 
     # --- Drought score (0-100) ---
-    # Combines NDVI vegetation health with NDMI leaf moisture stress.
-    anomaly_freq = features.get("ndvi_anomaly_freq_5y")
-    trend_slope  = features.get("ndvi_trend_slope_5y")
-    ndvi_mean    = features.get("ndvi_mean_5y")
-    ndmi_stress  = features.get("ndmi_moisture_stress_freq_5y")
+    # Combines NDVI vegetation health, NDMI leaf moisture stress, and PDSI.
+    anomaly_freq  = features.get("ndvi_anomaly_freq_5y")
+    trend_slope   = features.get("ndvi_trend_slope_5y")
+    ndvi_mean     = features.get("ndvi_mean_5y")
+    ndmi_stress   = features.get("ndmi_moisture_stress_freq_5y")
+    pdsi_drought  = features.get("pdsi_drought_freq_5y")
 
     drought_components: list[float] = []
     drought_weights: list[float] = []
 
     if anomaly_freq is not None:
         drought_components.append(anomaly_freq * 100)
-        drought_weights.append(0.25)
+        drought_weights.append(0.20)
         if anomaly_freq > 0.15:
-            factors.append({"name": "ndvi_anomaly_freq_5y", "direction": "positive", "weight": 0.25})
+            factors.append({"name": "ndvi_anomaly_freq_5y", "direction": "positive", "weight": 0.20})
 
     if trend_slope is not None:
         # Negative slope = drying. Map [-0.05, 0.05] → [100, 0]
         slope_score = max(0, min(100, (0.05 - trend_slope) / 0.10 * 100))
         drought_components.append(slope_score)
-        drought_weights.append(0.25)
+        drought_weights.append(0.20)
         if trend_slope < -0.005:
-            factors.append({"name": "ndvi_trend_slope_5y", "direction": "negative", "weight": 0.25})
+            factors.append({"name": "ndvi_trend_slope_5y", "direction": "negative", "weight": 0.20})
 
     if ndvi_mean is not None:
         # Lower NDVI = more drought stress. Map [0, 0.8] → [100, 0]
         mean_score = max(0, min(100, (0.8 - ndvi_mean) / 0.8 * 100))
         drought_components.append(mean_score)
-        drought_weights.append(0.20)
+        drought_weights.append(0.15)
 
     if ndmi_stress is not None:
         # Fraction of months with vegetation moisture stress. Map [0, 1] → [0, 100]
         drought_components.append(ndmi_stress * 100)
-        drought_weights.append(0.30)
+        drought_weights.append(0.20)
         if ndmi_stress > 0.2:
-            factors.append({"name": "ndmi_moisture_stress_freq_5y", "direction": "positive", "weight": 0.30})
+            factors.append({"name": "ndmi_moisture_stress_freq_5y", "direction": "positive", "weight": 0.20})
+
+    if pdsi_drought is not None:
+        # Fraction of months with PDSI < -2 (moderate drought). Map [0, 1] → [0, 100]
+        drought_components.append(pdsi_drought * 100)
+        drought_weights.append(0.25)
+        if pdsi_drought > 0.15:
+            factors.append({"name": "pdsi_drought_freq_5y", "direction": "positive", "weight": 0.25})
 
     if is_urban:
         drought_score = 0.0
     elif drought_components:
         total_w = sum(drought_weights)
-        drought_score = sum(c * w for c, w in zip(drought_components, drought_weights)) / total_w
+        drought_score = sum(c * wt for c, wt in zip(drought_components, drought_weights)) / total_w
     else:
         drought_score = 50.0
 
@@ -179,24 +189,67 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             "weight": w.get("flood", 0.15),
         })
 
+    # --- Heat stress score (0-100) ---
+    # TerraClimate-derived: elevated temperature anomaly frequency, warming trend,
+    # and high-VPD stress.  Defaults to 50 when TerraClimate data is unavailable.
+    tmax_anomaly_freq  = features.get("tmax_anomaly_freq_5y")
+    tmax_trend         = features.get("tmax_trend_slope_5y")
+    vpd_high_freq      = features.get("vpd_high_freq_5y")
+
+    has_tc = any(v is not None for v in [tmax_anomaly_freq, tmax_trend, vpd_high_freq])
+    if has_tc:
+        hs_components: list[float] = []
+        hs_weights: list[float] = []
+
+        if tmax_anomaly_freq is not None:
+            hs_components.append(tmax_anomaly_freq * 100)
+            hs_weights.append(0.40)
+            if tmax_anomaly_freq > 0.20:
+                factors.append({"name": "tmax_anomaly_freq_5y", "direction": "positive", "weight": 0.40})
+
+        if tmax_trend is not None:
+            # 0.05 °C/yr → 100 (extreme warming trend).
+            trend_component = max(0.0, min(100.0, (tmax_trend / 0.05) * 100))
+            hs_components.append(trend_component)
+            hs_weights.append(0.30)
+            if tmax_trend > 0.03:
+                factors.append({"name": "tmax_trend_slope_5y", "direction": "positive", "weight": 0.30})
+
+        if vpd_high_freq is not None:
+            hs_components.append(vpd_high_freq * 100)
+            hs_weights.append(0.30)
+            if vpd_high_freq > 0.25:
+                factors.append({"name": "vpd_high_freq_5y", "direction": "positive", "weight": 0.30})
+
+        if hs_components:
+            total_hw = sum(hs_weights)
+            heat_stress_score: float = (
+                sum(c * hw for c, hw in zip(hs_components, hs_weights)) / total_hw
+            )
+        else:
+            heat_stress_score = 50.0
+    else:
+        heat_stress_score = 50.0
+
     # --- Composite (0-100) ---
     if is_urban:
-        # Urban: canopy deficit dominates; wetness and flood are secondary.
+        # Urban: canopy deficit dominates; wetness, flood, and heat stress are secondary.
         # Climate zone weights are irrelevant on impervious surfaces.
         composite = (
-            0.70 * (100 - heat_mitigation_score)
+            0.60 * (100 - heat_mitigation_score)
             + 0.15 * wetness_score
             + 0.15 * flood_risk_score
+            + 0.10 * heat_stress_score
         )
     else:
-        # Climate-zone-weighted composite. Heat mitigation is inverted:
-        # high canopy = lower heat contribution to composite risk.
+        # Climate-zone-weighted composite. heat_inv = canopy deficit (100 - mitigation).
         composite = (
-            w["drought"]  * drought_score
-            + w["wetness"]  * wetness_score
-            + w["fire"]     * fire_exposure_score
-            + w["heat_inv"] * (100 - heat_mitigation_score)
-            + w["flood"]    * flood_risk_score
+            w["drought"]     * drought_score
+            + w["wetness"]   * wetness_score
+            + w["fire"]      * fire_exposure_score
+            + w["heat_inv"]  * (100 - heat_mitigation_score)
+            + w["flood"]     * flood_risk_score
+            + w["heat_stress"] * heat_stress_score
         )
 
     return ScoreResult(
@@ -205,6 +258,7 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         fire_exposure_score=_clamp(fire_exposure_score),
         heat_mitigation_score=_clamp(heat_mitigation_score),
         flood_risk_score=_clamp(flood_risk_score),
+        heat_stress_score=_clamp(heat_stress_score),
         composite_score=_clamp(composite),
         top_factors=sorted(factors, key=lambda f: f["weight"], reverse=True)[:3],
         climate_profile=profile,

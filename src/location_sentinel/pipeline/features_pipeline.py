@@ -21,6 +21,7 @@ from ..geometry.normalize import geojson_to_shapely
 from ..models.common import MetricName, QualityInfo
 from .timeseries import run_timeseries
 from .sar_pipeline import run_sar_features
+from .terraclimate_pipeline import run_terraclimate_features
 from ..compute.sar_features import compute_sar_flood_anomaly, compute_sar_water_frequency
 from ..storage.duckdb_store import store
 
@@ -43,8 +44,8 @@ async def run_features(
     if not ts_metrics:
         ts_metrics = [MetricName.ndvi]
 
-    # Run S2 timeseries and SAR pipelines concurrently to keep wall-clock time flat
-    (location_key, series, quality), sar_features = await asyncio.gather(
+    # Run S2 timeseries, SAR, and TerraClimate pipelines concurrently
+    (location_key, series, quality), sar_features, tc_features = await asyncio.gather(
         run_timeseries(
             geom_geojson=geom_geojson,
             date_start=date_start,
@@ -53,6 +54,11 @@ async def run_features(
             location_key=location_key,
         ),
         run_sar_features(
+            geom_geojson=geom_geojson,
+            date_start=date_start,
+            date_end=date_end,
+        ),
+        run_terraclimate_features(
             geom_geojson=geom_geojson,
             date_start=date_start,
             date_end=date_end,
@@ -162,6 +168,12 @@ async def run_features(
             location_key, scene_id, month_key,
             settings.PROCESSING_VERSION, vv_dn, water_frac,
         )
+
+    # TerraClimate climate features (tmax, tmin, ppt, vpd, PDSI derivatives)
+    if tc_features.get("no_terraclimate_data"):
+        quality.flags.append("no_terraclimate_data")
+    else:
+        features.update({k: v for k, v in tc_features.items() if k != "no_terraclimate_data"})
 
     # Urban detection
     is_urban = detect_urban(features)

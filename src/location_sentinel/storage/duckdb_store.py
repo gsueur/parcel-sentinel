@@ -223,6 +223,19 @@ class DuckDBStore:
             )
         """)
 
+        # TerraClimate monthly cache (grid-cell keyed, shared across locations)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS terraclimate_monthly (
+                grid_lat FLOAT NOT NULL,
+                grid_lon FLOAT NOT NULL,
+                variable VARCHAR NOT NULL,
+                year INTEGER NOT NULL,
+                month INTEGER NOT NULL,
+                value FLOAT,
+                PRIMARY KEY (grid_lat, grid_lon, variable, year, month)
+            )
+        """)
+
         # Climate reference tables
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS climate_descriptions (
@@ -824,6 +837,84 @@ class DuckDBStore:
             [location_key, processing_version],
         ).fetchall()
         return [(row[0], row[1]) for row in rows if row[1] is not None]
+
+    # ------------------------------------------------------------------
+    # TerraClimate monthly cache
+    # ------------------------------------------------------------------
+
+    def get_terraclimate_monthly(
+        self,
+        grid_lat: float,
+        grid_lon: float,
+        variables: list[str],
+        years: list[int],
+    ) -> dict[str, dict[tuple[int, int], float | None]]:
+        """Return {var: {(year, month): value}} for cached TerraClimate rows."""
+        if self._conn is None or not variables or not years:
+            return {var: {} for var in variables}
+        var_ph = ",".join("?" * len(variables))
+        year_ph = ",".join("?" * len(years))
+        rows = self._conn.execute(
+            f"""
+            SELECT variable, year, month, value
+            FROM terraclimate_monthly
+            WHERE grid_lat = CAST(? AS FLOAT) AND grid_lon = CAST(? AS FLOAT)
+              AND variable IN ({var_ph})
+              AND year IN ({year_ph})
+            """,
+            [grid_lat, grid_lon] + list(variables) + list(years),
+        ).fetchall()
+        result: dict[str, dict[tuple[int, int], float | None]] = {var: {} for var in variables}
+        for variable, year, month, value in rows:
+            if variable in result:
+                result[variable][(int(year), int(month))] = value
+        return result
+
+    def store_terraclimate_monthly(
+        self,
+        grid_lat: float,
+        grid_lon: float,
+        rows: list[dict],
+    ) -> None:
+        """Persist TerraClimate monthly rows. Each row: {variable, year, month, value}."""
+        if self._conn is None or not rows:
+            return
+        for row in rows:
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO terraclimate_monthly
+                    (grid_lat, grid_lon, variable, year, month, value)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [grid_lat, grid_lon, row["variable"], row["year"], row["month"], row["value"]],
+            )
+        self._conn.commit()
+
+    def get_all_terraclimate_for_grid(
+        self,
+        grid_lat: float,
+        grid_lon: float,
+    ) -> dict[str, list[tuple[int, int, float | None]]]:
+        """Return all stored TerraClimate data for a grid cell.
+
+        Returns {variable: [(year, month, value), ...]} ordered by year, month.
+        Used by the report renderer to build climate charts.
+        """
+        if self._conn is None:
+            return {}
+        rows = self._conn.execute(
+            """
+            SELECT variable, year, month, value
+            FROM terraclimate_monthly
+            WHERE grid_lat = CAST(? AS FLOAT) AND grid_lon = CAST(? AS FLOAT)
+            ORDER BY variable, year, month
+            """,
+            [grid_lat, grid_lon],
+        ).fetchall()
+        result: dict[str, list[tuple[int, int, float | None]]] = {}
+        for variable, year, month, value in rows:
+            result.setdefault(variable, []).append((int(year), int(month), value))
+        return result
 
     def delete_location(self, location_key: str) -> dict[str, int]:
         """Delete all data for a location from every table.

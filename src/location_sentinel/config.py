@@ -58,8 +58,8 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.4.0"
-    SCORE_VERSION: str = "risk-v1.3.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.5.0"
+    SCORE_VERSION: str = "risk-v1.4.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"
@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     NBR_BURN_THRESHOLD: float = 0.1       # NBR below → burn signal present
     NDSI_SNOW_THRESHOLD: float = 0.4      # NDSI above → snow-covered
     BSI_BARE_THRESHOLD: float = 0.0       # BSI above → bare soil exposed
+
+    # TerraClimate (University of Idaho Climatology Lab -- THREDDS OPeNDAP)
+    TERRACLIMATE_THREDDS_URL: str = "https://thredds.northwestknowledge.net:443/thredds/dodsC/TERRACLIMATE_ALL/data"
+    TERRACLIMATE_VARIABLES: list[str] = ["tmax", "tmin", "ppt", "vpd", "PDSI"]
+    TERRACLIMATE_VPD_HIGH_THRESHOLD: float = 1.5     # kPa
+    TERRACLIMATE_PDSI_DROUGHT_THRESHOLD: float = -2.0
+    TERRACLIMATE_TMAX_ANOMALY_SIGMA: float = 1.0     # stdevs above monthly mean
 
     # Growing season (latitude threshold for zone split)
     GROWING_SEASON_LAT_THRESHOLD: float = 33.0

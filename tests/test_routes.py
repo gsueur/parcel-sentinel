@@ -151,6 +151,7 @@ class TestScore:
                 fire_exposure_score=15,
                 heat_mitigation_score=71,
                 flood_risk_score=5,
+                heat_stress_score=45,
                 composite_score=54,
                 top_factors=[
                     {"name": "ndvi_trend_slope_5y", "direction": "negative", "weight": 0.35},

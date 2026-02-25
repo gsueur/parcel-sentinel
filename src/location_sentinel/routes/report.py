@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse
 
 from ..config import settings
 from ..report.html import build_report_html
+from ..stac.terraclimate_client import snap_to_grid
 from ..storage.duckdb_store import store
 
 logger = logging.getLogger(__name__)
@@ -31,10 +32,21 @@ async def get_location_report(location_key: str):
     sar_scene_months = store.get_sar_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
     sar_scene_fracs = store.get_sar_scene_fracs(location_key, settings.PROCESSING_VERSION)
 
+    # TerraClimate monthly data for climate charts (served from DuckDB cache)
+    tc_monthly = None
+    centroid = location_info.get("centroid")
+    if centroid:
+        try:
+            lon, lat = centroid
+            grid_lat, grid_lon = snap_to_grid(lat, lon)
+            tc_monthly = store.get_all_terraclimate_for_grid(grid_lat, grid_lon)
+        except Exception as exc:
+            logger.warning("Could not load TerraClimate data for report: %s", exc)
+
     html = build_report_html(
         location_key=location_key,
         name=location_info["name"],
-        centroid=location_info["centroid"],
+        centroid=centroid,
         geometry_geojson=location_info["geojson"],
         climate=location_info.get("climate"),
         scores=scores,
@@ -46,6 +58,7 @@ async def get_location_report(location_key: str):
         sar_scene_fracs=sar_scene_fracs,
         processing_version=settings.PROCESSING_VERSION,
         score_version=settings.SCORE_VERSION,
+        tc_monthly=tc_monthly or {},
     )
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}

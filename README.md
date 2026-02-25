@@ -1,6 +1,6 @@
 # Location Sentinel Analytics API
 
-On-demand climate risk indicators for any location, derived from Sentinel-2 optical and Sentinel-1 SAR satellite imagery. No raw imagery is stored. Everything is computed from cloud-hosted COG assets, persisted as derived features and time series, and served via a JSON API with an interactive HTML report.
+On-demand climate risk indicators for any location, derived from Sentinel-2 optical imagery, Sentinel-1 SAR, and TerraClimate gridded climate data. No raw imagery is stored. Everything is computed from cloud-hosted COG assets and OPeNDAP point extractions, persisted as derived features and time series, and served via a JSON API with an interactive HTML report.
 
 ---
 
@@ -29,11 +29,12 @@ Given a point or polygon geometry, this service:
 
 - Searches the Sentinel-2 L2A archive for satellite passes over that location (back 5 years by default)
 - Searches the Sentinel-1 GRD archive for SAR passes over the same period
-- Both pipelines run concurrently; results are merged before scoring
+- Fetches TerraClimate monthly climate variables (temperature, precipitation, VPD, PDSI) from the University of Idaho THREDDS server
+- All three pipelines run concurrently; results are merged before scoring
 - For each selected S2 scene: reads 64x64 native pixels (640m footprint) for 7 bands, masks bad pixels via SCL, computes six spectral indices
 - For each selected S1 scene: reads 64x64 pixels of VV backscatter, applies a DN threshold to detect water
-- Aggregates to monthly statistics and derives long-term features
-- Scores the location across five climate risk dimensions using climate-zone-specific weights (via Köppen classification)
+- Aggregates to monthly statistics and derives long-term features (optical, SAR, and climate)
+- Scores the location across six climate risk dimensions using climate-zone-specific weights (via Köppen classification)
 - Persists all results in DuckDB; returns JSON and renders an HTML report with charts
 
 Typical cold-start time (5-year window): 15-40 seconds. Cached results return instantly.
@@ -51,47 +52,49 @@ POST /v1/locations (geometry + options)
   Input validation + stable location key
   key = sha256(customer_id | name | lat_5dp | lon_5dp)[:6]
         |
-        |-------------- asyncio.gather ------------------|
-        v                                                v
-  Sentinel-2 L2A pipeline                    Sentinel-1 GRD pipeline
-  STAC search (Earth Search v1)              STAC search (Earth Search v1)
-  Collection: sentinel-2-l2a                Collection: sentinel-1-grd
-  Bucket: sentinel-cogs (us-west-2)         Bucket: sentinel-s1-l1c (eu-central-1)
-        |                                                |
-        v                                                v
-  Scene selection (monthly best cloud)      Scene selection (IW GRD, VV asset)
-  Up to 2 scenes/month, max 120             Up to 2 scenes/month, max 120
-        |                                                |
-        v                                                v
-  Async COG reads (async-geotiff/obstore)   Sync VV reads via rasterio WarpedVRT
-  7 bands per scene, 64x64 pixels           (GCP-based GRD files need WarpedVRT)
-  Max 8 concurrent S3 connections           64x64 window, UTM-projected
-        |                                                |
-        v                                                v
-  SCL masking (valid: 4,5,6,7,11)           Water detection per scene
-  Index computation: NDVI, NDWI,            water_frac = pixels < 75 DN
-  NDMI, NBR, NDSI, BSI                      (excl. nodata DN=0)
-        |                                                |
-        v                                                |
-  Monthly aggregation + long-term           Snow suppression: exclude months
-  feature derivation (trends,               where optical NDSI > 0.4
-  anomaly freq, persistence)                         |
-        |                                                |
-        |<------------ merge features ------------------|
+        |-------------- asyncio.gather ----------------------------------|
+        v                        v                                       v
+  Sentinel-2 L2A pipeline  Sentinel-1 GRD pipeline          TerraClimate pipeline
+  STAC search              STAC search                       OPeNDAP point extraction
+  (Earth Search v1)        (Earth Search v1)                 (U. Idaho THREDDS)
+  Collection: s2-l2a       Collection: s1-grd                5 variables × N years
+  Bucket: sentinel-cogs    Bucket: sentinel-s1-l1c           tmax, tmin, ppt, vpd, PDSI
+        |                        |                                       |
+        v                        v                                       v
+  Scene selection          Scene selection                   DuckDB grid-cell cache
+  monthly best cloud       IW GRD, VV asset                 (1/24° ~4 km, shared)
+  Up to 2/month, max 120   Up to 2/month, max 120           Fetch missing via OPeNDAP
+        |                        |                                       |
+        v                        v                                       v
+  Async COG reads          Sync VV reads via                 Derive climate features:
+  7 bands, 64x64 px        rasterio WarpedVRT                tmax_mean, tmax_anomaly,
+  (async-geotiff/obstore)  64x64 px, UTM CRS                 tmax_trend, ppt_annual,
+        |                        |                             vpd_high_freq, pdsi_freq
+        v                        v                                       |
+  SCL masking (4,5,6,7,11) Water detection                             |
+  NDVI, NDWI, NDMI,        water_frac = pixels < 75 DN                |
+  NBR, NDSI, BSI           (excl. nodata DN=0)                        |
+        |                        |                                       |
+        v                        |                                       |
+  Monthly aggregation +    Snow suppression:                           |
+  long-term features       exclude months NDSI > 0.4                  |
+        |                        |                                       |
+        |<------- merge optical + SAR + TerraClimate features ----------|
         |
         v
   Climate zone lookup (centroid → Köppen code)
         |
         v
-  Risk scoring (drought, wetness, fire, heat mitigation, flood)
-  Climate-zone-weighted composite
-  Urban branch: 70% canopy deficit + 15% wetness + 15% flood
+  Risk scoring (drought, wetness, fire, heat mitigation, flood, heat stress)
+  Climate-zone-weighted composite (6-key weights)
+  Urban branch: 60% canopy deficit + 15% wetness + 15% flood + 10% heat stress
         |
         v
-  DuckDB persistence (features, timeseries, scores, band arrays, SAR arrays)
+  DuckDB persistence (features, timeseries, scores, band arrays, SAR arrays,
+                      TerraClimate monthly cache)
         |
         v
-  JSON response + HTML report
+  JSON response + HTML report (optical charts + SAR chart + climate charts)
 ```
 
 ---
@@ -148,6 +151,30 @@ Bands used:
 Conversion: `sigma0_dB ≈ 20 * log10(DN) - 83`
 
 Current threshold: `SAR_WATER_DN_THRESHOLD = 75` (above noise floor, below land mean). A pixel is classified as water when `0 < DN < 75`. A scene is classified as flooded when at least 35% of the 64x64 window pixels meet this criterion (`SAR_MIN_WATER_PIXEL_FRACTION = 0.35`).
+
+---
+
+### TerraClimate (monthly gridded climate)
+
+**Provider:** University of Idaho Climatology Lab / Northwest Knowledge Network
+**Resolution:** 1/24° (~4 km), global
+**Cadence:** Monthly
+**Coverage:** 1958-2024
+**Access:** OPeNDAP point extraction via THREDDS server (no full file download; each request returns 12 monthly values, ~1 KB)
+
+Variables fetched:
+
+| Variable | Key | Unit | CF decode |
+|----------|-----|------|-----------|
+| Max temperature | `tmax` | °C | raw × 0.01 − 99 |
+| Min temperature | `tmin` | °C | raw × 0.01 − 99 |
+| Precipitation | `ppt` | mm | raw × 0.1 |
+| Vapor pressure deficit | `vpd` | kPa | raw × 0.01 |
+| Palmer Drought Severity Index | `PDSI` | dimensionless | raw × 0.01 − 45 |
+
+Grid cell coordinates are snapped to the nearest 1/24° center before querying. The DuckDB `terraclimate_monthly` table acts as a persistent grid-cell-keyed cache: a cell is fetched once and reused for all locations that fall within it. Cold-start addition per new grid cell: 2-4 seconds (25 concurrent OPeNDAP requests).
+
+**Pre-warm script:** `scripts/prefetch_terraclimate.py --all-locations` iterates all stored locations and pre-fills the cache.
 
 ---
 
@@ -342,6 +369,25 @@ Long-term features computed from the full date window (default 5 years):
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
 
+### TerraClimate-derived features
+
+Derived from the monthly TerraClimate series for the location's date window:
+
+| Feature | Description |
+|---------|-------------|
+| `tmax_mean_5y` | Mean monthly maximum temperature (°C) |
+| `tmin_mean_5y` | Mean monthly minimum temperature (°C) |
+| `tmax_summer_mean_5y` | Mean tmax during growing season months |
+| `tmax_anomaly_freq_5y` | Fraction of months where tmax > monthly mean + 1σ |
+| `tmax_trend_slope_5y` | Theil-Sen slope of tmax, °C/year |
+| `ppt_annual_mean_5y` | Mean annual precipitation (mm) |
+| `vpd_mean_5y` | Mean vapor pressure deficit (kPa) |
+| `vpd_high_freq_5y` | Fraction of months with VPD > 1.5 kPa |
+| `pdsi_mean_5y` | Mean PDSI (negative = drought, < -2 = moderate drought) |
+| `pdsi_drought_freq_5y` | Fraction of months with PDSI < -2 |
+
+If TerraClimate data is unavailable (fetch failure), the `no_terraclimate_data` flag is set and `heat_stress_score` defaults to 50.
+
 ### Trend computation
 
 Theil-Sen regression (median of all pairwise slopes): robust to outliers. Minimum 6 observations required.
@@ -362,25 +408,26 @@ Uses BSI frequency, not BSI mean, to avoid winter snow dilution.
 
 ## Risk scoring
 
-Five sub-scores and a composite, all integers in [0, 100].
+Six sub-scores and a composite, all integers in [0, 100].
 
 **Convention:**
-- `drought_score`, `wetness_score`, `fire_exposure_score`, `flood_risk_score`: higher = more risk
+- `drought_score`, `wetness_score`, `fire_exposure_score`, `flood_risk_score`, `heat_stress_score`: higher = more risk
 - `heat_mitigation_score`: higher = more canopy = less heat risk
 - `composite_score`: higher = more overall climate risk
 
 ### Drought score
 
-Weighted combination:
+Weighted combination of optical and TerraClimate signals:
 
 | Component | Weight | Mapping |
 |-----------|--------|---------|
-| NDVI anomaly frequency | 25% | [0-1] → [0-100] |
-| NDVI trend slope | 25% | [-0.05, +0.05] yr → [100, 0] |
-| NDVI mean | 20% | [0, 0.8] → [100, 0] |
-| NDMI moisture stress frequency | 30% | [0-1] → [0-100] |
+| NDVI anomaly frequency | 20% | [0-1] → [0-100] |
+| NDVI trend slope | 20% | [-0.05, +0.05] yr → [100, 0] |
+| NDVI mean | 15% | [0, 0.8] → [100, 0] |
+| NDMI moisture stress frequency | 20% | [0-1] → [0-100] |
+| PDSI drought frequency | 25% | [0-1] → [0-100] |
 
-Suppressed to 0 for urban locations (impervious surfaces have no drought signal).
+Suppressed to 0 for urban locations (impervious surfaces have no drought signal). PDSI component defaults to 50 if TerraClimate data is unavailable.
 
 ### Wetness score
 
@@ -410,37 +457,51 @@ Higher canopy = more shade = lower heat risk. This score is **inverted** in the 
 flood_risk_score = max(sar_water_freq_5y, sar_flood_anomaly) * 100
 ```
 
+### Heat stress score
+
+Derived from TerraClimate temperature and vapor pressure deficit:
+
+```
+heat_stress_score = 0.40 * tmax_anomaly_freq_5y * 100
+                  + 0.30 * clamp(tmax_trend_slope_5y / 0.05 * 100, 0, 100)
+                  + 0.30 * vpd_high_freq_5y * 100
+```
+
+Defaults to 50 if TerraClimate data is unavailable.
+
 ### Composite score
 
 **Urban locations** (climate-zone weights irrelevant on impervious surfaces):
 
 ```
-composite = 0.70 * (100 - heat_mitigation_score)
+composite = 0.60 * (100 - heat_mitigation_score)
           + 0.15 * wetness_score
           + 0.15 * flood_risk_score
+          + 0.10 * heat_stress_score
 ```
 
 **Non-urban locations** (climate-zone-weighted):
 
 ```
-composite = w[drought]  * drought_score
-          + w[wetness]  * wetness_score
-          + w[fire]     * fire_exposure_score
-          + w[heat_inv] * (100 - heat_mitigation_score)
-          + w[flood]    * flood_risk_score
+composite = w[drought]     * drought_score
+          + w[wetness]     * wetness_score
+          + w[fire]        * fire_exposure_score
+          + w[heat_inv]    * (100 - heat_mitigation_score)
+          + w[flood]       * flood_risk_score
+          + w[heat_stress] * heat_stress_score
 ```
 
 Climate-zone weights (Köppen classification, all rows sum to 1.0):
 
-| Zone | drought | wetness | fire | heat_inv | flood |
-|------|---------|---------|------|----------|-------|
-| A Tropical | 0.08 | 0.37 | 0.10 | 0.25 | 0.20 |
-| B Arid | 0.45 | 0.05 | 0.20 | 0.25 | 0.05 |
-| Cs Mediterranean | 0.25 | 0.08 | 0.35 | 0.17 | 0.15 |
-| C Temperate humid | 0.20 | 0.20 | 0.15 | 0.25 | 0.20 |
-| D Continental / Boreal | 0.15 | 0.15 | 0.30 | 0.25 | 0.15 |
-| E Polar / Alpine | 0.08 | 0.17 | 0.05 | 0.55 | 0.15 |
-| default (unknown) | 0.28 | 0.20 | 0.17 | 0.20 | 0.15 |
+| Zone | drought | wetness | fire | heat_inv | flood | heat_stress |
+|------|---------|---------|------|----------|-------|-------------|
+| A Tropical | 0.07 | 0.30 | 0.08 | 0.20 | 0.18 | 0.17 |
+| B Arid | 0.38 | 0.04 | 0.16 | 0.20 | 0.04 | 0.18 |
+| Cs Mediterranean | 0.20 | 0.06 | 0.28 | 0.14 | 0.12 | 0.20 |
+| C Temperate humid | 0.16 | 0.16 | 0.12 | 0.20 | 0.16 | 0.20 |
+| D Continental / Boreal | 0.12 | 0.12 | 0.24 | 0.20 | 0.12 | 0.20 |
+| E Polar / Alpine | 0.06 | 0.14 | 0.04 | 0.44 | 0.12 | 0.20 |
+| default (unknown) | 0.22 | 0.16 | 0.14 | 0.16 | 0.12 | 0.20 |
 
 ---
 
@@ -481,8 +542,8 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.4.0",
-  "score_version": "risk-v1.3.0",
+  "processing_version": "s2l2a-v1.5.0",
+  "score_version": "risk-v1.4.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -490,7 +551,8 @@ Interactive docs: `http://localhost:8000/docs`
     "fire_exposure_score": 0,
     "heat_mitigation_score": 22,
     "flood_risk_score": 10,
-    "composite_score": 58
+    "heat_stress_score": 41,
+    "composite_score": 60
   },
   "features": {
     "ndvi_mean_5y": 0.21,
@@ -508,6 +570,13 @@ Interactive docs: `http://localhost:8000/docs`
     "is_urban": 1.0,
     "sar_water_freq_5y": 0.0,
     "sar_flood_anomaly": 0.097,
+    "tmax_mean_5y": 29.4,
+    "tmin_mean_5y": 21.1,
+    "ppt_annual_mean_5y": 1520.0,
+    "vpd_mean_5y": 0.98,
+    "vpd_high_freq_5y": 0.18,
+    "pdsi_mean_5y": -0.8,
+    "pdsi_drought_freq_5y": 0.22,
     "quality_score": 0.91
   },
   "quality": {
@@ -551,8 +620,9 @@ Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox)
 - Per-index time series charts (Chart.js)
 - SAR water fraction chart with seasonal baseline and flood alert banner
+- TerraClimate charts: monthly tmax/tmin temperature and PPT/VPD dual-axis
 - Feature table grouped by theme with contextual descriptions
-- Five risk score gauges with explanations
+- Six risk score gauges with explanations
 - Climate zone profile and composite weight breakdown
 
 Example: `GET /v1/location/a1b2c3/report`
@@ -657,6 +727,7 @@ http://localhost:8000/v1/locations?format=html
 | Fire | No history | Low exposure | Moderate | High exposure |
 | Flood | No SAR signal | Occasional water | Recurrent water | Frequent flooding |
 | Heat mitigation | Fully exposed | Sparse cover | Partial shade | Dense canopy |
+| Heat stress | Benign climate | Moderate heat | Frequent anomalies | Extreme heat / VPD |
 | Composite | Low risk | Moderate | Elevated | High risk |
 
 ---
@@ -702,8 +773,8 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.4.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.3.0` | Cache key tag for scores |
+| `PROCESSING_VERSION` | `s2l2a-v1.5.0` | Cache key tag for features |
+| `SCORE_VERSION` | `risk-v1.4.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2
@@ -749,6 +820,15 @@ All settings are environment variables. Defaults work out of the box.
 | `NBR_BURN_THRESHOLD` | `0.1` | NBR below → burn signal |
 | `NDSI_SNOW_THRESHOLD` | `0.4` | NDSI above → snow covered |
 | `BSI_BARE_THRESHOLD` | `0.0` | BSI above → bare soil |
+
+### TerraClimate
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TERRACLIMATE_THREDDS_URL` | (U. Idaho endpoint) | OPeNDAP base URL |
+| `TERRACLIMATE_VPD_HIGH_THRESHOLD` | `1.5` | kPa above which a month counts as high-VPD |
+| `TERRACLIMATE_PDSI_DROUGHT_THRESHOLD` | `-2.0` | PDSI below this = moderate drought month |
+| `TERRACLIMATE_TMAX_ANOMALY_SIGMA` | `1.0` | Std-devs above monthly mean = heat anomaly |
 
 ### Thumbnail
 
