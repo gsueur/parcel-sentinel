@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # Minimum fraction of window pixels below threshold for a scene to count as flooded.
     # Raised from 0.05 to 0.35 to avoid false positives from mixed land/shadow pixels.
     SAR_MIN_WATER_PIXEL_FRACTION: float = 0.35
+    # Relative flood delta: scenes where water_frac > location_median + delta also count
+    # as flooded for the chronic frequency metric.  Handles near-water locations (coastal
+    # lagoons, river banks) whose baseline water fraction is already 15-25%, making the
+    # fixed 35% absolute threshold too strict to detect genuine above-baseline episodes.
+    # The chronic frequency is max(absolute_freq, relative_freq).
+    SAR_RELATIVE_FLOOD_DELTA: float = 0.15
     SAR_MAX_SCENES_PER_MONTH: int = 2
     SAR_MAX_TOTAL_SCENES: int = 120
 

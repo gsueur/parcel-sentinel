@@ -25,15 +25,29 @@ def compute_water_fraction(vv_dn: np.ndarray) -> float | None:
 def compute_sar_water_frequency(
     water_fracs: list[float],
     threshold: float = settings.SAR_MIN_WATER_PIXEL_FRACTION,
+    adaptive_delta: float = settings.SAR_RELATIVE_FLOOD_DELTA,
 ) -> float | None:
-    """Fraction of scenes exceeding the water pixel fraction threshold.
+    """Fraction of scenes exceeding the flood threshold.
+
+    Two thresholds are evaluated and the higher frequency returned:
+
+    1. Absolute: scenes where water_frac > ``threshold`` (fixed 35%).
+       Works well for open-water and inland locations.
+
+    2. Relative: scenes where water_frac > median(all_fracs) + ``adaptive_delta``.
+       Handles near-water locations (coastal lagoons, river banks) whose
+       baseline water fraction already sits at 15-25%, making the fixed
+       threshold too strict to detect genuine above-baseline flood episodes.
 
     Returns None for empty input.
     """
     if not water_fracs:
         return None
-    flooded = sum(1 for f in water_fracs if f > threshold)
-    return float(flooded) / len(water_fracs)
+    n = len(water_fracs)
+    absolute_freq = sum(1 for f in water_fracs if f > threshold) / n
+    loc_median = median(water_fracs)
+    relative_freq = sum(1 for f in water_fracs if f > loc_median + adaptive_delta) / n
+    return float(max(absolute_freq, relative_freq))
 
 
 def compute_sar_flood_anomaly(
