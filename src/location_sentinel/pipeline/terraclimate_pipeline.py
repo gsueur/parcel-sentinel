@@ -17,7 +17,7 @@ from ..storage.duckdb_store import store
 logger = logging.getLogger(__name__)
 
 # Maximum TerraClimate data year (update annually when new data is released).
-_TC_MAX_YEAR = 2024
+_TC_MAX_YEAR = 2025
 
 
 def _years_for_window(date_start: str, date_end: str) -> list[int]:
