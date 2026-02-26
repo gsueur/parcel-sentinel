@@ -29,7 +29,14 @@
       padding: 14px 24px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between;
     }
+    .header-left { display: flex; align-items: baseline; gap: 12px; }
     .header h1 { font-size: 1.15rem; font-weight: 600; color: #fff; }
+    .customer-badge {
+      font-size: 0.78rem; color: var(--muted); background: var(--surface);
+      border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px;
+    }
+    .customer-badge a { color: var(--faint); text-decoration: none; margin-left: 6px; }
+    .customer-badge a:hover { color: var(--muted); }
     .header-right { display: flex; align-items: center; gap: 16px; }
     #loc-count { color: var(--muted); font-size: 0.8rem; }
     .btn {
@@ -39,32 +46,33 @@
     .btn:hover:not(:disabled) { opacity: 0.85; }
     .btn:disabled { opacity: 0.45; cursor: default; }
     .btn-primary { background: var(--accent); color: #fff; }
-    .btn-secondary {
-      background: var(--surface); color: var(--text);
-      border: 1px solid var(--border);
-    }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
     .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 14px;
-    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
     .card {
       background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
       overflow: hidden; text-decoration: none; color: inherit;
       transition: border-color 0.15s; display: flex; flex-direction: column;
     }
-    .card:hover { border-color: var(--accent); }
+    .card:not(.card-pending):hover { border-color: var(--accent); }
     .card-thumb { width: 100%; height: 110px; object-fit: cover; background: var(--border); display: block; }
     .card-thumb-placeholder { width: 100%; height: 110px; background: var(--border); }
+    .card-thumb-computing {
+      width: 100%; height: 110px; background: var(--border);
+      display: flex; align-items: center; justify-content: center;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 22px; height: 22px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite;
+    }
     .card-body { padding: 11px 14px; }
     .card-name { font-weight: 600; color: #fff; font-size: 0.9rem; }
     .card-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
     .card-customer { font-size: 0.72rem; color: var(--faint); margin-top: 2px; }
-    .card-key {
-      font-size: 0.65rem; color: var(--faint); margin-top: 4px; font-family: monospace;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
+    .card-key { font-size: 0.65rem; color: var(--faint); margin-top: 4px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-computing { font-size: 0.75rem; color: var(--accent); margin-top: 3px; }
+    .card-failed { font-size: 0.75rem; color: #fca5a5; margin-top: 3px; }
     .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
     /* Modal */
     .modal-overlay {
@@ -82,10 +90,7 @@
       display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
     }
     .modal-header h2 { font-size: 0.95rem; font-weight: 600; color: #fff; }
-    .close-btn {
-      background: none; border: none; color: var(--muted); font-size: 1.3rem;
-      cursor: pointer; padding: 0 4px; line-height: 1;
-    }
+    .close-btn { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1; }
     .close-btn:hover { color: var(--text); }
     .modal-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
     .form-section {
@@ -102,9 +107,6 @@
     }
     input:focus, select:focus { border-color: var(--accent); }
     input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
-    .draw-btns { display: flex; gap: 7px; }
-    .draw-btns .btn { flex: 1; padding: 6px 10px; font-size: 0.8rem; }
-    .draw-btns .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     .map-section { flex: 1; position: relative; min-width: 0; }
     #map { width: 100%; height: 100%; min-height: 380px; }
     .map-hint {
@@ -113,11 +115,8 @@
       border-radius: 6px; padding: 5px 12px; font-size: 0.75rem; color: var(--muted);
       pointer-events: none; z-index: 10; white-space: nowrap;
     }
-    .status-box {
-      font-size: 0.78rem; padding: 7px 10px; border-radius: 5px; line-height: 1.4;
-    }
+    .status-box { font-size: 0.78rem; padding: 7px 10px; border-radius: 5px; line-height: 1.4; }
     .status-box.error { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
-    .status-box.success { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.25); }
     .status-box.info { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); }
     .hidden { display: none !important; }
   </style>
@@ -125,7 +124,10 @@
 <body>
 
 <div class="header">
-  <h1>Location Sentinel</h1>
+  <div class="header-left">
+    <h1>Location Sentinel</h1>
+    <span id="customer-badge" class="customer-badge hidden"></span>
+  </div>
   <div class="header-right">
     <span id="loc-count"></span>
     <button class="btn btn-primary" id="add-btn">+ Add Location</button>
@@ -147,9 +149,7 @@
     </div>
     <div class="modal-body">
 
-      <!-- Form -->
       <div class="form-section">
-
         <div class="field">
           <label for="loc-name">Name</label>
           <input type="text" id="loc-name" placeholder="e.g. Riverside Plot A">
@@ -178,25 +178,15 @@
           <input type="date" id="date-end">
         </div>
 
-        <div class="field">
-          <label>Draw geometry</label>
-          <div class="draw-btns">
-            <button class="btn btn-secondary" id="btn-point">Point</button>
-            <button class="btn btn-secondary" id="btn-polygon">Polygon</button>
-          </div>
-        </div>
-
         <div id="geom-status" class="status-box info hidden"></div>
 
         <button class="btn btn-primary" id="submit-btn" disabled>Analyze</button>
 
         <div id="form-status" class="hidden"></div>
-
       </div>
 
-      <!-- Map -->
       <div class="map-section">
-        <div class="map-hint" id="map-hint">Select "Point" or "Polygon" to draw a geometry</div>
+        <div class="map-hint" id="map-hint">Click on the map to place a point</div>
         <div id="map"></div>
       </div>
 
@@ -214,20 +204,35 @@ const MAPBOX_TOKEN = 'pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bTE5czAycXMzNnF
 
 mapboxgl.accessToken = MAPBOX_TOKEN;
 
-let map = null;
-let draw = null;
-let drawnGeometry = null;
+let map = null, draw = null, drawnGeometry = null;
+const filterCustomerId = new URLSearchParams(window.location.search).get('customer_id');
 
 // ── LOCATIONS ─────────────────────────────────────────────────────────────────────
 
 async function loadLocations() {
   try {
-    const res = await fetch(`${API_URL}/v1/locations`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    renderGrid(data.locations);
-    const n = data.count;
-    document.getElementById('loc-count').textContent = `${n} location${n !== 1 ? 's' : ''}`;
+    let locations, count;
+    if (filterCustomerId) {
+      const res = await fetch(`${API_URL}/v1/customers/${filterCustomerId}/locations`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      locations = data.locations;
+      count = data.count;
+      showCustomerBadge(data.customer.name);
+    } else {
+      const res = await fetch(`${API_URL}/v1/locations`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      locations = data.locations;
+      count = data.count;
+    }
+    // Preserve any pending cards already in the grid
+    const pending = [...document.querySelectorAll('.card-pending')];
+    renderGrid(locations);
+    pending.forEach(c => {
+      if (!document.getElementById(c.id)) document.getElementById('grid').prepend(c);
+    });
+    document.getElementById('loc-count').textContent = `${count} location${count !== 1 ? 's' : ''}`;
   } catch (e) {
     document.getElementById('grid').innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
   }
@@ -246,8 +251,7 @@ function renderGrid(locations) {
       : '';
     const updated = loc.updated_at ? loc.updated_at.slice(0, 10) : '';
     const meta = [coords, updated].filter(Boolean).join(' &middot; ');
-    const customer = loc.customer_name
-      ? `<div class="card-customer">${loc.customer_name}</div>` : '';
+    const customer = loc.customer_name ? `<div class="card-customer">${loc.customer_name}</div>` : '';
     const keyShort = loc.location_key.slice(0, 24) + '&hellip;';
     return `
       <a class="card" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
@@ -263,6 +267,64 @@ function renderGrid(locations) {
   }).join('');
 }
 
+function showCustomerBadge(name) {
+  const el = document.getElementById('customer-badge');
+  el.innerHTML = `${name} <a href="?" title="Show all locations">&times;</a>`;
+  el.classList.remove('hidden');
+}
+
+// ── PENDING CARD ──────────────────────────────────────────────────────────────────
+
+function addPendingCard(jobId, name) {
+  const card = document.createElement('div');
+  card.className = 'card card-pending';
+  card.id = `job-${jobId}`;
+  card.innerHTML = `
+    <div class="card-thumb-computing"><div class="spinner"></div></div>
+    <div class="card-body">
+      <div class="card-name">${name}</div>
+      <div class="card-computing" id="job-status-${jobId}">Computing\u2026</div>
+    </div>`;
+  const grid = document.getElementById('grid');
+  const empty = grid.querySelector('.state-msg');
+  if (empty) empty.remove();
+  grid.prepend(card);
+}
+
+function startBackgroundPoll(jobId) {
+  let elapsed = 0;
+  const interval = setInterval(async () => {
+    elapsed += 3;
+    const statusEl = document.getElementById(`job-status-${jobId}`);
+    try {
+      const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const job = await res.json();
+
+      if (job.status === 'ready') {
+        clearInterval(interval);
+        await loadLocations(); // re-renders grid, replacing the pending card
+      } else if (job.status === 'failed') {
+        clearInterval(interval);
+        const card = document.getElementById(`job-${jobId}`);
+        if (card) {
+          card.querySelector('.card-thumb-computing').outerHTML =
+            '<div class="card-thumb-placeholder" style="background:rgba(239,68,68,0.08)"></div>';
+        }
+        if (statusEl) {
+          statusEl.className = 'card-failed';
+          statusEl.textContent = `Failed: ${job.error}`;
+        }
+      } else {
+        if (statusEl) statusEl.textContent = `Computing\u2026 ${elapsed}s`;
+      }
+    } catch (e) {
+      clearInterval(interval);
+      if (statusEl) { statusEl.className = 'card-failed'; statusEl.textContent = `Error: ${e.message}`; }
+    }
+  }, 3000);
+}
+
 // ── CUSTOMERS ─────────────────────────────────────────────────────────────────────
 
 async function loadCustomers() {
@@ -270,6 +332,7 @@ async function loadCustomers() {
     const res = await fetch(`${API_URL}/v1/customers`);
     if (!res.ok) return;
     const data = await res.json();
+    if (!data.customers.length) return;
     const select = document.getElementById('customer-select');
     const newOpt = select.lastElementChild;
     data.customers.forEach(c => {
@@ -290,23 +353,22 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
 });
 
 function openModal() {
-  // Reset customer options (avoid duplicates on reopen)
   const select = document.getElementById('customer-select');
   while (select.options.length > 2) select.remove(1);
+  // Pre-select current customer filter if active
+  if (filterCustomerId) select.value = filterCustomerId;
 
   document.getElementById('modal-overlay').classList.add('open');
   loadCustomers();
 
   if (!map) {
-    // Defer map init until modal is visible so it gets correct dimensions
-    requestAnimationFrame(() => { requestAnimationFrame(initMap); });
+    requestAnimationFrame(() => requestAnimationFrame(initMap));
   } else {
     map.resize();
   }
 }
 
 function closeModal() {
-  if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null; }
   document.getElementById('modal-overlay').classList.remove('open');
   resetForm();
 }
@@ -323,7 +385,7 @@ function initMap() {
 
   draw = new MapboxDraw({
     displayControlsDefault: false,
-    defaultMode: 'simple_select',
+    defaultMode: 'draw_point',
   });
   map.addControl(draw);
   map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
@@ -331,16 +393,18 @@ function initMap() {
   map.on('draw.create', onGeomChange);
   map.on('draw.update', onGeomChange);
   map.on('draw.delete', onGeomClear);
+  // Re-enter draw_point mode after a point is placed
+  map.on('draw.create', () => { setTimeout(() => draw.changeMode('draw_point'), 50); });
 }
 
 function onGeomChange() {
   const features = draw.getAll().features;
   if (!features.length) return;
   drawnGeometry = features[0].geometry;
-  const hint = drawnGeometry.type === 'Point'
-    ? 'Point placed (100m buffer will be applied)'
-    : 'Polygon drawn';
-  setGeomStatus('info', hint);
+  const el = document.getElementById('geom-status');
+  el.textContent = 'Point placed \u2014 click elsewhere to move it';
+  el.className = 'status-box info';
+  el.classList.remove('hidden');
   document.getElementById('map-hint').classList.add('hidden');
   updateSubmit();
 }
@@ -350,38 +414,6 @@ function onGeomClear() {
   document.getElementById('geom-status').classList.add('hidden');
   document.getElementById('map-hint').classList.remove('hidden');
   updateSubmit();
-}
-
-// ── DRAW BUTTONS ──────────────────────────────────────────────────────────────────
-
-document.getElementById('btn-point').addEventListener('click', () => {
-  draw.deleteAll();
-  drawnGeometry = null;
-  draw.changeMode('draw_point');
-  setActiveDrawBtn('btn-point');
-  setHint('Click on the map to place a point');
-  updateSubmit();
-});
-
-document.getElementById('btn-polygon').addEventListener('click', () => {
-  draw.deleteAll();
-  drawnGeometry = null;
-  draw.changeMode('draw_polygon');
-  setActiveDrawBtn('btn-polygon');
-  setHint('Click to draw vertices, double-click to finish');
-  updateSubmit();
-});
-
-function setActiveDrawBtn(id) {
-  ['btn-point', 'btn-polygon'].forEach(b => {
-    document.getElementById(b).classList.toggle('active', b === id);
-  });
-}
-
-function setHint(text) {
-  const el = document.getElementById('map-hint');
-  el.textContent = text;
-  el.classList.remove('hidden');
 }
 
 // ── CUSTOMER SELECT ───────────────────────────────────────────────────────────────
@@ -411,8 +443,6 @@ document.getElementById('loc-name').addEventListener('input', updateSubmit);
 
 // ── SUBMIT ────────────────────────────────────────────────────────────────────────
 
-let _pollInterval = null;
-
 document.getElementById('submit-btn').addEventListener('click', async () => {
   const name = document.getElementById('loc-name').value.trim();
   const customerVal = document.getElementById('customer-select').value;
@@ -422,7 +452,6 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
 
   if (!name || !drawnGeometry) return;
 
-  // Resolve customer_id
   let customerId = (customerVal === '' || customerVal === '__new__') ? null : customerVal;
 
   if (customerVal === '__new__') {
@@ -449,13 +478,7 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
     const res = await fetch(`${API_URL}/v1/locations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        geometry: drawnGeometry,
-        name,
-        customer_id: customerId,
-        date_end: dateEnd,
-        lookback_years: lookback,
-      }),
+      body: JSON.stringify({ geometry: drawnGeometry, name, customer_id: customerId, date_end: dateEnd, lookback_years: lookback }),
     });
 
     if (!res.ok) {
@@ -464,51 +487,15 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
     }
 
     const { job_id } = await res.json();
-    startPolling(job_id);
+    closeModal();
+    addPendingCard(job_id, name);
+    startBackgroundPoll(job_id);
   } catch (e) {
     setFormStatus('error', `Error: ${e.message}`);
     submitBtn.disabled = false;
     submitBtn.textContent = 'Analyze';
   }
 });
-
-function startPolling(jobId) {
-  let elapsed = 0;
-  setFormStatus('info', 'Job submitted \u2014 computing\u2026');
-  document.getElementById('submit-btn').textContent = 'Computing\u2026';
-
-  _pollInterval = setInterval(async () => {
-    elapsed += 3;
-    try {
-      const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const job = await res.json();
-
-      if (job.status === 'ready') {
-        clearInterval(_pollInterval);
-        _pollInterval = null;
-        const reportUrl = `${API_URL}${job.report_url}`;
-        setFormStatus('success', `Done! <a href="${reportUrl}" target="_blank" rel="noopener" style="color:#86efac">View report \u2192</a>`);
-        await loadLocations();
-        setTimeout(closeModal, 3000);
-      } else if (job.status === 'failed') {
-        clearInterval(_pollInterval);
-        _pollInterval = null;
-        setFormStatus('error', `Failed: ${job.error}`);
-        document.getElementById('submit-btn').disabled = false;
-        document.getElementById('submit-btn').textContent = 'Analyze';
-      } else {
-        setFormStatus('info', `Computing\u2026 ${elapsed}s elapsed`);
-      }
-    } catch (e) {
-      clearInterval(_pollInterval);
-      _pollInterval = null;
-      setFormStatus('error', `Polling error: ${e.message}`);
-      document.getElementById('submit-btn').disabled = false;
-      document.getElementById('submit-btn').textContent = 'Analyze';
-    }
-  }, 3000);
-}
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────────
 
@@ -519,17 +506,9 @@ function setFormStatus(type, msg) {
   el.classList.remove('hidden');
 }
 
-function setGeomStatus(type, msg) {
-  const el = document.getElementById('geom-status');
-  el.textContent = msg;
-  el.className = `status-box ${type}`;
-  el.classList.remove('hidden');
-}
-
 function resetForm() {
   document.getElementById('loc-name').value = '';
-  const sel = document.getElementById('customer-select');
-  sel.value = '';
+  document.getElementById('customer-select').value = '';
   document.getElementById('new-customer-field').classList.add('hidden');
   document.getElementById('new-customer-name').value = '';
   document.getElementById('lookback').value = '5';
@@ -539,11 +518,9 @@ function resetForm() {
   document.getElementById('form-status').classList.add('hidden');
   document.getElementById('submit-btn').disabled = true;
   document.getElementById('submit-btn').textContent = 'Analyze';
-  document.getElementById('map-hint').textContent = 'Select "Point" or "Polygon" to draw a geometry';
   document.getElementById('map-hint').classList.remove('hidden');
-  ['btn-point', 'btn-polygon'].forEach(b => document.getElementById(b).classList.remove('active'));
   drawnGeometry = null;
-  if (draw) draw.deleteAll();
+  if (draw) { draw.deleteAll(); draw.changeMode('draw_point'); }
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────────
