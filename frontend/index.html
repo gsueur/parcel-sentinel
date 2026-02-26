@@ -10,15 +10,15 @@
   <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
   <style>
     :root {
-      --bg: #0f1117;
-      --surface: #161b27;
-      --border: #1e2130;
-      --text: #e0e0e0;
-      --muted: #6b7280;
-      --faint: #4b5563;
-      --accent: #3b82f6;
-      --danger: #ef4444;
-      --success: #22c55e;
+      --bg: #f1f5f9;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --faint: #94a3b8;
+      --accent: #1d4ed8;
+      --danger: #dc2626;
+      --success: #16a34a;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -27,16 +27,15 @@
     }
     .header {
       padding: 14px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
       display: flex; align-items: center; justify-content: space-between;
     }
     .header-left { display: flex; align-items: baseline; gap: 12px; }
-    .header h1 { font-size: 1.15rem; font-weight: 600; color: #fff; }
+    .header h1 { font-size: 1.15rem; font-weight: 600; color: #0f172a; }
     .customer-badge {
-      font-size: 0.78rem; color: var(--muted); background: var(--surface);
+      font-size: 0.78rem; color: var(--muted); background: var(--bg);
       border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px;
     }
-    .customer-badge a { color: var(--faint); text-decoration: none; margin-left: 6px; }
-    .customer-badge a:hover { color: var(--muted); }
     .header-right { display: flex; align-items: center; gap: 16px; }
     #loc-count { color: var(--muted); font-size: 0.8rem; }
     .btn {
@@ -63,20 +62,20 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
-      width: 22px; height: 22px; border: 2px solid var(--border);
+      width: 22px; height: 22px; border: 2px solid var(--faint);
       border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite;
     }
     .card-body { padding: 11px 14px; }
-    .card-name { font-weight: 600; color: #fff; font-size: 0.9rem; }
+    .card-name { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
     .card-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
     .card-customer { font-size: 0.72rem; color: var(--faint); margin-top: 2px; }
     .card-key { font-size: 0.65rem; color: var(--faint); margin-top: 4px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .card-computing { font-size: 0.75rem; color: var(--accent); margin-top: 3px; }
-    .card-failed { font-size: 0.75rem; color: #fca5a5; margin-top: 3px; }
+    .card-failed { font-size: 0.75rem; color: var(--danger); margin-top: 3px; }
     .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
     /* Modal */
     .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+      position: fixed; inset: 0; background: rgba(15,23,42,0.5);
       z-index: 200; display: none; align-items: center; justify-content: center;
     }
     .modal-overlay.open { display: flex; }
@@ -89,8 +88,8 @@
       padding: 14px 18px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
     }
-    .modal-header h2 { font-size: 0.95rem; font-weight: 600; color: #fff; }
-    .close-btn { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1; }
+    .modal-header h2 { font-size: 0.95rem; font-weight: 600; color: #0f172a; }
+    .close-btn { background: none; border: none; color: var(--faint); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1; }
     .close-btn:hover { color: var(--text); }
     .modal-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
     .form-section {
@@ -111,13 +110,13 @@
     #map { width: 100%; height: 100%; min-height: 380px; }
     .map-hint {
       position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-      background: rgba(15,17,23,0.88); border: 1px solid var(--border);
+      background: rgba(255,255,255,0.92); border: 1px solid var(--border);
       border-radius: 6px; padding: 5px 12px; font-size: 0.75rem; color: var(--muted);
       pointer-events: none; z-index: 10; white-space: nowrap;
     }
     .status-box { font-size: 0.78rem; padding: 7px 10px; border-radius: 5px; line-height: 1.4; }
-    .status-box.error { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
-    .status-box.info { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); }
+    .status-box.error { background: rgba(220,38,38,0.08); color: #b91c1c; border: 1px solid rgba(220,38,38,0.2); }
+    .status-box.info { background: rgba(29,78,216,0.08); color: #1d4ed8; border: 1px solid rgba(29,78,216,0.2); }
     .hidden { display: none !important; }
   </style>
 </head>
@@ -155,7 +154,7 @@
           <input type="text" id="loc-name" placeholder="e.g. Riverside Plot A">
         </div>
 
-        <div class="field">
+        <div class="field" id="customer-field">
           <label for="customer-select">Customer (optional)</label>
           <select id="customer-select">
             <option value="">No customer</option>
@@ -199,7 +198,7 @@
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:8000'
   : 'https://climate.geomermaids.com';
-const MAPBOX_TOKEN = 'pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bTE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q';
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bDE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q';
 // ─────────────────────────────────────────────────────────────────────────────────
 
 mapboxgl.accessToken = MAPBOX_TOKEN;
@@ -269,7 +268,7 @@ function renderGrid(locations) {
 
 function showCustomerBadge(name) {
   const el = document.getElementById('customer-badge');
-  el.innerHTML = `${name} <a href="?" title="Show all locations">&times;</a>`;
+  el.textContent = name;
   el.classList.remove('hidden');
 }
 
@@ -309,7 +308,7 @@ function startBackgroundPoll(jobId) {
         const card = document.getElementById(`job-${jobId}`);
         if (card) {
           card.querySelector('.card-thumb-computing').outerHTML =
-            '<div class="card-thumb-placeholder" style="background:rgba(239,68,68,0.08)"></div>';
+            '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
         }
         if (statusEl) {
           statusEl.className = 'card-failed';
@@ -341,6 +340,8 @@ async function loadCustomers() {
       opt.textContent = c.name;
       select.insertBefore(opt, newOpt);
     });
+    // Pre-select after populating (filterCustomerId handled here too)
+    if (filterCustomerId) select.value = filterCustomerId;
   } catch (_) {}
 }
 
@@ -353,13 +354,17 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
 });
 
 function openModal() {
-  const select = document.getElementById('customer-select');
-  while (select.options.length > 2) select.remove(1);
-  // Pre-select current customer filter if active
-  if (filterCustomerId) select.value = filterCustomerId;
+  // Hide customer selector when locked to a customer
+  if (filterCustomerId) {
+    document.getElementById('customer-field').classList.add('hidden');
+    document.getElementById('new-customer-field').classList.add('hidden');
+  } else {
+    const select = document.getElementById('customer-select');
+    while (select.options.length > 2) select.remove(1);
+    loadCustomers();
+  }
 
   document.getElementById('modal-overlay').classList.add('open');
-  loadCustomers();
 
   if (!map) {
     requestAnimationFrame(() => requestAnimationFrame(initMap));
@@ -378,7 +383,7 @@ function closeModal() {
 function initMap() {
   map = new mapboxgl.Map({
     container: 'map',
-    style: 'mapbox://styles/mapbox/dark-v11',
+    style: 'mapbox://styles/mapbox/light-v11',
     center: [-98.5, 39.5],
     zoom: 3,
   });
@@ -445,29 +450,33 @@ document.getElementById('loc-name').addEventListener('input', updateSubmit);
 
 document.getElementById('submit-btn').addEventListener('click', async () => {
   const name = document.getElementById('loc-name').value.trim();
-  const customerVal = document.getElementById('customer-select').value;
   const lookback = parseInt(document.getElementById('lookback').value);
   const dateEnd = document.getElementById('date-end').value;
   const submitBtn = document.getElementById('submit-btn');
 
   if (!name || !drawnGeometry) return;
 
-  let customerId = (customerVal === '' || customerVal === '__new__') ? null : customerVal;
+  // When locked to a customer, use filterCustomerId directly
+  let customerId = filterCustomerId || null;
+  if (!filterCustomerId) {
+    const customerVal = document.getElementById('customer-select').value;
+    customerId = (customerVal === '' || customerVal === '__new__') ? null : customerVal;
 
-  if (customerVal === '__new__') {
-    const newName = document.getElementById('new-customer-name').value.trim();
-    if (!newName) { setFormStatus('error', 'Enter a customer name.'); return; }
-    try {
-      const r = await fetch(`${API_URL}/v1/customers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newName }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      customerId = (await r.json()).customer_id;
-    } catch (e) {
-      setFormStatus('error', `Could not create customer: ${e.message}`);
-      return;
+    if (customerVal === '__new__') {
+      const newName = document.getElementById('new-customer-name').value.trim();
+      if (!newName) { setFormStatus('error', 'Enter a customer name.'); return; }
+      try {
+        const r = await fetch(`${API_URL}/v1/customers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        customerId = (await r.json()).customer_id;
+      } catch (e) {
+        setFormStatus('error', `Could not create customer: ${e.message}`);
+        return;
+      }
     }
   }
 
@@ -508,9 +517,11 @@ function setFormStatus(type, msg) {
 
 function resetForm() {
   document.getElementById('loc-name').value = '';
-  document.getElementById('customer-select').value = '';
-  document.getElementById('new-customer-field').classList.add('hidden');
-  document.getElementById('new-customer-name').value = '';
+  if (!filterCustomerId) {
+    document.getElementById('customer-select').value = '';
+    document.getElementById('new-customer-field').classList.add('hidden');
+    document.getElementById('new-customer-name').value = '';
+  }
   document.getElementById('lookback').value = '5';
   document.getElementById('lookback-val').textContent = '5 years';
   document.getElementById('date-end').value = new Date().toISOString().slice(0, 10);
