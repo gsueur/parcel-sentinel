@@ -302,7 +302,9 @@ function startBackgroundPoll(jobId) {
 
       if (job.status === 'ready') {
         clearInterval(interval);
-        await loadLocations(); // re-renders grid, replacing the pending card
+        const doneCard = document.getElementById(`job-${jobId}`);
+        if (doneCard) doneCard.remove();
+        await loadLocations(); // re-renders grid with the completed location
       } else if (job.status === 'failed') {
         clearInterval(interval);
         const card = document.getElementById(`job-${jobId}`);
