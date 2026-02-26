@@ -35,11 +35,19 @@ class JobStore:
     def __init__(self):
         self._jobs: dict[str, Job] = {}
 
-    def create(self) -> Job:
+    def create(self, location_key: str) -> Job:
         job_id = secrets.token_hex(8)
         job = Job(job_id)
+        job.location_key = location_key
         self._jobs[job_id] = job
         return job
+
+    def find_active(self, location_key: str) -> Job | None:
+        """Return a pending or running job for this location key, if any."""
+        for job in self._jobs.values():
+            if job.location_key == location_key and job.status in ("pending", "running"):
+                return job
+        return None
 
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)

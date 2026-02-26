@@ -56,30 +56,32 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 @router.post("/locations", status_code=202)
 async def create_location(req: LocationRequest):
     """Submit a location for async computation. Returns a job_id to poll via GET /v1/jobs/{job_id}."""
-    # Validate geometry immediately so the client gets a fast 400 rather than a failed job.
     try:
-        geojson_to_shapely(req.geometry.model_dump())
+        geom = geojson_to_shapely(req.geometry.model_dump())
     except GeometryValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    job = job_store.create()
-    asyncio.create_task(_run_location_job(job.job_id, req))
-    return {"job_id": job.job_id, "status": "pending"}
-
-
-async def _run_location_job(job_id: str, req: LocationRequest) -> None:
-    trace_id = uuid.uuid4().hex[:12]
-    de = req.date_end.isoformat()
-
-    geom = geojson_to_shapely(req.geometry.model_dump())
     centroid = geom.centroid
     stable_key = make_location_key(
         name=req.name,
         centroid=(centroid.x, centroid.y),
         customer_id=req.customer_id,
     )
+
+    existing = job_store.find_active(stable_key)
+    if existing:
+        return {"job_id": existing.job_id, "status": existing.status}
+
+    job = job_store.create(stable_key)
+    asyncio.create_task(_run_location_job(job.job_id, req, stable_key))
+    return {"job_id": job.job_id, "status": "pending"}
+
+
+async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str) -> None:
+    trace_id = uuid.uuid4().hex[:12]
+    de = req.date_end.isoformat()
 
     cache_key = (
         f"location|{stable_key}"
