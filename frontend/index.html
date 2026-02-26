@@ -4,10 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Location Sentinel</title>
-  <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet">
-  <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
-  <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" rel="stylesheet">
-  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+  <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     :root {
       --bg: #f1f5f9;
@@ -108,11 +106,12 @@
     input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
     .map-section { flex: 1; position: relative; min-width: 0; }
     #map { width: 100%; height: 100%; min-height: 380px; }
+    .leaflet-container { cursor: crosshair !important; }
     .map-hint {
       position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
       background: rgba(255,255,255,0.92); border: 1px solid var(--border);
       border-radius: 6px; padding: 5px 12px; font-size: 0.75rem; color: var(--muted);
-      pointer-events: none; z-index: 10; white-space: nowrap;
+      pointer-events: none; z-index: 1000; white-space: nowrap;
     }
     .status-box { font-size: 0.78rem; padding: 7px 10px; border-radius: 5px; line-height: 1.4; }
     .status-box.error { background: rgba(220,38,38,0.08); color: #b91c1c; border: 1px solid rgba(220,38,38,0.2); }
@@ -198,12 +197,17 @@
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:8000'
   : 'https://climate.geomermaids.com';
-const MAPBOX_TOKEN = 'pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bDE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q';
 // ─────────────────────────────────────────────────────────────────────────────────
 
-mapboxgl.accessToken = MAPBOX_TOKEN;
+// Fix default marker icon paths when Leaflet is loaded from CDN
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
-let map = null, draw = null, drawnGeometry = null;
+let map = null, marker = null, drawnGeometry = null;
 const filterCustomerId = new URLSearchParams(window.location.search).get('customer_id');
 
 // ── LOCATIONS ─────────────────────────────────────────────────────────────────────
@@ -371,7 +375,7 @@ function openModal() {
   if (!map) {
     requestAnimationFrame(() => requestAnimationFrame(initMap));
   } else {
-    map.resize();
+    map.invalidateSize();
   }
 }
 
@@ -383,43 +387,31 @@ function closeModal() {
 // ── MAP ───────────────────────────────────────────────────────────────────────────
 
 function initMap() {
-  map = new mapboxgl.Map({
-    container: 'map',
-    style: 'mapbox://styles/mapbox/light-v11',
-    center: [-98.5, 39.5],
-    zoom: 3,
-  });
-
-  draw = new MapboxDraw({
-    displayControlsDefault: false,
-    defaultMode: 'draw_point',
-  });
-  map.addControl(draw);
-  map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
-
-  map.on('draw.create', onGeomChange);
-  map.on('draw.update', onGeomChange);
-  map.on('draw.delete', onGeomClear);
-  // Re-enter draw_point mode after a point is placed
-  map.on('draw.create', () => { setTimeout(() => draw.changeMode('draw_point'), 50); });
+  map = L.map('map').setView([39.5, -98.5], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  }).addTo(map);
+  map.on('click', e => placeMarker(e.latlng));
 }
 
-function onGeomChange() {
-  const features = draw.getAll().features;
-  if (!features.length) return;
-  drawnGeometry = features[0].geometry;
+function placeMarker(latlng) {
+  if (marker) {
+    marker.setLatLng(latlng);
+  } else {
+    marker = L.marker(latlng, { draggable: true }).addTo(map);
+    marker.on('dragend', () => setGeometry(marker.getLatLng()));
+  }
+  setGeometry(latlng);
+}
+
+function setGeometry(latlng) {
+  drawnGeometry = { type: 'Point', coordinates: [latlng.lng, latlng.lat] };
   const el = document.getElementById('geom-status');
-  el.textContent = 'Point placed \u2014 click elsewhere to move it';
+  el.textContent = 'Point placed \u2014 drag to adjust';
   el.className = 'status-box info';
   el.classList.remove('hidden');
   document.getElementById('map-hint').classList.add('hidden');
-  updateSubmit();
-}
-
-function onGeomClear() {
-  drawnGeometry = null;
-  document.getElementById('geom-status').classList.add('hidden');
-  document.getElementById('map-hint').classList.remove('hidden');
   updateSubmit();
 }
 
@@ -533,7 +525,7 @@ function resetForm() {
   document.getElementById('submit-btn').textContent = 'Analyze';
   document.getElementById('map-hint').classList.remove('hidden');
   drawnGeometry = null;
-  if (draw) { draw.deleteAll(); draw.changeMode('draw_point'); }
+  if (marker) { marker.remove(); marker = null; }
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────────
