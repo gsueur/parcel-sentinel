@@ -17,6 +17,13 @@ class CustomerCreate(BaseModel):
 # JSON endpoints
 # ------------------------------------------------------------------
 
+@router.get("/customers")
+async def list_customers():
+    """List all customers."""
+    customers = store.get_all_customers()
+    return JSONResponse(content={"count": len(customers), "customers": customers})
+
+
 @router.post("/customers", status_code=201)
 async def create_customer(body: CustomerCreate):
     """Create a new customer. Returns a unique 6-hex-char customer_id."""

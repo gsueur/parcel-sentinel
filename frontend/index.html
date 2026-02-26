@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Location Sentinel</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.2.0/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.4.3/mapbox-gl-draw.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #161b27;
+      --border: #1e2130;
+      --text: #e0e0e0;
+      --muted: #6b7280;
+      --faint: #4b5563;
+      --accent: #3b82f6;
+      --danger: #ef4444;
+      --success: #22c55e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh;
+    }
+    .header {
+      padding: 14px 24px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .header h1 { font-size: 1.15rem; font-weight: 600; color: #fff; }
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    #loc-count { color: var(--muted); font-size: 0.8rem; }
+    .btn {
+      padding: 7px 16px; border-radius: 6px; font-size: 0.85rem; font-weight: 500;
+      cursor: pointer; border: none; transition: opacity 0.15s; white-space: nowrap;
+    }
+    .btn:hover:not(:disabled) { opacity: 0.85; }
+    .btn:disabled { opacity: 0.45; cursor: default; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary {
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      overflow: hidden; text-decoration: none; color: inherit;
+      transition: border-color 0.15s; display: flex; flex-direction: column;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card-thumb { width: 100%; height: 110px; object-fit: cover; background: var(--border); display: block; }
+    .card-thumb-placeholder { width: 100%; height: 110px; background: var(--border); }
+    .card-body { padding: 11px 14px; }
+    .card-name { font-weight: 600; color: #fff; font-size: 0.9rem; }
+    .card-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
+    .card-customer { font-size: 0.72rem; color: var(--faint); margin-top: 2px; }
+    .card-key {
+      font-size: 0.65rem; color: var(--faint); margin-top: 4px; font-family: monospace;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
+    /* Modal */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+      z-index: 200; display: none; align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      width: 92vw; max-width: 920px; max-height: 92vh;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal-header {
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .modal-header h2 { font-size: 0.95rem; font-weight: 600; color: #fff; }
+    .close-btn {
+      background: none; border: none; color: var(--muted); font-size: 1.3rem;
+      cursor: pointer; padding: 0 4px; line-height: 1;
+    }
+    .close-btn:hover { color: var(--text); }
+    .modal-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+    .form-section {
+      width: 270px; flex-shrink: 0; padding: 18px;
+      overflow-y: auto; border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 13px;
+    }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    label { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+    input[type="text"], input[type="date"], select {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+      color: var(--text); padding: 6px 10px; font-size: 0.83rem;
+      outline: none; width: 100%; font-family: inherit;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+    .draw-btns { display: flex; gap: 7px; }
+    .draw-btns .btn { flex: 1; padding: 6px 10px; font-size: 0.8rem; }
+    .draw-btns .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .map-section { flex: 1; position: relative; min-width: 0; }
+    #map { width: 100%; height: 100%; min-height: 380px; }
+    .map-hint {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,17,23,0.88); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px; font-size: 0.75rem; color: var(--muted);
+      pointer-events: none; z-index: 10; white-space: nowrap;
+    }
+    .status-box {
+      font-size: 0.78rem; padding: 7px 10px; border-radius: 5px; line-height: 1.4;
+    }
+    .status-box.error { background: rgba(239,68,68,0.12); color: #fca5a5; border: 1px solid rgba(239,68,68,0.25); }
+    .status-box.success { background: rgba(34,197,94,0.12); color: #86efac; border: 1px solid rgba(34,197,94,0.25); }
+    .status-box.info { background: rgba(59,130,246,0.12); color: #93c5fd; border: 1px solid rgba(59,130,246,0.25); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Location Sentinel</h1>
+  <div class="header-right">
+    <span id="loc-count"></span>
+    <button class="btn btn-primary" id="add-btn">+ Add Location</button>
+  </div>
+</div>
+
+<div class="container">
+  <div id="grid" class="grid">
+    <p class="state-msg">Loading...</p>
+  </div>
+</div>
+
+<!-- Add Location Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Add Location</h2>
+      <button class="close-btn" id="close-btn">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Form -->
+      <div class="form-section">
+
+        <div class="field">
+          <label for="loc-name">Name</label>
+          <input type="text" id="loc-name" placeholder="e.g. Riverside Plot A">
+        </div>
+
+        <div class="field">
+          <label for="customer-select">Customer (optional)</label>
+          <select id="customer-select">
+            <option value="">No customer</option>
+            <option value="__new__">+ New customer...</option>
+          </select>
+        </div>
+
+        <div class="field hidden" id="new-customer-field">
+          <label for="new-customer-name">Customer name</label>
+          <input type="text" id="new-customer-name" placeholder="Customer name">
+        </div>
+
+        <div class="field">
+          <label>Lookback: <strong id="lookback-val">5 years</strong></label>
+          <input type="range" id="lookback" min="1" max="10" value="5">
+        </div>
+
+        <div class="field">
+          <label for="date-end">Date end</label>
+          <input type="date" id="date-end">
+        </div>
+
+        <div class="field">
+          <label>Draw geometry</label>
+          <div class="draw-btns">
+            <button class="btn btn-secondary" id="btn-point">Point</button>
+            <button class="btn btn-secondary" id="btn-polygon">Polygon</button>
+          </div>
+        </div>
+
+        <div id="geom-status" class="status-box info hidden"></div>
+
+        <button class="btn btn-primary" id="submit-btn" disabled>Analyze</button>
+
+        <div id="form-status" class="hidden"></div>
+
+      </div>
+
+      <!-- Map -->
+      <div class="map-section">
+        <div class="map-hint" id="map-hint">Select "Point" or "Polygon" to draw a geometry</div>
+        <div id="map"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────────
+const API_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:8000'
+  : 'https://climate.geomermaids.com';
+const MAPBOX_TOKEN = 'pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bTE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q';
+// ─────────────────────────────────────────────────────────────────────────────────
+
+mapboxgl.accessToken = MAPBOX_TOKEN;
+
+let map = null;
+let draw = null;
+let drawnGeometry = null;
+
+// ── LOCATIONS ─────────────────────────────────────────────────────────────────────
+
+async function loadLocations() {
+  try {
+    const res = await fetch(`${API_URL}/v1/locations`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    renderGrid(data.locations);
+    const n = data.count;
+    document.getElementById('loc-count').textContent = `${n} location${n !== 1 ? 's' : ''}`;
+  } catch (e) {
+    document.getElementById('grid').innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
+  }
+}
+
+function renderGrid(locations) {
+  const grid = document.getElementById('grid');
+  if (!locations.length) {
+    grid.innerHTML = '<p class="state-msg">No locations yet. Add one to get started.</p>';
+    return;
+  }
+  grid.innerHTML = locations.map(loc => {
+    const name = loc.name || 'Unnamed';
+    const coords = loc.centroid
+      ? `${loc.centroid[1] >= 0 ? '+' : ''}${loc.centroid[1].toFixed(4)},\u2009${loc.centroid[0] >= 0 ? '+' : ''}${loc.centroid[0].toFixed(4)}`
+      : '';
+    const updated = loc.updated_at ? loc.updated_at.slice(0, 10) : '';
+    const meta = [coords, updated].filter(Boolean).join(' &middot; ');
+    const customer = loc.customer_name
+      ? `<div class="card-customer">${loc.customer_name}</div>` : '';
+    const keyShort = loc.location_key.slice(0, 24) + '&hellip;';
+    return `
+      <a class="card" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
+        <img class="card-thumb" src="${API_URL}${loc.thumbnail_url}"
+             alt="" onerror="this.outerHTML='<div class=card-thumb-placeholder></div>'">
+        <div class="card-body">
+          <div class="card-name">${name}</div>
+          <div class="card-meta">${meta}</div>
+          ${customer}
+          <div class="card-key">${keyShort}</div>
+        </div>
+      </a>`;
+  }).join('');
+}
+
+// ── CUSTOMERS ─────────────────────────────────────────────────────────────────────
+
+async function loadCustomers() {
+  try {
+    const res = await fetch(`${API_URL}/v1/customers`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const select = document.getElementById('customer-select');
+    const newOpt = select.lastElementChild;
+    data.customers.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.customer_id;
+      opt.textContent = c.name;
+      select.insertBefore(opt, newOpt);
+    });
+  } catch (_) {}
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────────────────────
+
+document.getElementById('add-btn').addEventListener('click', openModal);
+document.getElementById('close-btn').addEventListener('click', closeModal);
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+
+function openModal() {
+  // Reset customer options (avoid duplicates on reopen)
+  const select = document.getElementById('customer-select');
+  while (select.options.length > 2) select.remove(1);
+
+  document.getElementById('modal-overlay').classList.add('open');
+  loadCustomers();
+
+  if (!map) {
+    // Defer map init until modal is visible so it gets correct dimensions
+    requestAnimationFrame(() => { requestAnimationFrame(initMap); });
+  } else {
+    map.resize();
+  }
+}
+
+function closeModal() {
+  if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null; }
+  document.getElementById('modal-overlay').classList.remove('open');
+  resetForm();
+}
+
+// ── MAP ───────────────────────────────────────────────────────────────────────────
+
+function initMap() {
+  map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/dark-v11',
+    center: [-98.5, 39.5],
+    zoom: 3,
+  });
+
+  draw = new MapboxDraw({
+    displayControlsDefault: false,
+    defaultMode: 'simple_select',
+  });
+  map.addControl(draw);
+  map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
+  map.on('draw.create', onGeomChange);
+  map.on('draw.update', onGeomChange);
+  map.on('draw.delete', onGeomClear);
+}
+
+function onGeomChange() {
+  const features = draw.getAll().features;
+  if (!features.length) return;
+  drawnGeometry = features[0].geometry;
+  const hint = drawnGeometry.type === 'Point'
+    ? 'Point placed (100m buffer will be applied)'
+    : 'Polygon drawn';
+  setGeomStatus('info', hint);
+  document.getElementById('map-hint').classList.add('hidden');
+  updateSubmit();
+}
+
+function onGeomClear() {
+  drawnGeometry = null;
+  document.getElementById('geom-status').classList.add('hidden');
+  document.getElementById('map-hint').classList.remove('hidden');
+  updateSubmit();
+}
+
+// ── DRAW BUTTONS ──────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-point').addEventListener('click', () => {
+  draw.deleteAll();
+  drawnGeometry = null;
+  draw.changeMode('draw_point');
+  setActiveDrawBtn('btn-point');
+  setHint('Click on the map to place a point');
+  updateSubmit();
+});
+
+document.getElementById('btn-polygon').addEventListener('click', () => {
+  draw.deleteAll();
+  drawnGeometry = null;
+  draw.changeMode('draw_polygon');
+  setActiveDrawBtn('btn-polygon');
+  setHint('Click to draw vertices, double-click to finish');
+  updateSubmit();
+});
+
+function setActiveDrawBtn(id) {
+  ['btn-point', 'btn-polygon'].forEach(b => {
+    document.getElementById(b).classList.toggle('active', b === id);
+  });
+}
+
+function setHint(text) {
+  const el = document.getElementById('map-hint');
+  el.textContent = text;
+  el.classList.remove('hidden');
+}
+
+// ── CUSTOMER SELECT ───────────────────────────────────────────────────────────────
+
+document.getElementById('customer-select').addEventListener('change', function () {
+  document.getElementById('new-customer-field').classList.toggle('hidden', this.value !== '__new__');
+});
+
+// ── LOOKBACK ──────────────────────────────────────────────────────────────────────
+
+document.getElementById('lookback').addEventListener('input', function () {
+  document.getElementById('lookback-val').textContent = `${this.value} year${this.value > 1 ? 's' : ''}`;
+});
+
+// ── DATE DEFAULT ──────────────────────────────────────────────────────────────────
+
+document.getElementById('date-end').value = new Date().toISOString().slice(0, 10);
+
+// ── SUBMIT STATE ──────────────────────────────────────────────────────────────────
+
+function updateSubmit() {
+  const ready = drawnGeometry !== null && document.getElementById('loc-name').value.trim().length > 0;
+  document.getElementById('submit-btn').disabled = !ready;
+}
+
+document.getElementById('loc-name').addEventListener('input', updateSubmit);
+
+// ── SUBMIT ────────────────────────────────────────────────────────────────────────
+
+let _pollInterval = null;
+
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const name = document.getElementById('loc-name').value.trim();
+  const customerVal = document.getElementById('customer-select').value;
+  const lookback = parseInt(document.getElementById('lookback').value);
+  const dateEnd = document.getElementById('date-end').value;
+  const submitBtn = document.getElementById('submit-btn');
+
+  if (!name || !drawnGeometry) return;
+
+  // Resolve customer_id
+  let customerId = (customerVal === '' || customerVal === '__new__') ? null : customerVal;
+
+  if (customerVal === '__new__') {
+    const newName = document.getElementById('new-customer-name').value.trim();
+    if (!newName) { setFormStatus('error', 'Enter a customer name.'); return; }
+    try {
+      const r = await fetch(`${API_URL}/v1/customers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      customerId = (await r.json()).customer_id;
+    } catch (e) {
+      setFormStatus('error', `Could not create customer: ${e.message}`);
+      return;
+    }
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting\u2026';
+
+  try {
+    const res = await fetch(`${API_URL}/v1/locations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        geometry: drawnGeometry,
+        name,
+        customer_id: customerId,
+        date_end: dateEnd,
+        lookback_years: lookback,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
+    const { job_id } = await res.json();
+    startPolling(job_id);
+  } catch (e) {
+    setFormStatus('error', `Error: ${e.message}`);
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Analyze';
+  }
+});
+
+function startPolling(jobId) {
+  let elapsed = 0;
+  setFormStatus('info', 'Job submitted \u2014 computing\u2026');
+  document.getElementById('submit-btn').textContent = 'Computing\u2026';
+
+  _pollInterval = setInterval(async () => {
+    elapsed += 3;
+    try {
+      const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const job = await res.json();
+
+      if (job.status === 'ready') {
+        clearInterval(_pollInterval);
+        _pollInterval = null;
+        const reportUrl = `${API_URL}${job.report_url}`;
+        setFormStatus('success', `Done! <a href="${reportUrl}" target="_blank" rel="noopener" style="color:#86efac">View report \u2192</a>`);
+        await loadLocations();
+        setTimeout(closeModal, 3000);
+      } else if (job.status === 'failed') {
+        clearInterval(_pollInterval);
+        _pollInterval = null;
+        setFormStatus('error', `Failed: ${job.error}`);
+        document.getElementById('submit-btn').disabled = false;
+        document.getElementById('submit-btn').textContent = 'Analyze';
+      } else {
+        setFormStatus('info', `Computing\u2026 ${elapsed}s elapsed`);
+      }
+    } catch (e) {
+      clearInterval(_pollInterval);
+      _pollInterval = null;
+      setFormStatus('error', `Polling error: ${e.message}`);
+      document.getElementById('submit-btn').disabled = false;
+      document.getElementById('submit-btn').textContent = 'Analyze';
+    }
+  }, 3000);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────────
+
+function setFormStatus(type, msg) {
+  const el = document.getElementById('form-status');
+  el.innerHTML = msg;
+  el.className = `status-box ${type}`;
+  el.classList.remove('hidden');
+}
+
+function setGeomStatus(type, msg) {
+  const el = document.getElementById('geom-status');
+  el.textContent = msg;
+  el.className = `status-box ${type}`;
+  el.classList.remove('hidden');
+}
+
+function resetForm() {
+  document.getElementById('loc-name').value = '';
+  const sel = document.getElementById('customer-select');
+  sel.value = '';
+  document.getElementById('new-customer-field').classList.add('hidden');
+  document.getElementById('new-customer-name').value = '';
+  document.getElementById('lookback').value = '5';
+  document.getElementById('lookback-val').textContent = '5 years';
+  document.getElementById('date-end').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('geom-status').classList.add('hidden');
+  document.getElementById('form-status').classList.add('hidden');
+  document.getElementById('submit-btn').disabled = true;
+  document.getElementById('submit-btn').textContent = 'Analyze';
+  document.getElementById('map-hint').textContent = 'Select "Point" or "Polygon" to draw a geometry';
+  document.getElementById('map-hint').classList.remove('hidden');
+  ['btn-point', 'btn-polygon'].forEach(b => document.getElementById(b).classList.remove('active'));
+  drawnGeometry = null;
+  if (draw) draw.deleteAll();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────────
+loadLocations();
+</script>
+</body>
+</html>

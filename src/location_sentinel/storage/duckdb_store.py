@@ -492,6 +492,22 @@ class DuckDBStore:
             "created_at": row[2].isoformat() if hasattr(row[2], "isoformat") else str(row[2]),
         }
 
+    def get_all_customers(self) -> list[dict]:
+        """Return all customers ordered by name."""
+        if self._conn is None:
+            return []
+        rows = self._conn.execute(
+            "SELECT customer_id, name, created_at FROM customers ORDER BY name"
+        ).fetchall()
+        return [
+            {
+                "customer_id": row[0],
+                "name": row[1],
+                "created_at": row[2].isoformat() if hasattr(row[2], "isoformat") else str(row[2]),
+            }
+            for row in rows
+        ]
+
     def get_customer_locations(self, customer_id: str) -> list[dict]:
         """Return all locations belonging to a customer, most recent first."""
         if self._conn is None:

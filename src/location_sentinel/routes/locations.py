@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import uuid
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..geometry.validate import GeometryValidationError
+from ..jobs import job_store
 from ..models.requests import LocationRequest
 from ..models.responses import LocationResponse
 from ..models.common import DateWindow
@@ -51,17 +53,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 """
 
 
-@router.post("/locations", response_model=LocationResponse)
+@router.post("/locations", status_code=202)
 async def create_location(req: LocationRequest):
-    """Create or refresh a location: runs the full pipeline in one call.
+    """Submit a location for async computation. Returns a job_id to poll via GET /v1/jobs/{job_id}."""
+    # Validate geometry immediately so the client gets a fast 400 rather than a failed job.
+    try:
+        geojson_to_shapely(req.geometry.model_dump())
+    except GeometryValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
-    Computes scores, derived features, and monthly timeseries, persists
-    everything, and returns a unified response with a direct report link.
-    """
+    job = job_store.create()
+    asyncio.create_task(_run_location_job(job.job_id, req))
+    return {"job_id": job.job_id, "status": "pending"}
+
+
+async def _run_location_job(job_id: str, req: LocationRequest) -> None:
     trace_id = uuid.uuid4().hex[:12]
     de = req.date_end.isoformat()
 
-    # Stable location key: same (customer_id, name, centroid) always → same key
     geom = geojson_to_shapely(req.geometry.model_dump())
     centroid = geom.centroid
     stable_key = make_location_key(
@@ -79,7 +90,11 @@ async def create_location(req: LocationRequest):
     if not req.force_recompute:
         cached = cache.get(cache_key)
         if cached is not None:
-            return cached
+            job_store.update(job_id, status="ready", location_key=stable_key,
+                             report_url=f"/v1/location/{stable_key}/report", name=req.name)
+            return
+
+    job_store.update(job_id, status="running")
 
     try:
         location_key, score_result, features, quality, date_start, series = await run_score(
@@ -89,12 +104,15 @@ async def create_location(req: LocationRequest):
             location_key=stable_key,
         )
     except GeometryValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        job_store.update(job_id, status="failed", error=str(e))
+        return
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        job_store.update(job_id, status="failed", error=str(e))
+        return
     except Exception:
         logger.exception("Computation failed trace_id=%s", trace_id)
-        raise HTTPException(status_code=500, detail=f"Computation failed (trace_id={trace_id})")
+        job_store.update(job_id, status="failed", error=f"Computation failed (trace_id={trace_id})")
+        return
 
     geom_dict = req.geometry.model_dump()
     store.save_geometry(location_key, geom_dict, name=req.name, customer_id=req.customer_id)
@@ -131,7 +149,8 @@ async def create_location(req: LocationRequest):
         map_links=build_map_links(location_key, geom_dict),
     )
     cache.set(cache_key, response)
-    return response
+    job_store.update(job_id, status="ready", location_key=location_key,
+                     report_url=f"/v1/location/{location_key}/report", name=req.name)
 
 
 class _RegenerateRequest(BaseModel):

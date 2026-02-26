@@ -4,9 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routes import customers, features, health, locations, report, score, thumbnail, timeseries
+from .routes import customers, features, health, jobs, locations, report, score, thumbnail, timeseries
 from .storage.duckdb_store import store
 
 
@@ -28,12 +29,20 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.include_router(health.router, prefix="/v1")
     app.include_router(timeseries.router, prefix="/v1")
     app.include_router(features.router, prefix="/v1")
     app.include_router(score.router, prefix="/v1")
     app.include_router(thumbnail.router, prefix="/v1")
     app.include_router(report.router, prefix="/v1")
+    app.include_router(jobs.router, prefix="/v1")
     app.include_router(locations.router, prefix="/v1")
     app.include_router(customers.router, prefix="/v1")
 

@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     # Minimum valid pixel fraction to accept an observation
     MIN_VALID_PIXEL_FRACTION: float = 0.1
 
+    # CORS
+    CORS_ORIGINS: list[str] = ["*"]
+
     # Thumbnails / Mapbox
     THUMBNAIL_WIDTH: int = 300
     THUMBNAIL_HEIGHT: int = 200
