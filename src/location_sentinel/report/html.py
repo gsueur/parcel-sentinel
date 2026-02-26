@@ -1398,6 +1398,16 @@ def build_report_html(
     </div>
   </div>
 
+  <!-- TerraClimate -->
+  <div class="card">
+    <h2>Climate context (TerraClimate ~4 km monthly)</h2>
+    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:14px">
+      University of Idaho Climatology Lab &mdash; 1/24° global grid.
+      Data retrieved from THREDDS OPeNDAP (single grid cell, no imagery download).
+    </div>
+    {tc_chart_html}
+  </div>
+
   <!-- Time series chart -->
   <div class="card">
     <h2>Time series</h2>
@@ -1410,15 +1420,7 @@ def build_report_html(
     {features_html}
   </div>
 
-  <!-- TerraClimate -->
-  <div class="card">
-    <h2>Climate context (TerraClimate ~4 km monthly)</h2>
-    <div style="font-size:0.75rem;color:#94a3b8;margin-bottom:14px">
-      University of Idaho Climatology Lab &mdash; 1/24° global grid.
-      Data retrieved from THREDDS OPeNDAP (single grid cell, no imagery download).
-    </div>
-    {tc_chart_html}
-  </div>
+  
 
   <!-- Index Reference -->
   <div class="card">
