@@ -15,11 +15,39 @@ from ..geometry.normalize import shapely_to_geojson
 logger = logging.getLogger(__name__)
 
 
+def _relative_orbit(item: pystac.Item) -> int:
+    """Extract the relative orbit number from a Sentinel-1 STAC item.
+
+    Tries ``sat:relative_orbit`` property first (present in Earth Search v1).
+    Falls back to computing from the absolute orbit in the scene ID:
+      - S1A: (abs_orbit - 73) % 175 + 1
+      - S1B: (abs_orbit - 26) % 175 + 1
+    Returns 0 if the orbit cannot be determined.
+    """
+    rel = item.properties.get("sat:relative_orbit")
+    if rel is not None:
+        return int(rel)
+
+    # Derive from absolute orbit
+    abs_orbit = item.properties.get("sat:absolute_orbit")
+    if abs_orbit is None:
+        # Parse from scene ID: S1[AB]_IW_GRDH_1SDV_..._AAAAAA_TTTTTT
+        try:
+            abs_orbit = int(item.id.split("_")[6])
+        except (IndexError, ValueError):
+            return 0
+    abs_orbit = int(abs_orbit)
+    platform = item.properties.get("platform", "sentinel-1a").lower()
+    offset = 26 if "1b" in platform else 73
+    return (abs_orbit - offset) % 175 + 1
+
+
 @dataclass
 class SARSceneRef:
     """Reference to a selected Sentinel-1 GRD STAC item."""
     item: pystac.Item
-    month_key: str  # "YYYY-MM"
+    month_key: str   # "YYYY-MM"
+    rel_orbit: int   # Sentinel-1 relative orbit number (1-175)
 
 
 @dataclass
@@ -89,7 +117,11 @@ def search_sar_scenes(
         for item in by_month[month_key][:max_scenes_per_month]:
             if len(selected) >= max_total_scenes:
                 break
-            selected.append(SARSceneRef(item=item, month_key=month_key))
+            selected.append(SARSceneRef(
+                item=item,
+                month_key=month_key,
+                rel_orbit=_relative_orbit(item),
+            ))
         if len(selected) >= max_total_scenes:
             break
 

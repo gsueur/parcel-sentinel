@@ -22,32 +22,62 @@ def compute_water_fraction(vv_dn: np.ndarray) -> float | None:
     return float(water_mask.sum()) / valid_count
 
 
+def _orbit_water_frequency(
+    fracs: list[float],
+    threshold: float,
+    adaptive_delta: float,
+) -> float:
+    """Compute water frequency for a single orbital pass.
+
+    Two thresholds evaluated; higher frequency returned:
+    1. Absolute: fraction of scenes where water_frac > threshold.
+    2. Relative: fraction where water_frac > median + adaptive_delta.
+    """
+    n = len(fracs)
+    absolute_freq = sum(1 for f in fracs if f > threshold) / n
+    loc_median = median(fracs)
+    relative_freq = sum(1 for f in fracs if f > loc_median + adaptive_delta) / n
+    return max(absolute_freq, relative_freq)
+
+
 def compute_sar_water_frequency(
-    water_fracs: list[float],
+    fracs_with_orbit: list[tuple[float, int]],
     threshold: float = settings.SAR_MIN_WATER_PIXEL_FRACTION,
     adaptive_delta: float = settings.SAR_RELATIVE_FLOOD_DELTA,
 ) -> float | None:
-    """Fraction of scenes exceeding the flood threshold.
+    """Orbit-stratified SAR water frequency.
 
-    Two thresholds are evaluated and the higher frequency returned:
+    Sentinel-1 VV backscatter depends strongly on incidence angle and look
+    direction, which differ between orbital passes covering the same location.
+    Mixing passes inflates the variance of water_frac and can mask or amplify
+    real flood signals. This function stratifies scenes by relative orbit number,
+    computes water frequency independently within each orbit track, then returns
+    the maximum across tracks.
 
-    1. Absolute: scenes where water_frac > ``threshold`` (fixed 35%).
-       Works well for open-water and inland locations.
+    Within each track two thresholds are evaluated and the higher frequency kept:
+    1. Absolute: scenes where water_frac > threshold (default 35%).
+    2. Relative: scenes where water_frac > per-track median + adaptive_delta.
+       Handles near-water locations whose baseline already sits at 15-25%.
 
-    2. Relative: scenes where water_frac > median(all_fracs) + ``adaptive_delta``.
-       Handles near-water locations (coastal lagoons, river banks) whose
-       baseline water fraction already sits at 15-25%, making the fixed
-       threshold too strict to detect genuine above-baseline flood episodes.
+    Args:
+        fracs_with_orbit: list of (water_frac, rel_orbit) tuples after snow masking.
+        threshold:        absolute water pixel fraction threshold.
+        adaptive_delta:   delta above per-track median to count as a flood scene.
 
     Returns None for empty input.
     """
-    if not water_fracs:
+    if not fracs_with_orbit:
         return None
-    n = len(water_fracs)
-    absolute_freq = sum(1 for f in water_fracs if f > threshold) / n
-    loc_median = median(water_fracs)
-    relative_freq = sum(1 for f in water_fracs if f > loc_median + adaptive_delta) / n
-    return float(max(absolute_freq, relative_freq))
+
+    by_orbit: dict[int, list[float]] = defaultdict(list)
+    for wf, orbit in fracs_with_orbit:
+        by_orbit[orbit].append(wf)
+
+    orbit_freqs = [
+        _orbit_water_frequency(fracs, threshold, adaptive_delta)
+        for fracs in by_orbit.values()
+    ]
+    return float(max(orbit_freqs))
 
 
 def compute_sar_flood_anomaly(

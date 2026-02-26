@@ -218,10 +218,34 @@ class DuckDBStore:
                 height UTINYINT NOT NULL DEFAULT 64,
                 vv_data FLOAT[4096] NOT NULL,
                 water_frac DOUBLE,
+                rel_orbit SMALLINT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (location_key, scene_id, processing_version)
             )
         """)
+        # Migration: add rel_orbit column to existing databases and backfill from scene_id.
+        # Scene ID format: S1[AB]_IW_GRDH_1SDV_..._AAAAAA_TTTTTT
+        # rel_orbit (S1A) = (abs_orbit - 73) % 175 + 1
+        # rel_orbit (S1B) = (abs_orbit - 26) % 175 + 1
+        try:
+            self._conn.execute(
+                "ALTER TABLE sar_scene_bands ADD COLUMN IF NOT EXISTS rel_orbit SMALLINT"
+            )
+        except Exception:
+            pass
+        try:
+            self._conn.execute("""
+                UPDATE sar_scene_bands SET rel_orbit = (
+                    CASE
+                        WHEN scene_id LIKE 'S1B%'
+                        THEN ((CAST(split_part(scene_id, '_', 7) AS INTEGER) - 26) % 175) + 1
+                        ELSE ((CAST(split_part(scene_id, '_', 7) AS INTEGER) - 73) % 175) + 1
+                    END
+                ) WHERE rel_orbit IS NULL
+            """)
+            self._conn.commit()
+        except Exception:
+            pass
 
         # TerraClimate monthly cache (grid-cell keyed, shared across locations)
         self._conn.execute("""
@@ -773,6 +797,7 @@ class DuckDBStore:
         processing_version: str,
         vv_dn: "np.ndarray",
         water_frac: float,
+        rel_orbit: int = 0,
     ) -> None:
         """Persist a 64×64 VV uint16 array for one S1 scene."""
         if self._conn is None:
@@ -784,10 +809,10 @@ class DuckDBStore:
             """
             INSERT OR REPLACE INTO sar_scene_bands
                 (location_key, scene_id, month_key, processing_version,
-                 width, height, vv_data, water_frac, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 width, height, vv_data, water_frac, rel_orbit, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [location_key, scene_id, month_key, processing_version, w, h, flat, water_frac, now],
+            [location_key, scene_id, month_key, processing_version, w, h, flat, water_frac, rel_orbit, now],
         )
         self._conn.commit()
 

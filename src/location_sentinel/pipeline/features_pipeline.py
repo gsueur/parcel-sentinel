@@ -125,11 +125,13 @@ async def run_features(
     # Apply snow-month suppression: S1 VV specular reflection from smooth snow/ice
     # is indistinguishable from open water at the DN threshold level. Exclude SAR
     # scenes from months where co-located S2 NDSI confirms snow cover (NDSI > 0.4).
-    sar_scene_fracs: list[tuple[str, float]] = sar_features.pop("_sar_scene_fracs", [])
-    sar_scene_arrays: list[tuple[str, str, object, float]] = sar_features.pop("_sar_scene_arrays", [])
+    # _sar_scene_fracs: list of (month_key, water_frac, rel_orbit)
+    # _sar_scene_arrays: list of (month_key, scene_id, vv_dn, water_frac, rel_orbit)
+    sar_scene_fracs: list[tuple[str, float, int]] = sar_features.pop("_sar_scene_fracs", [])
+    sar_scene_arrays: list[tuple[str, str, object, float, int]] = sar_features.pop("_sar_scene_arrays", [])
 
     if sar_scene_fracs:
-        # -- Chronic water frequency (snow-suppressed) --
+        # -- Chronic water frequency (snow-suppressed, orbit-stratified) --
         # Exclude months where co-located S2 NDSI confirms actual snow cover.
         # Note: flooded fields also produce high NDSI (specular reflection), so
         # snow suppression is intentionally limited to locations where persistent
@@ -140,21 +142,26 @@ async def run_features(
             rec.month for rec in ndsi_records
             if rec.mean is not None and rec.mean > settings.NDSI_SNOW_THRESHOLD
         }
+        non_snow = [
+            (f, orbit) for mk, f, orbit in sar_scene_fracs
+            if mk not in snow_months
+        ]
         if snow_months:
-            non_snow_fracs = [f for mk, f in sar_scene_fracs if mk not in snow_months]
             logger.info(
                 "SAR snow suppression: kept %d/%d scenes, excluded %d snow months",
-                len(non_snow_fracs), len(sar_scene_fracs), len(snow_months),
+                len(non_snow), len(sar_scene_fracs), len(snow_months),
             )
-            sar_features["sar_water_freq_5y"] = (
-                compute_sar_water_frequency(non_snow_fracs) if non_snow_fracs else None
-            )
+        sar_features["sar_water_freq_5y"] = (
+            compute_sar_water_frequency(non_snow) if non_snow else None
+        )
 
         # -- Flood anomaly (uses ALL scenes, no snow suppression) --
         # Compares recent water_frac to historical seasonal baseline for the same
         # calendar month. Detects sudden flood events even when they coincide with
         # months that NDSI falsely flags as snow (flooded floodplains).
-        flood_anomaly = compute_sar_flood_anomaly(sar_scene_fracs, date_end)
+        flood_anomaly = compute_sar_flood_anomaly(
+            [(mk, f) for mk, f, _orbit in sar_scene_fracs], date_end
+        )
         if flood_anomaly is not None:
             sar_features["sar_flood_anomaly"] = flood_anomaly
 
@@ -163,10 +170,10 @@ async def run_features(
         quality.flags.append("no_sar_data")
 
     # Persist SAR VV arrays for report visualization
-    for month_key, scene_id, vv_dn, water_frac in sar_scene_arrays:
+    for month_key, scene_id, vv_dn, water_frac, rel_orbit in sar_scene_arrays:
         store.store_sar_scene(
             location_key, scene_id, month_key,
-            settings.PROCESSING_VERSION, vv_dn, water_frac,
+            settings.PROCESSING_VERSION, vv_dn, water_frac, rel_orbit,
         )
 
     # TerraClimate climate features (tmax, tmin, ppt, vpd, PDSI derivatives)

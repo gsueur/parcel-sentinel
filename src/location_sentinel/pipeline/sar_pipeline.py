@@ -178,24 +178,26 @@ async def run_sar_features(
             sum(1 for f in scene_fracs if f is not None),
         )
 
-        # Pair each water fraction with its month_key for downstream snow masking
-        scene_pairs: list[tuple[str, float]] = [
-            (sr.month_key, frac)
+        # Pair each water fraction with month_key and rel_orbit for downstream use.
+        # rel_orbit is used to stratify the frequency computation by orbital pass,
+        # avoiding look-angle-dependent backscatter bias from mixing passes.
+        scene_pairs: list[tuple[str, float, int]] = [
+            (sr.month_key, frac, sr.rel_orbit)
             for sr, frac in zip(search_result.scenes, scene_fracs)
             if frac is not None
         ]
         if not scene_pairs:
             return {"sar_water_freq_5y": None, "_sar_scene_fracs": [], "_sar_scene_arrays": []}
 
-        # Tuples of (month_key, scene_id, vv_dn, water_frac) for storage / visualization
-        sar_scene_arrays: list[tuple[str, str, np.ndarray, float]] = [
-            (sr.month_key, sr.item.id, vv_dn, frac)
+        # Tuples of (month_key, scene_id, vv_dn, water_frac, rel_orbit) for storage/viz
+        sar_scene_arrays: list[tuple[str, str, np.ndarray, float, int]] = [
+            (sr.month_key, sr.item.id, vv_dn, frac, sr.rel_orbit)
             for sr, frac, vv_dn in zip(search_result.scenes, scene_fracs, scene_dns)
             if frac is not None and vv_dn is not None
         ]
 
-        valid_fracs = [f for _, f in scene_pairs]
-        water_freq = compute_sar_water_frequency(valid_fracs)
+        valid_frac_orbit = [(f, orbit) for _, f, orbit in scene_pairs]
+        water_freq = compute_sar_water_frequency(valid_frac_orbit)
         return {
             "sar_water_freq_5y": water_freq,
             "_sar_scene_fracs": scene_pairs,
