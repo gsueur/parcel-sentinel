@@ -115,7 +115,12 @@ class Settings(BaseSettings):
     MIN_VALID_PIXEL_FRACTION: float = 0.1
 
     # CORS
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost",
+        "http://localhost:8000",
+        "https://climate-dashboard.geomermaids.com",
+        "https://location-sentinel.pages.dev",
+    ]
 
     # Thumbnails / Mapbox
     THUMBNAIL_WIDTH: int = 300
