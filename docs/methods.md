@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.6.0` / scoring `risk-v1.6.0`
+**Version:** processing `s2l2a-v1.7.0` / scoring `risk-v1.7.0`
 **Date:** 2026-02-27
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -298,13 +298,21 @@ ndmi_moisture_stress_freq_5y = count(NDMI_monthly < 0) / count(observed months)
 
 **`nbr_mean_5y`** -- Mean of all valid monthly NBR values.
 
-**`nbr_burn_freq_5y`** -- Fraction of months where NBR < 0.1:
+**`nbr_burn_freq_5y`** -- Fraction of observed months where NBR drops anomalously below the site's own seasonal climatology:
 
 ```
-nbr_burn_freq_5y = count(NBR_monthly < 0.1) / count(observed months)
+For each observed month (year y, calendar month m):
+    climatology[m] = mean of all NBR values for calendar month m across all years
+    fire_anomaly   = True  iff  NBR[y,m] < climatology[m] − NBR_ANOMALY_THRESHOLD (0.15)
+
+nbr_burn_freq_5y = count(fire_anomaly == True) / count(observed months)
 ```
 
-Post-fire burn scars suppress NBR for months to years as the scar persists optically. A single major fire event in a 5-year window typically yields a `nbr_burn_freq_5y` of 15 -- 25%.
+This is the same methodology as `ndvi_anomaly_freq_5y`. The seasonal cycle is removed before thresholding, so persistent low NBR that is normal for the site -- dormant grassland, harvested cropland, semi-arid prairie, sparse boreal understorey -- is not flagged. Only abrupt departures from the site's own seasonal norm are counted.
+
+The distinction matters in practice: a post-fire chaparral site (Pacific Palisades) shows a sudden drop of ~0.6 NBR units below its pre-fire seasonal mean, which is always caught. A continental prairie site (Calgary) has consistently low NBR in autumn because that is its seasonal norm; the climatology for autumn already expects low values, so no anomaly is generated.
+
+Note: `NBR_BURN_THRESHOLD` (absolute, 0.1) is retained separately for SAR burn suppression (section 8.3) and chart annotation, where the goal is to identify months with exposed bare soil regardless of whether the bare soil is anomalous for the site.
 
 ### 7.5 NDSI features
 
@@ -580,14 +588,16 @@ Default (no NDWI data): 50.
 fire_exposure_score = min(100,  nbr_burn_freq_5y × 350)
 ```
 
-The 350× multiplier produces the following mapping:
+`nbr_burn_freq_5y` is an anomaly-based frequency (section 7.4): it counts only months where NBR drops significantly below the site's own seasonal norm, not months where NBR is simply below an absolute threshold. This means the score is near zero for locations with persistently low but normal NBR (dormant prairie, agricultural land, boreal understorey) and elevated only when genuine fire-like departures from the seasonal baseline occur.
 
-| nbr_burn_freq_5y | Score | Interpretation |
-|-----------------|-------|---------------|
-| 0.00 | 0 | No fire history |
-| 0.07 | 25 | Low exposure (< 1 month/year) |
-| 0.14 | 50 | Moderate (seasonal) |
-| 0.20 | 71 | Significant (one major fire in 5 years) |
+Indicative mapping:
+
+| nbr_burn_freq_5y (anomaly) | Score | Interpretation |
+|---------------------------|-------|---------------|
+| 0.00 -- 0.03 | 0 -- 10 | No meaningful fire signal |
+| 0.07 | 25 | Low exposure |
+| 0.14 | 50 | Moderate |
+| 0.20 -- 0.25 | 70 -- 88 | Significant (one major fire in 5 years) |
 | 0.29+ | 100 | High recurrence |
 
 Forced to 0 for urban locations (see section 13.1).
@@ -730,7 +740,8 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `NDVI_ANOMALY_THRESHOLD` | 0.1 NDVI units | `ndvi_anomaly_freq_5y` |
 | `NDWI_WET_THRESHOLD` | 0.0 | `ndwi_wetness_persistence_5y` |
 | `NDMI_STRESS_THRESHOLD` | 0.0 | `ndmi_moisture_stress_freq_5y` |
-| `NBR_BURN_THRESHOLD` | 0.1 | `nbr_burn_freq_5y`, SAR burn suppression |
+| `NBR_BURN_THRESHOLD` | 0.1 | SAR burn suppression, chart annotation (absolute) |
+| `NBR_ANOMALY_THRESHOLD` | 0.15 | `nbr_burn_freq_5y` (anomaly detection) |
 | `NDSI_SNOW_THRESHOLD` | 0.4 | `ndsi_snow_persistence_5y`, SAR snow suppression |
 | `BSI_BARE_THRESHOLD` | 0.0 | `bsi_bare_soil_freq_5y` |
 
@@ -781,4 +792,4 @@ All thresholds are configurable via environment variables. Defaults are listed b
 
 ---
 
-*Document generated from source code at commit `399eb96` (master), processing version `s2l2a-v1.6.0`, score version `risk-v1.6.0`.*
+*Document generated from source code at commit `9d218be` (master), processing version `s2l2a-v1.7.0`, score version `risk-v1.7.0`.*

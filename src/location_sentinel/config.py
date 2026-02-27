@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.6.0"
-    SCORE_VERSION: str = "risk-v1.6.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.7.0"
+    SCORE_VERSION: str = "risk-v1.7.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"
@@ -104,7 +104,8 @@ class Settings(BaseSettings):
     NDVI_ANOMALY_THRESHOLD: float = 0.1
     NDWI_WET_THRESHOLD: float = 0.0
     NDMI_STRESS_THRESHOLD: float = 0.0    # NDMI below → vegetation moisture stress
-    NBR_BURN_THRESHOLD: float = 0.1       # NBR below → burn signal present
+    NBR_BURN_THRESHOLD: float = 0.1       # NBR below → burn signal present (SAR suppression + chart annotation)
+    NBR_ANOMALY_THRESHOLD: float = 0.15   # NBR must drop this far below seasonal climatology to count as fire anomaly
     NDSI_SNOW_THRESHOLD: float = 0.4      # NDSI above → snow-covered
     BSI_BARE_THRESHOLD: float = 0.0       # BSI above → bare soil exposed
 

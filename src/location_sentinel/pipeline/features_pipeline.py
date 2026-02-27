@@ -8,7 +8,6 @@ from ..compute.urban import detect_urban
 from ..compute.features import (
     compute_anomaly_frequency,
     compute_bare_soil_frequency,
-    compute_burn_frequency,
     compute_mean,
     compute_moisture_stress_frequency,
     compute_quality_score,
@@ -89,7 +88,15 @@ async def run_features(
     nbr_records = series.get("nbr", [])
     if nbr_records:
         features["nbr_mean_5y"] = compute_mean(nbr_records)
-        features["nbr_burn_freq_5y"] = compute_burn_frequency(nbr_records)
+        # Anomaly-based fire detection: fraction of months where NBR drops more than
+        # NBR_ANOMALY_THRESHOLD below the seasonal climatology for that calendar month.
+        # This correctly ignores persistent low NBR from dormant vegetation, harvested
+        # cropland, and semi-arid grassland (all normal for the site) while flagging
+        # genuine fire events, which produce an abrupt NBR departure from the site norm.
+        # NBR_BURN_THRESHOLD (absolute) is kept separately for SAR suppression.
+        features["nbr_burn_freq_5y"] = compute_anomaly_frequency(
+            nbr_records, threshold=settings.NBR_ANOMALY_THRESHOLD
+        )
 
     # NDSI features -- snow cover persistence
     ndsi_records = series.get("ndsi", [])

@@ -151,8 +151,11 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         wetness_score = 50.0
 
     # --- Fire exposure score (0-100) ---
-    # Fraction of months where NBR indicates burn signal (NBR < 0.1).
-    # 0 = no fire history; 100 = burned nearly every month (extreme).
+    # Fraction of months where NBR drops anomalously below the site's seasonal climatology
+    # (NBR < climatology[calendar_month] - NBR_ANOMALY_THRESHOLD).
+    # Anomaly-based: ignores persistent low NBR from dormant vegetation, harvested
+    # cropland, and semi-arid grassland. Detects genuine fire events as abrupt departures.
+    # 0 = no anomalous fire signal; 100 = repeated severe departures.
     nbr_burn_freq = features.get("nbr_burn_freq_5y")
     if is_urban:
         fire_exposure_score = 0.0
