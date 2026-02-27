@@ -488,9 +488,11 @@ _FM: dict[str, dict] = {
     "sar_water_freq_5y": dict(
         label="SAR flood frequency (chronic)",
         group="SAR Flood", group_color="#06b6d4", group_index=None,
-        desc="Fraction of Sentinel-1 SAR scenes (snow months excluded) where water pixels exceeded 35% "
-             "of the analysis window. Cloud-independent: SAR penetrates clouds, detecting flood events "
-             "invisible to optical sensors. Chronic metric: measures long-term recurrence. "
+        desc="Fraction of Sentinel-1 SAR scenes (snow months excluded) flagged as flooded "
+             "by an orbit-stratified, MAD-based detector. Each Sentinel-1 orbital pass is evaluated "
+             "independently using its own adaptive threshold (median + 2&times;MAD, min 5%); the highest "
+             "frequency across orbits is reported. Cloud-independent: SAR penetrates clouds, detecting "
+             "flood events invisible to optical sensors. Chronic metric: measures long-term recurrence. "
              "Below 5%: near-zero flood history &bull; 5&ndash;15%: seasonal or episodic flooding &bull; "
              "above 15%: recurrent flood exposure. "
              "Threshold: empirical DN&nbsp;75 (~above noise floor, well below vegetated land).",
@@ -842,23 +844,91 @@ def _sar_scene_rows(sar_scene_months: list[dict], water_threshold: int) -> str:
     return "\n".join(rows)
 
 
-def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float]], threshold: float) -> str:
-    """Chart.js bar chart of SAR water fraction per scene with flood threshold line."""
+def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float, int]]) -> str:
+    """Chart.js bar chart of SAR water fraction per scene with per-orbit adaptive thresholds.
+
+    Bars are colored by relative orbit (two orbits = blue / orange).
+    Each orbit gets its own dashed threshold line at max(median + 2×MAD, 5%).
+    """
+    from collections import defaultdict
+    from statistics import median as _median
+
     if not sar_scene_fracs:
         return '<p class="no-data">No SAR water fraction data available.</p>'
-    labels = [mk for mk, _ in sar_scene_fracs]
-    data = [round(wf * 100, 2) for _, wf in sar_scene_fracs]
-    thr_pct = round(threshold * 100, 1)
-    n = len(data)
-    # Blue fill: opaque for scenes at or above threshold (flooded), faint otherwise
-    colors = [
-        "rgba(30,100,220,0.75)" if wf * 100 >= thr_pct else "rgba(30,100,220,0.30)"
-        for _, wf in sar_scene_fracs
+
+    from ..config import settings as _cfg
+    mad_k = _cfg.SAR_FLOOD_MAD_K
+    min_anomaly = _cfg.SAR_MIN_ANOMALY_FRACTION
+
+    # Palette: (bar opaque, bar faint, line color) per orbit index
+    _palette = [
+        ("rgba(30,100,220,0.75)",  "rgba(30,100,220,0.25)",  "#1e64dc"),  # blue
+        ("rgba(234,88,12,0.75)",   "rgba(234,88,12,0.25)",   "#ea580c"),  # orange
+        ("rgba(22,163,74,0.75)",   "rgba(22,163,74,0.25)",   "#16a34a"),  # green
     ]
-    labels_json = json.dumps(labels)
-    data_json = json.dumps(data)
-    colors_json = json.dumps(colors)
-    threshold_line = json.dumps([thr_pct] * n)
+
+    # Ordered unique orbits (preserves first-seen order = chronological)
+    unique_orbits: list[int] = list(dict.fromkeys(o for _, _, o in sar_scene_fracs))
+    orbit_idx = {o: i for i, o in enumerate(unique_orbits)}
+
+    # Per-orbit MAD-based adaptive threshold
+    by_orbit: dict[int, list[float]] = defaultdict(list)
+    for _, wf, o in sar_scene_fracs:
+        by_orbit[o].append(wf)
+
+    def _mad(fracs: list[float], loc_med: float) -> float:
+        return _median(abs(f - loc_med) for f in fracs)
+
+    orbit_thr: dict[int, float] = {}
+    for o, fracs in by_orbit.items():
+        loc_med = _median(fracs)
+        mad_val = _mad(fracs, loc_med)
+        orbit_thr[o] = round(min(max(loc_med + mad_k * mad_val, min_anomaly), 1.0) * 100, 1)
+
+    n = len(sar_scene_fracs)
+    labels_json = json.dumps([mk for mk, _, _ in sar_scene_fracs])
+    data_json   = json.dumps([round(wf * 100, 2) for _, wf, _ in sar_scene_fracs])
+
+    # Bar colors: opaque when scene exceeds its orbit's adaptive threshold
+    bar_colors = []
+    for _, wf, o in sar_scene_fracs:
+        idx = orbit_idx[o] % len(_palette)
+        col_op, col_faint, _ = _palette[idx]
+        bar_colors.append(col_op if wf * 100 >= orbit_thr[o] else col_faint)
+    colors_json = json.dumps(bar_colors)
+
+    # One threshold dataset per orbit
+    thr_datasets: list[dict] = []
+    for o in unique_orbits:
+        idx = orbit_idx[o] % len(_palette)
+        _, _, line_col = _palette[idx]
+        thr_pct = orbit_thr[o]
+        label = f"Orbit {o} threshold ({thr_pct}%)"
+        thr_datasets.append({
+            "label": label,
+            "data": [thr_pct] * n,
+            "type": "line",
+            "borderColor": line_col,
+            "borderDash": [5, 4],
+            "borderWidth": 1.5,
+            "pointRadius": 0,
+            "fill": False,
+            "tension": 0,
+            "order": 1,
+        })
+
+    datasets_json = json.dumps([
+        {
+            "label": "Water fraction %",
+            "data": json.loads(data_json),
+            "backgroundColor": bar_colors,
+            "borderColor": "rgba(0,0,0,0.08)",
+            "borderWidth": 0.5,
+            "order": 2,
+        },
+        *thr_datasets,
+    ])
+
     return f"""
     <div class="chart-wrap" style="height:220px;margin-bottom:20px">
       <canvas id="sarFracChart"></canvas>
@@ -868,28 +938,7 @@ def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float]], threshold: fl
       type: 'bar',
       data: {{
         labels: {labels_json},
-        datasets: [
-          {{
-            label: 'Water fraction %',
-            data: {data_json},
-            backgroundColor: {colors_json},
-            borderColor: 'rgba(30,100,220,0.4)',
-            borderWidth: 0.5,
-            order: 2,
-          }},
-          {{
-            label: 'Flood threshold ({thr_pct}%)',
-            data: {threshold_line},
-            type: 'line',
-            borderColor: '#ef4444',
-            borderDash: [5, 4],
-            borderWidth: 1.5,
-            pointRadius: 0,
-            fill: false,
-            tension: 0,
-            order: 1,
-          }},
-        ]
+        datasets: {datasets_json},
       }},
       options: {{
         responsive: true,
@@ -1108,7 +1157,7 @@ def build_report_html(
     score_version: str,
     climate: dict | None = None,
     sar_scene_months: list[dict] | None = None,
-    sar_scene_fracs: list[tuple[str, float]] | None = None,
+    sar_scene_fracs: list[tuple[str, float, int]] | None = None,
     tc_monthly: dict[str, list[tuple[int, int, float | None]]] | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -1307,7 +1356,7 @@ def build_report_html(
     sar_rows = _sar_scene_rows(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD)
 
     # SAR water fraction chart
-    sar_frac_chart = _sar_frac_chart_html(sar_scene_fracs or [], _cfg.SAR_MIN_WATER_PIXEL_FRACTION)
+    sar_frac_chart = _sar_frac_chart_html(sar_scene_fracs or [])
 
     # Flood alert banner (shown when acute anomaly is elevated)
     flood_anomaly_val = feat.get("sar_flood_anomaly") or 0.0
@@ -1456,9 +1505,9 @@ def build_report_html(
     <h2>Sentinel-1 SAR &mdash; Flood Analysis</h2>
     {flood_alert_html}
     <div style="font-size:0.76rem;color:#64748b;margin-bottom:10px">
-      Water fraction per SAR scene (chronological). Bars at or above the red threshold line
-      ({round(_cfg.SAR_MIN_WATER_PIXEL_FRACTION * 100, 0):.0f}%) count as flooded for the chronic frequency score.
-      Opaque blue = flooded scene; faint blue = below threshold.
+      Water fraction per SAR scene (chronological), colored by Sentinel-1 relative orbit.
+      Dashed lines show the per-orbit adaptive flood threshold: max(median&nbsp;+&nbsp;2&times;MAD,&nbsp;5%).
+      Opaque bar = scene above its orbit's threshold; faint = below.
     </div>
     {sar_frac_chart}
     <h2 style="margin-top:20px;margin-bottom:12px">SAR scene images (most recent {len(sar_scene_months or [])})</h2>

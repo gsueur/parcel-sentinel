@@ -30,7 +30,7 @@ async def get_location_report(location_key: str):
     timeseries = store.get_timeseries(location_key, settings.PROCESSING_VERSION)
     scene_months = store.get_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
     sar_scene_months = store.get_sar_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
-    sar_scene_fracs = store.get_sar_scene_fracs(location_key, settings.PROCESSING_VERSION)
+    sar_scene_fracs = store.get_sar_scene_fracs_with_orbit(location_key, settings.PROCESSING_VERSION)
 
     # TerraClimate monthly data for climate charts (served from DuckDB cache)
     tc_monthly = None

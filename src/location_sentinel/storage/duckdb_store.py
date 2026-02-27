@@ -879,6 +879,28 @@ class DuckDBStore:
         ).fetchall()
         return [(row[0], row[1]) for row in rows if row[1] is not None]
 
+    def get_sar_scene_fracs_with_orbit(
+        self,
+        location_key: str,
+        processing_version: str,
+    ) -> list[tuple[str, float, int]]:
+        """Return all (month_key, water_frac, rel_orbit) triples, ordered chronologically.
+
+        Includes orbit number for per-orbit MAD threshold visualization in the report.
+        """
+        if self._conn is None:
+            return []
+        rows = self._conn.execute(
+            """
+            SELECT month_key, water_frac, COALESCE(rel_orbit, 0)
+            FROM sar_scene_bands
+            WHERE location_key = ? AND processing_version = ?
+            ORDER BY month_key ASC
+            """,
+            [location_key, processing_version],
+        ).fetchall()
+        return [(row[0], float(row[1]), int(row[2])) for row in rows if row[1] is not None]
+
     # ------------------------------------------------------------------
     # TerraClimate monthly cache
     # ------------------------------------------------------------------
