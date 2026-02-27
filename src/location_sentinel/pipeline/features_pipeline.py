@@ -131,7 +131,7 @@ async def run_features(
     sar_scene_arrays: list[tuple[str, str, object, float, int]] = sar_features.pop("_sar_scene_arrays", [])
 
     if sar_scene_fracs:
-        # -- Chronic water frequency (snow-suppressed, orbit-stratified) --
+        # -- Chronic water frequency (snow- and burn-suppressed, orbit-stratified) --
         # Exclude months where co-located S2 NDSI confirms actual snow cover.
         # Note: flooded fields also produce high NDSI (specular reflection), so
         # snow suppression is intentionally limited to locations where persistent
@@ -142,25 +142,43 @@ async def run_features(
             rec.month for rec in ndsi_records
             if rec.mean is not None and rec.mean > settings.NDSI_SNOW_THRESHOLD
         }
-        non_snow = [
+        # Exclude months where co-located S2 NBR confirms a burn scar.
+        # Post-fire bare soil and ash have low VV backscatter that mimics calm
+        # water at the DN threshold, producing false flood signals. Unlike snow
+        # suppression, burn suppression is safe to apply to the anomaly metric
+        # too: a burn scar cannot be mistaken for an actual flood event.
+        burn_months: set[str] = {
+            rec.month for rec in nbr_records
+            if rec.mean is not None and rec.mean < settings.NBR_BURN_THRESHOLD
+        }
+        excluded_months = snow_months | burn_months
+        non_snow_non_burn = [
             (f, orbit) for mk, f, orbit in sar_scene_fracs
-            if mk not in snow_months
+            if mk not in excluded_months
         ]
         if snow_months:
             logger.info(
-                "SAR snow suppression: kept %d/%d scenes, excluded %d snow months",
-                len(non_snow), len(sar_scene_fracs), len(snow_months),
+                "SAR snow suppression: excluded %d snow months",
+                len(snow_months),
             )
+        if burn_months:
+            logger.info(
+                "SAR burn suppression: excluded %d burn months",
+                len(burn_months),
+            )
+            quality.flags.append("sar_burn_suppression")
         sar_features["sar_water_freq_5y"] = (
-            compute_sar_water_frequency(non_snow) if non_snow else None
+            compute_sar_water_frequency(non_snow_non_burn) if non_snow_non_burn else None
         )
 
-        # -- Flood anomaly (uses ALL scenes, no snow suppression) --
+        # -- Flood anomaly (burn-suppressed, no snow suppression) --
         # Compares recent water_frac to historical seasonal baseline for the same
         # calendar month. Detects sudden flood events even when they coincide with
         # months that NDSI falsely flags as snow (flooded floodplains).
+        # Burn months are excluded: a post-fire anomaly is not a flood anomaly.
         flood_anomaly = compute_sar_flood_anomaly(
-            [(mk, f) for mk, f, _orbit in sar_scene_fracs], date_end
+            [(mk, f) for mk, f, _orbit in sar_scene_fracs if mk not in burn_months],
+            date_end,
         )
         if flood_anomaly is not None:
             sar_features["sar_flood_anomaly"] = flood_anomaly
