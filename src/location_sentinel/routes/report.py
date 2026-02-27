@@ -43,6 +43,14 @@ async def get_location_report(location_key: str):
         except Exception as exc:
             logger.warning("Could not load TerraClimate data for report: %s", exc)
 
+    # Derive burn months from stored NBR timeseries for SAR chart annotation
+    burn_months: set[str] = set()
+    if timeseries and "nbr" in timeseries:
+        for rec in timeseries["nbr"]:
+            mean = rec.get("mean")
+            if mean is not None and mean < settings.NBR_BURN_THRESHOLD:
+                burn_months.add(rec["month"])
+
     html = build_report_html(
         location_key=location_key,
         name=location_info["name"],
@@ -59,6 +67,7 @@ async def get_location_report(location_key: str):
         processing_version=settings.PROCESSING_VERSION,
         score_version=settings.SCORE_VERSION,
         tc_monthly=tc_monthly or {},
+        burn_months=burn_months or None,
     )
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}

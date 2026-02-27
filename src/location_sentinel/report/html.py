@@ -844,10 +844,15 @@ def _sar_scene_rows(sar_scene_months: list[dict], water_threshold: int) -> str:
     return "\n".join(rows)
 
 
-def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float, int]]) -> str:
+def _sar_frac_chart_html(
+    sar_scene_fracs: list[tuple[str, float, int]],
+    burn_months: set[str] | None = None,
+) -> str:
     """Chart.js bar chart of SAR water fraction per scene with per-orbit adaptive thresholds.
 
     Bars are colored by relative orbit (two orbits = blue / orange).
+    Burn-suppressed months are shown in amber -- their SAR signal is excluded from the
+    chronic water frequency because post-fire bare soil mimics low-backscatter water.
     Each orbit gets its own dashed threshold line at max(median + 2×MAD, 5%).
     """
     from collections import defaultdict
@@ -889,12 +894,25 @@ def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float, int]]) -> str:
     labels_json = json.dumps([mk for mk, _, _ in sar_scene_fracs])
     data_json   = json.dumps([round(wf * 100, 2) for _, wf, _ in sar_scene_fracs])
 
-    # Bar colors: opaque when scene exceeds its orbit's adaptive threshold
+    # Bar colors: amber for burn-suppressed months, else opaque/faint by orbit threshold
+    _burn_color  = "rgba(217,119,6,0.80)"
+    _burn_border = "rgba(217,119,6,1.0)"
     bar_colors = []
-    for _, wf, o in sar_scene_fracs:
-        idx = orbit_idx[o] % len(_palette)
-        col_op, col_faint, _ = _palette[idx]
-        bar_colors.append(col_op if wf * 100 >= orbit_thr[o] else col_faint)
+    border_colors = []
+    border_widths = []
+    has_burn = False
+    for mk, wf, o in sar_scene_fracs:
+        if burn_months and mk in burn_months:
+            bar_colors.append(_burn_color)
+            border_colors.append(_burn_border)
+            border_widths.append(2)
+            has_burn = True
+        else:
+            idx = orbit_idx[o] % len(_palette)
+            col_op, col_faint, _ = _palette[idx]
+            bar_colors.append(col_op if wf * 100 >= orbit_thr[o] else col_faint)
+            border_colors.append("rgba(0,0,0,0.08)")
+            border_widths.append(0.5)
     colors_json = json.dumps(bar_colors)
 
     # One threshold dataset per orbit
@@ -922,17 +940,27 @@ def _sar_frac_chart_html(sar_scene_fracs: list[tuple[str, float, int]]) -> str:
             "label": "Water fraction %",
             "data": json.loads(data_json),
             "backgroundColor": bar_colors,
-            "borderColor": "rgba(0,0,0,0.08)",
-            "borderWidth": 0.5,
+            "borderColor": border_colors,
+            "borderWidth": border_widths,
             "order": 2,
         },
         *thr_datasets,
     ])
 
+    burn_legend = (
+        '<div style="margin-top:8px;font-size:0.72rem;color:#92400e;display:flex;align-items:center;gap:6px">'
+        '<span style="display:inline-block;width:12px;height:12px;border-radius:2px;'
+        'background:rgba(217,119,6,0.80);border:2px solid rgba(217,119,6,1.0);flex-shrink:0"></span>'
+        'Amber bars: burn-suppressed months &mdash; post-fire bare soil mimics low SAR backscatter. '
+        'Excluded from chronic flood frequency.'
+        '</div>'
+    ) if has_burn else ""
+
     return f"""
-    <div class="chart-wrap" style="height:220px;margin-bottom:20px">
+    <div class="chart-wrap" style="height:220px;margin-bottom:6px">
       <canvas id="sarFracChart"></canvas>
     </div>
+    {burn_legend}
     <script>
     new Chart(document.getElementById('sarFracChart'), {{
       type: 'bar',
@@ -1159,6 +1187,7 @@ def build_report_html(
     sar_scene_months: list[dict] | None = None,
     sar_scene_fracs: list[tuple[str, float, int]] | None = None,
     tc_monthly: dict[str, list[tuple[int, int, float | None]]] | None = None,
+    burn_months: set[str] | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -1356,7 +1385,7 @@ def build_report_html(
     sar_rows = _sar_scene_rows(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD)
 
     # SAR water fraction chart
-    sar_frac_chart = _sar_frac_chart_html(sar_scene_fracs or [])
+    sar_frac_chart = _sar_frac_chart_html(sar_scene_fracs or [], burn_months=burn_months)
 
     # Flood alert banner (shown when acute anomaly is elevated)
     flood_anomaly_val = feat.get("sar_flood_anomaly") or 0.0
