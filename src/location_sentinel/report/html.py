@@ -1188,9 +1188,16 @@ def build_report_html(
     sar_scene_fracs: list[tuple[str, float, int]] | None = None,
     tc_monthly: dict[str, list[tuple[int, int, float | None]]] | None = None,
     burn_months: set[str] | None = None,
+    date_start: str | None = None,
+    date_end: str | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
+    date_range_str = (
+        f"{date_start} to {date_end}"
+        if date_start and date_end
+        else None
+    )
 
     display_name = name or "Unnamed location"
     if centroid:
@@ -1430,7 +1437,10 @@ def build_report_html(
     {climate_html}
     <small style="color:#94a3b8;font-size:0.75rem;font-family:monospace">{location_key}</small>
   </div>
-  <div style="margin-top:4px;color:#94a3b8;font-size:0.72rem">generated {generated}</div>
+  <div style="margin-top:4px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+    <span style="color:#94a3b8;font-size:0.72rem">generated {generated}</span>
+    {f'<span style="color:#64748b;font-size:0.76rem">&#x1F4C5; Analysis period: <strong>{date_range_str}</strong></span>' if date_range_str else ''}
+  </div>
 </div>
 
 <div class="container">
@@ -1473,6 +1483,17 @@ def build_report_html(
     </div>
     <div style="margin-top:12px;color:#94a3b8;font-size:0.78rem">
       Processing: {processing_version} &nbsp;&bull;&nbsp; Score: {score_version}
+    </div>
+    <div style="margin-top:14px;padding:10px 14px;background:#fafafa;border:1px solid #e2e8f0;border-radius:6px;font-size:0.74rem;color:#64748b;line-height:1.7">
+      <strong style="color:#475569">Disclaimer.</strong>
+      All scores and feature estimates are based on satellite imagery sampled over the period
+      {f'<strong>{date_range_str}</strong>' if date_range_str else 'the requested analysis window'}.
+      Results depend on scene availability, cloud cover, and spectral index retrieval quality.
+      Satellite-derived indices may be affected by atmospheric conditions, terrain effects,
+      mixed land-cover within the observation window, and sensor artifacts.
+      Scores are statistical summaries of remotely sensed signals and do not constitute
+      a certified risk assessment. Interpretation should account for local context
+      and be validated against ground truth where appropriate.
     </div>
   </div>
 

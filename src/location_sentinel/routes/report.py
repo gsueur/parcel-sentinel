@@ -102,6 +102,8 @@ async def get_location_report(location_key: str):
         scores=scores,
         features=features_data.get("features") if features_data else None,
         quality=features_data.get("quality") if features_data else None,
+        date_start=features_data.get("date_start") if features_data else None,
+        date_end=features_data.get("date_end") if features_data else None,
         timeseries=timeseries,
         scene_months=scene_months,
         sar_scene_months=sar_scene_months,
@@ -122,7 +124,7 @@ def _get_any_features(location_key: str) -> dict | None:
         return None
     result = store._conn.execute(
         """
-        SELECT features_json, quality_json FROM location_features
+        SELECT features_json, quality_json, date_start, date_end FROM location_features
         WHERE location_key = ?
         ORDER BY updated_at DESC LIMIT 1
         """,
@@ -131,4 +133,9 @@ def _get_any_features(location_key: str) -> dict | None:
     if result is None:
         return None
     import json
-    return {"features": json.loads(result[0]), "quality": json.loads(result[1])}
+    return {
+        "features": json.loads(result[0]),
+        "quality": json.loads(result[1]),
+        "date_start": str(result[2]) if result[2] else None,
+        "date_end": str(result[3]) if result[3] else None,
+    }
