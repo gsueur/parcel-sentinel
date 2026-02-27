@@ -58,31 +58,28 @@ def _read_vv_dn_sync(
     """Read a 64x64 window of VV uint16 DN from a Sentinel-1 GRD file.
 
     S1 GRD Level-1 files use GCP-based geolocation (no affine transform).
-    Two-step approach to guarantee a fixed UTM footprint across all orbits:
+    rasterio's WarpedVRT reprojects the full GCP-based scene into UTM,
+    producing a large virtual raster with a well-defined affine transform.
+    A pixel window covering exactly GROUND_EXTENT_M metres on each side of
+    the target is read and resampled to COG_WINDOW_SIZE × COG_WINDOW_SIZE.
 
-    Step 1 -- GCP → full UTM scene (WarpedVRT):
-      Creates a full-scene virtual raster in UTM with a proper affine
-      transform. This is known to work reliably with GCP polynomial sources.
+    Diagnostic logging records the UTM centroid (cx, cy), the VRT origin,
+    and the computed pixel position (col_c, row_c) so orbit-to-orbit window
+    consistency can be verified from server logs.
 
-    Step 2 -- full UTM VRT → fixed 640 m window (reproject):
-      reproject() from an affine-transform source (the WarpedVRT) works
-      without GDAL initialization issues. The destination is exactly
-      (cx±320 m, cy±320 m) in UTM at 10 m/pixel, orbit-independent.
-
-    Alternatives that do NOT work:
-    - Explicit small WarpedVRT with target transform: GDAL returns all zeros
-      when initializing a tiny-extent warp from a GCP polynomial source.
-    - reproject() directly from GCP source to small target: same issue.
-    - Full-scene WarpedVRT + pixel window arithmetic: mathematically
-      equivalent to the original code (native_res ≈ 10 m, half_w ≈ 32 = size//2).
+    Approaches that did NOT work:
+    - Explicit small WarpedVRT with target transform: GDAL returns all zeros.
+    - reproject() directly from GCP source to small UTM target: all zeros.
+    - reproject() from WarpedVRT to small UTM target: also all zeros.
+    GDAL cannot initialize a tiny-extent warp from GCP polynomial sources
+    over /vsis3/, regardless of whether step is direct or indirect.
 
     Runs synchronously -- call from an asyncio executor.
     """
     import rasterio
     from rasterio.crs import CRS as RioCRS
-    from rasterio.transform import from_bounds
     from rasterio.vrt import WarpedVRT
-    from rasterio.warp import reproject as rio_reproject, Resampling
+    from rasterio.windows import Window
 
     key = _parse_s1_s3_key(href)
     vsis3_path = f"/vsis3/{settings.SAR_AWS_BUCKET}/{key}"
@@ -98,41 +95,45 @@ def _read_vv_dn_sync(
     # Fixed ground extent: 64 pixels × 10 m/px = 640 m on each side.
     half = size * 10.0 / 2.0  # 320 m
 
-    # Destination transform: exactly (cx±320 m, cy±320 m), north-up, 10 m/px.
-    dst_transform = from_bounds(
-        left=cx - half, bottom=cy - half,
-        right=cx + half, top=cy + half,
-        width=size, height=size,
-    )
-
     try:
         with rasterio.Env(**_GDAL_ENV):
             with rasterio.open(vsis3_path) as src:
-                # Step 1: GCP polynomial → full UTM scene (affine transform).
+                # Full-scene WarpedVRT into UTM -- reliable with GCP sources.
                 with WarpedVRT(src, crs=target_crs) as vrt:
-                    # Step 2: fixed UTM window from the affine-based VRT.
-                    destination = np.zeros((size, size), dtype=np.float32)
-                    rio_reproject(
-                        source=rasterio.band(vrt, 1),
-                        destination=destination,
-                        dst_crs=target_crs,
-                        dst_transform=dst_transform,
-                        resampling=Resampling.bilinear,
-                    )
-                    data = destination.astype(np.uint16)
+                    native_res_x = abs(vrt.transform.a)
+                    native_res_y = abs(vrt.transform.e)
+                    vrt_x0 = vrt.transform.c  # UTM easting of left edge
+                    vrt_y0 = vrt.transform.f  # UTM northing of top edge
+
+                    # Pixel position of the analysis point in the VRT grid.
+                    inv = ~vrt.transform
+                    col_c, row_c = inv * (cx, cy)
+
+                    # Native pixels spanning 'half' metres on each axis.
+                    half_w = half / native_res_x
+                    half_h = half / native_res_y
+
+                    col_off = max(0, int(round(col_c - half_w)))
+                    row_off = max(0, int(round(row_c - half_h)))
+                    col_end = min(vrt.width,  int(round(col_c + half_w)))
+                    row_end = min(vrt.height, int(round(row_c + half_h)))
+                    read_w = max(1, col_end - col_off)
+                    read_h = max(1, row_end - row_off)
+
+                    window = Window(col_off, row_off, read_w, read_h)
+                    data = vrt.read(1, window=window, out_shape=(size, size))
                     logger.info(
-                        "SAR read OK key=%.80s cx=%.1f cy=%.1f "
-                        "%dx%d min=%d max=%d mean=%.1f",
-                        key, cx, cy, size, size,
+                        "SAR read OK key=%.80s "
+                        "cx=%.1f cy=%.1f vrt_origin=(%.1f,%.1f) "
+                        "col_c=%.1f row_c=%.1f res=(%.2f,%.2f) "
+                        "win=(%d,%d,%dx%d) → %dx%d min=%d max=%d mean=%.1f",
+                        key,
+                        cx, cy, vrt_x0, vrt_y0,
+                        col_c, row_c, native_res_x, native_res_y,
+                        col_off, row_off, read_w, read_h, size, size,
                         int(data.min()), int(data.max()), float(data.mean()),
                     )
-                    if data.max() == 0:
-                        logger.warning(
-                            "SAR read returned all zeros key=%.80s",
-                            key,
-                        )
-                        return None
-                    return data
+                    return data.astype(np.uint16)
     except Exception as exc:
         logger.warning("SAR VV read failed key=%.80s err=%s", key, exc)
         return None
