@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.10.0` / scoring `risk-v1.11.0`
+**Version:** processing `s2l2a-v1.11.0` / scoring `risk-v1.12.0`
 **Date:** 2026-02-27
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -846,4 +846,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `08fdc17` (master), processing version `s2l2a-v1.10.0`, score version `risk-v1.11.0`.*
+*Document generated from source code at commit `049464d` (master), processing version `s2l2a-v1.11.0`, score version `risk-v1.12.0`.*

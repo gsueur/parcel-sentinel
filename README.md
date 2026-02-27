@@ -792,8 +792,8 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.10.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.11.0` | Cache key tag for scores |
+| `PROCESSING_VERSION` | `s2l2a-v1.11.0` | Cache key tag for features |
+| `SCORE_VERSION` | `risk-v1.12.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2
