@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     SAR_MIN_ANOMALY_FRACTION: float = 0.05
     SAR_MAX_SCENES_PER_MONTH: int = 2
     SAR_MAX_TOTAL_SCENES: int = 120
+    # NDWI optical cross-validation veto for SAR flood score.
+    # If ndwi_wetness_persistence_5y < threshold (S2 optical shows no surface water)
+    # but SAR water fraction is elevated, the two sensors contradict each other.
+    # Likely cause: specular C-band backscatter from ocean, runways, or flat roofs.
+    SAR_NDWI_CORROBORATION_THRESHOLD: float = 0.05  # < 5% optical water months → no corroboration
+    SAR_NDWI_VETO_FACTOR: float = 0.25              # multiply flood score by this when unconfirmed
 
     # Standardized window size for all raster reads
     COG_WINDOW_SIZE: int = 64
@@ -86,7 +92,7 @@ class Settings(BaseSettings):
 
     # Versions
     PROCESSING_VERSION: str = "s2l2a-v1.10.0"
-    SCORE_VERSION: str = "risk-v1.10.0"
+    SCORE_VERSION: str = "risk-v1.11.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"
