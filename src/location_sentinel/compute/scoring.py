@@ -157,7 +157,7 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     if is_urban:
         fire_exposure_score = 0.0
     elif nbr_burn_freq is not None:
-        fire_exposure_score = nbr_burn_freq * 100
+        fire_exposure_score = min(100.0, nbr_burn_freq * 350)
         if nbr_burn_freq > 0.05:
             factors.append({"name": "nbr_burn_freq_5y", "direction": "positive", "weight": 0.20})
     else:
