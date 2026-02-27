@@ -248,21 +248,6 @@ async def delete_location(location_key: str):
     return {"location_key": location_key, "deleted": deleted}
 
 
-@router.delete("/locations")
-async def delete_all_locations():
-    """Delete ALL stored locations.
-
-    Returns a summary of total rows deleted per table.
-    """
-    locations = store.get_all_locations()
-    totals: dict[str, int] = {}
-    for loc in locations:
-        counts = store.delete_location(loc["location_key"])
-        for table, n in counts.items():
-            totals[table] = totals.get(table, 0) + n
-    cache.clear()
-    return {"deleted_locations": len(locations), "deleted": totals}
-
 
 @router.get("/locations")
 async def list_locations(format: str = Query(default="json", pattern="^(json|html)$")):

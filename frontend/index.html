@@ -71,6 +71,31 @@
     .card-computing { font-size: 0.75rem; color: var(--accent); margin-top: 3px; }
     .card-failed { font-size: 0.75rem; color: var(--danger); margin-top: 3px; }
     .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
+    .card-link { display: block; text-decoration: none; color: inherit; }
+    .card-link:hover .card-name { color: var(--accent); }
+    .card-actions {
+      display: flex; align-items: center; gap: 4px;
+      padding: 6px 10px; border-top: 1px solid var(--border);
+      background: var(--bg); flex-shrink: 0;
+    }
+    .action-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 5px;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--muted); cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      text-decoration: none; flex-shrink: 0; padding: 0;
+    }
+    .action-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .action-btn-danger:hover { color: var(--danger) !important; border-color: var(--danger) !important; }
+    .action-btn:disabled { opacity: 0.45; cursor: default; pointer-events: none; }
+    .card-confirm {
+      padding: 7px 10px; border-top: 1px solid var(--border);
+      background: rgba(220,38,38,0.05);
+      display: flex; flex-direction: column; gap: 5px; flex-shrink: 0;
+    }
+    .card-confirm-msg { font-size: 0.74rem; color: var(--text); }
+    .card-confirm-btns { display: flex; gap: 5px; }
     /* Modal */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(15,23,42,0.5);
@@ -199,6 +224,12 @@ const API_URL = window.location.hostname === 'localhost'
   : 'https://climate.geomermaids.com';
 // ─────────────────────────────────────────────────────────────────────────────────
 
+// ── ICONS ─────────────────────────────────────────────────────────────────────────
+const SVG_LINK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+const SVG_REFRESH = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
+const SVG_TRASH = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+// ─────────────────────────────────────────────────────────────────────────────────
+
 // Fix default marker icon paths when Leaflet is loaded from CDN
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -256,17 +287,28 @@ function renderGrid(locations) {
     const meta = [coords, updated].filter(Boolean).join(' &middot; ');
     const customer = loc.customer_name ? `<div class="card-customer">${loc.customer_name}</div>` : '';
     const keyShort = loc.location_key.slice(0, 24) + '&hellip;';
+    const key = loc.location_key;
     return `
-      <a class="card" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
-        <img class="card-thumb" src="${API_URL}${loc.thumbnail_url}"
-             alt="" onerror="this.outerHTML='<div class=card-thumb-placeholder></div>'">
-        <div class="card-body">
-          <div class="card-name">${name}</div>
-          <div class="card-meta">${meta}</div>
-          ${customer}
-          <div class="card-key">${keyShort}</div>
+      <div class="card">
+        <a class="card-link" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
+          <img class="card-thumb" src="${API_URL}${loc.thumbnail_url}"
+               alt="" onerror="this.outerHTML='<div class=card-thumb-placeholder></div>'">
+          <div class="card-body">
+            <div class="card-name">${name}</div>
+            <div class="card-meta">${meta}</div>
+            ${customer}
+            <div class="card-key">${keyShort}</div>
+          </div>
+        </a>
+        <div class="card-actions">
+          <a href="${API_URL}${loc.report_url}" target="_blank" rel="noopener"
+             class="action-btn" title="Open report">${SVG_LINK}</a>
+          <button class="action-btn" title="Regenerate"
+                  data-key="${key}" onclick="regenerateCard(this)">${SVG_REFRESH}</button>
+          <button class="action-btn action-btn-danger" title="Delete"
+                  data-key="${key}" onclick="showDeleteConfirm(this)">${SVG_TRASH}</button>
         </div>
-      </a>`;
+      </div>`;
   }).join('');
 }
 
@@ -526,6 +568,70 @@ function resetForm() {
   document.getElementById('map-hint').classList.remove('hidden');
   drawnGeometry = null;
   if (marker) { marker.remove(); marker = null; }
+}
+
+// ── CARD ACTIONS ──────────────────────────────────────────────────────────────────
+
+async function regenerateCard(btn) {
+  const key = btn.dataset.key;
+  const card = btn.closest('.card');
+  const actionsEl = card.querySelector('.card-actions');
+
+  card.querySelectorAll('.action-btn').forEach(b => b.setAttribute('disabled', ''));
+
+  const thumb = card.querySelector('.card-thumb, .card-thumb-placeholder');
+  if (thumb) thumb.outerHTML = '<div class="card-thumb-computing"><div class="spinner"></div></div>';
+
+  actionsEl.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:0.73rem;color:var(--accent)"><div class="spinner" style="width:13px;height:13px;border-width:2px"></div>Regenerating\u2026</div>`;
+
+  try {
+    const res = await fetch(`${API_URL}/v1/location/${key}/regenerate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    await loadLocations();
+  } catch (e) {
+    const computing = card.querySelector('.card-thumb-computing');
+    if (computing) computing.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
+    actionsEl.innerHTML = `<span style="font-size:0.72rem;color:var(--danger)">Failed: ${e.message}</span>`;
+  }
+}
+
+function showDeleteConfirm(btn) {
+  const key = btn.dataset.key;
+  const card = btn.closest('.card');
+  const actionsEl = card.querySelector('.card-actions');
+  actionsEl.outerHTML = `
+    <div class="card-confirm">
+      <div class="card-confirm-msg">Delete this location permanently?</div>
+      <div class="card-confirm-btns">
+        <button class="btn btn-primary" style="padding:4px 10px;font-size:0.74rem;background:var(--danger);border:none"
+                data-key="${key}" onclick="deleteLocation(this)">Delete</button>
+        <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.74rem"
+                onclick="loadLocations()">Cancel</button>
+      </div>
+    </div>`;
+}
+
+async function deleteLocation(btn) {
+  const key = btn.dataset.key;
+  btn.disabled = true;
+  btn.textContent = 'Deleting\u2026';
+  try {
+    const res = await fetch(`${API_URL}/v1/location/${key}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await loadLocations();
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Delete';
+    const confirm = btn.closest('.card-confirm');
+    if (confirm) confirm.insertAdjacentHTML('beforeend', `<span style="font-size:0.72rem;color:var(--danger)">Failed: ${e.message}</span>`);
+  }
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────────
