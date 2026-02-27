@@ -58,16 +58,21 @@ def _read_vv_dn_sync(
     """Read a 64x64 window of VV uint16 DN from a Sentinel-1 GRD file.
 
     S1 GRD Level-1 files use GCP-based geolocation (no affine transform).
-    rasterio's WarpedVRT handles GCPs transparently: it warps the data into a
-    projected UTM CRS, producing a virtual raster with a proper affine transform
-    from which a window read can be done using standard (x, y) coordinates.
+    rasterio's WarpedVRT reprojects the GCP-based source into UTM.
+
+    Critically: rather than using the VRT's native pixel grid (which varies
+    between orbital passes because the GCP-derived UTM pixel size differs per
+    look angle), we supply an explicit output transform with a fixed 10 m/pixel
+    resolution centered on the target location.  This guarantees that every
+    scene -- regardless of orbit -- produces exactly the same 640 m × 640 m
+    ground footprint, so features appear at consistent positions across months.
 
     Runs synchronously -- call from an asyncio executor.
     """
     import rasterio
     from rasterio.crs import CRS as RioCRS
+    from rasterio.transform import from_origin
     from rasterio.vrt import WarpedVRT
-    from rasterio.windows import Window
 
     key = _parse_s1_s3_key(href)
     vsis3_path = f"/vsis3/{settings.SAR_AWS_BUCKET}/{key}"
@@ -80,24 +85,33 @@ def _read_vv_dn_sync(
 
     target_crs = RioCRS.from_epsg(utm_crs.to_epsg())
     size = settings.COG_WINDOW_SIZE
+    # Fixed output resolution (metres/pixel). S1 IW GRD native spacing is 10 m;
+    # using the same value for every scene guarantees a consistent ground footprint.
+    res = 10.0
+
+    # Build an affine transform whose top-left corner places (cx, cy) at the
+    # exact centre of the size×size grid (half-pixel shift ensures centre alignment).
+    target_transform = from_origin(
+        west=cx - size / 2 * res,
+        north=cy + size / 2 * res,
+        xsize=res,
+        ysize=res,
+    )
 
     try:
         with rasterio.Env(**_GDAL_ENV):
             with rasterio.open(vsis3_path) as src:
-                # WarpedVRT projects GCP-based source into the target UTM CRS.
-                # GDAL only reads and reprojects the scanlines needed for the window.
-                with WarpedVRT(src, crs=target_crs) as vrt:
-                    inv = ~vrt.transform
-                    col, row = inv * (cx, cy)
-                    col_off = max(0, int(round(col)) - size // 2)
-                    row_off = max(0, int(round(row)) - size // 2)
-                    window = Window(
-                        col_off=col_off,
-                        row_off=row_off,
-                        width=size,
-                        height=size,
-                    )
-                    data = vrt.read(1, window=window)
+                # Supply explicit transform + dimensions: WarpedVRT warps the
+                # source into exactly this 640 m × 640 m UTM tile, irrespective
+                # of the scene's native pixel spacing or orbit geometry.
+                with WarpedVRT(
+                    src,
+                    crs=target_crs,
+                    transform=target_transform,
+                    width=size,
+                    height=size,
+                ) as vrt:
+                    data = vrt.read(1)
                     logger.info(
                         "SAR read OK key=%.80s shape=%s dtype=%s min=%d max=%d mean=%.1f",
                         key, data.shape, data.dtype,
