@@ -1337,11 +1337,34 @@ def build_report_html(
     cloud_pct = f"{cloud_frac * 100:.1f}%" if cloud_frac is not None else "—"
     flags = q.get("flags", [])
     flag_html = "".join(f'<span class="flag">{f}</span> ' for f in flags) if flags else ""
-    coverage_pct = (
-        f"{months_observed / months_total * 100:.0f}%"
+
+    coverage_ratio = (
+        months_observed / months_total
         if isinstance(months_observed, int) and isinstance(months_total, int) and months_total > 0
-        else "—"
+        else None
     )
+    coverage_pct = f"{coverage_ratio * 100:.0f}%" if coverage_ratio is not None else "—"
+
+    # Color thresholds -- same palette as score bars
+    # Coverage / months observed: higher = better
+    if coverage_ratio is None:
+        _cov_color = "#0f172a"
+    elif coverage_ratio >= 0.80:
+        _cov_color = "#16a34a"   # green
+    elif coverage_ratio >= 0.50:
+        _cov_color = "#d97706"   # amber
+    else:
+        _cov_color = "#dc2626"   # red
+
+    # Cloud fraction: lower = better (inverted)
+    if cloud_frac is None:
+        _cloud_color = "#0f172a"
+    elif cloud_frac <= 0.20:
+        _cloud_color = "#16a34a"
+    elif cloud_frac <= 0.40:
+        _cloud_color = "#d97706"
+    else:
+        _cloud_color = "#dc2626"
 
     # Feature rows
     features_html = _features_html(feat, is_urban=is_urban)
@@ -1465,15 +1488,15 @@ def build_report_html(
     <h2>Data quality</h2>
     <div class="quality-row">
       <div class="quality-item">
-        <div class="q-val">{months_observed} / {months_total}</div>
+        <div class="q-val" style="color:{_cov_color}">{months_observed} / {months_total}</div>
         <div class="q-lbl">Months observed</div>
       </div>
       <div class="quality-item">
-        <div class="q-val">{coverage_pct}</div>
+        <div class="q-val" style="color:{_cov_color}">{coverage_pct}</div>
         <div class="q-lbl">Coverage</div>
       </div>
       <div class="quality-item">
-        <div class="q-val">{cloud_pct}</div>
+        <div class="q-val" style="color:{_cloud_color}">{cloud_pct}</div>
         <div class="q-lbl">Mean cloud fraction</div>
       </div>
       <div class="quality-item">
