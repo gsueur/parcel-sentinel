@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
+from ..compute.canopy import get_growing_season_months
 from ..compute.climate_features import compute_climate_features
 from ..config import settings
 from ..geometry.normalize import geojson_to_shapely
@@ -31,6 +32,7 @@ async def run_terraclimate_features(
     geom_geojson: dict,
     date_start: str,
     date_end: str,
+    climate_code: str | None = None,
 ) -> dict[str, float | None]:
     """Compute TerraClimate-derived features for a location and date window.
 
@@ -129,10 +131,7 @@ async def run_terraclimate_features(
         return {"no_terraclimate_data": 1.0}
 
     # ── Derive features ───────────────────────────────────────────────────────
-    growing_season = (
-        settings.SUBTROPICAL_SEASON_MONTHS if lat < settings.GROWING_SEASON_LAT_THRESHOLD
-        else settings.TEMPERATE_SEASON_MONTHS
-    )
+    growing_season = get_growing_season_months(lat, climate_code)
 
     features = compute_climate_features(
         monthly_series=series,

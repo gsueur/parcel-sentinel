@@ -369,8 +369,8 @@ Long-term features computed from the full date window (default 5 years):
 | `ndsi_snow_persistence_5y` | Fraction of months with NDSI > 0.4 (snow covered) |
 | `bsi_mean_5y` | Mean BSI over the period |
 | `bsi_bare_soil_freq_5y` | Fraction of months with BSI > 0 (bare soil exposed) |
-| `canopy_proxy_50m` | Peak-season NDVI mean within 50m of location center |
-| `canopy_proxy_200m` | Peak-season NDVI mean within 200m of location center |
+| `canopy_proxy_50m` | Peak growing-season NDVI mean within 50m; season window is Köppen + hemisphere aware |
+| `canopy_proxy_200m` | Peak growing-season NDVI mean within 200m; season window is Köppen + hemisphere aware |
 | `is_urban` | 1.0 if location classified as urban/impervious, 0.0 otherwise |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
@@ -384,7 +384,7 @@ Derived from the monthly TerraClimate series for the location's date window:
 |---------|-------------|
 | `tmax_mean_5y` | Mean monthly maximum temperature (°C) |
 | `tmin_mean_5y` | Mean monthly minimum temperature (°C) |
-| `tmax_summer_mean_5y` | Mean tmax during growing season months |
+| `tmax_summer_mean_5y` | Mean tmax during growing-season months (Köppen + hemisphere aware) |
 | `tmax_anomaly_freq_5y` | Fraction of months where tmax > monthly mean + 1σ |
 | `tmax_trend_slope_5y` | Theil-Sen slope of tmax, °C/year |
 | `ppt_annual_mean_5y` | Mean annual precipitation (mm) |
@@ -832,6 +832,27 @@ All settings are environment variables. Defaults work out of the box.
 |----------|---------|-------------|
 | `MAX_PARCEL_AREA_SQM` | `5000000` | Max area (500 ha) |
 | `DEFAULT_POINT_BUFFER_M` | `100.0` | Buffer radius for Point inputs |
+
+### Growing season
+
+Used for `canopy_proxy` and `tmax_summer_mean_5y`. Season window is selected by Köppen zone and hemisphere:
+
+| Köppen zone | NH months | SH months |
+|-------------|-----------|-----------|
+| Tropical (A) | Jan-Dec (full year) | Jan-Dec |
+| Arid (B) | Jan-Dec (full year) | Jan-Dec |
+| Mediterranean (Cs) | Mar-Jun (spring, before drought) | Sep-Dec |
+| Temperate / Continental (C non-Cs, D), abs lat ≥ 33° | May-Sep | Nov-Mar |
+| Temperate / Continental, abs lat < 33° | Mar-Nov | Sep-May |
+| Polar / Alpine (E) | Jun-Aug | Dec-Feb |
+
+SH months are NH months shifted by +6 calendar months. The latitude boundary and NH month sets are configurable:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROWING_SEASON_LAT_THRESHOLD` | `33.0` | Abs latitude boundary between temperate and subtropical windows (C/D zones only) |
+| `TEMPERATE_SEASON_MONTHS` | `[5,6,7,8,9]` | C/D zones, abs lat ≥ 33°, NH |
+| `SUBTROPICAL_SEASON_MONTHS` | `[3,4,5,6,7,8,9,10,11]` | C/D zones, abs lat < 33°, NH |
 
 ### Spectral thresholds
 

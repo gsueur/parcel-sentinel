@@ -44,6 +44,11 @@ async def run_features(
     if not ts_metrics:
         ts_metrics = [MetricName.ndvi]
 
+    # Look up climate zone before parallel tasks so growing season is correct
+    # for both canopy proxy (S2 path) and tmax_summer_mean (TerraClimate path).
+    geom_centroid = geojson_to_shapely(geom_geojson).centroid
+    climate_code: str | None = store.lookup_climate(geom_centroid.y, geom_centroid.x)
+
     # Run S2 timeseries, SAR, and TerraClimate pipelines concurrently
     (location_key, series, quality), sar_features, tc_features = await asyncio.gather(
         run_timeseries(
@@ -62,6 +67,7 @@ async def run_features(
             geom_geojson=geom_geojson,
             date_start=date_start,
             date_end=date_end,
+            climate_code=climate_code,
         ),
     )
 
@@ -114,14 +120,11 @@ async def run_features(
 
     # Canopy proxy from NDVI series
     if MetricName.canopy_proxy in metrics and ndvi_records:
-        geom = geojson_to_shapely(geom_geojson)
-        latitude = geom.centroid.y
-
         # For MVP: compute canopy proxy from the location's own NDVI series.
         # Buffer-based reads from surrounding area would require additional COG reads.
         # We use the location NDVI as the proxy for the location itself,
         # and approximate buffer values with the same series (documented limitation).
-        canopy_val = compute_canopy_proxy_from_series(ndvi_records, latitude)
+        canopy_val = compute_canopy_proxy_from_series(ndvi_records, geom_centroid.y, climate_code)
         features["canopy_proxy"] = canopy_val
 
     # Quality score

@@ -350,9 +350,18 @@ For each year y:
 canopy_proxy = mean(peak_y for all years with at least one growing-season observation)
 ```
 
-Growing season definition (latitude-dependent):
-- Latitude ≥ 33°N: May -- September (months 5 -- 9)
-- Latitude < 33°N: March -- November (months 3 -- 11)
+Growing season definition (Köppen zone + hemisphere):
+
+| Köppen zone | NH months | SH months |
+|-------------|-----------|-----------|
+| Tropical (A) | Jan -- Dec (full year) | Jan -- Dec |
+| Arid (B) | Jan -- Dec (full year) | Jan -- Dec |
+| Mediterranean (Cs) | Mar -- Jun (spring, before drought) | Sep -- Dec |
+| Temperate / Continental (C non-Cs, D), ≥ 33° abs lat | May -- Sep | Nov -- Mar |
+| Temperate / Continental, < 33° abs lat | Mar -- Nov | Sep -- May |
+| Polar / Alpine (E) | Jun -- Aug | Dec -- Feb |
+
+SH months are the NH months shifted by 6 calendar months. Köppen code is looked up from the 0.5° gridded climatology stored at location creation time.
 
 The canopy proxy approximates canopy closure from the peak photosynthetic signal rather than mean NDVI, which is suppressed in winter. It is used in heat mitigation scoring and urban detection.
 
@@ -481,7 +490,7 @@ TerraClimate monthly series are fetched via OPeNDAP point extraction for the gri
 
 **`tmin_mean_5y`** -- Mean of all valid monthly minimum temperature values (°C).
 
-**`tmax_summer_mean_5y`** -- Mean of monthly tmax restricted to growing-season months (same latitude-dependent definition as canopy proxy).
+**`tmax_summer_mean_5y`** -- Mean of monthly tmax restricted to growing-season months (same Köppen zone + hemisphere definition as canopy proxy; see section 7.7).
 
 **`tmax_anomaly_freq_5y`** -- Fraction of months where tmax exceeds the monthly climatological mean by more than 1 standard deviation:
 
@@ -818,9 +827,11 @@ All thresholds are configurable via environment variables. Defaults are listed b
 
 | Parameter | Default | Applied to |
 |-----------|---------|-----------|
-| `GROWING_SEASON_LAT_THRESHOLD` | 33.0°N | Zone boundary |
-| `TEMPERATE_SEASON_MONTHS` | [5,6,7,8,9] | ≥ 33°N |
-| `SUBTROPICAL_SEASON_MONTHS` | [3,4,5,6,7,8,9,10,11] | < 33°N |
+| `GROWING_SEASON_LAT_THRESHOLD` | 33.0° | Latitude boundary within C/D zones (abs lat) |
+| `TEMPERATE_SEASON_MONTHS` | [5,6,7,8,9] | C/D zones, abs lat ≥ 33°, NH |
+| `SUBTROPICAL_SEASON_MONTHS` | [3,4,5,6,7,8,9,10,11] | C/D zones, abs lat < 33°, NH |
+
+SH values are derived automatically by shifting NH months by +6. Tropical, Arid, Mediterranean, and Polar zones have fixed month sets independent of latitude threshold.
 
 ### Scene selection
 
