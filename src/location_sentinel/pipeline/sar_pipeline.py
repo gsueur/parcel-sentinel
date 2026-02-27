@@ -58,26 +58,33 @@ def _read_vv_dn_sync(
     """Read a 64x64 window of VV uint16 DN from a Sentinel-1 GRD file.
 
     S1 GRD Level-1 files use GCP-based geolocation (no affine transform).
-    rasterio's WarpedVRT reprojects the GCP-based source into UTM.
+    rasterio's WarpedVRT reprojects the full GCP-based scene into UTM,
+    producing a large virtual raster with a well-defined affine transform.
 
-    Critically: rather than using the VRT's native pixel grid (which varies
-    between orbital passes because the GCP-derived UTM pixel size differs per
-    look angle), we supply an explicit output transform with a fixed 10 m/pixel
-    resolution centered on the target location.  This guarantees that every
-    scene -- regardless of orbit -- produces exactly the same 640 m × 640 m
-    ground footprint, so features appear at consistent positions across months.
+    To guarantee a consistent ground footprint across all orbital passes:
+    - The target point is located in the VRT's native pixel grid.
+    - A window is sized in native pixels to cover exactly GROUND_EXTENT_M
+      metres on each side of the target (not a fixed pixel count).
+    - The window is resampled to COG_WINDOW_SIZE × COG_WINDOW_SIZE via
+      out_shape, so the output array is always 64 × 64 regardless of the
+      scene's native resolution.
+
+    This avoids the orbit-dependent pixel-size variation that caused features
+    (stadium, coastline) to appear at different positions in different months.
+    Supplying an explicit small target transform directly to WarpedVRT does
+    not work reliably with GCP polynomial sources (GDAL fills with zeros).
 
     Runs synchronously -- call from an asyncio executor.
     """
     import rasterio
     from rasterio.crs import CRS as RioCRS
-    from rasterio.transform import from_origin
     from rasterio.vrt import WarpedVRT
+    from rasterio.windows import Window
 
     key = _parse_s1_s3_key(href)
     vsis3_path = f"/vsis3/{settings.SAR_AWS_BUCKET}/{key}"
 
-    # Derive UTM CRS and project centroid once
+    # Derive UTM CRS and project centroid
     wgs84 = pyproj.CRS.from_epsg(4326)
     utm_crs = get_utm_crs(geom_centroid.x, geom_centroid.y)
     proj = reproject_geometry(geom_centroid, wgs84, utm_crs)
@@ -85,36 +92,43 @@ def _read_vv_dn_sync(
 
     target_crs = RioCRS.from_epsg(utm_crs.to_epsg())
     size = settings.COG_WINDOW_SIZE
-    # Fixed output resolution (metres/pixel). S1 IW GRD native spacing is 10 m;
-    # using the same value for every scene guarantees a consistent ground footprint.
-    res = 10.0
-
-    # Build an affine transform whose top-left corner places (cx, cy) at the
-    # exact centre of the size×size grid (half-pixel shift ensures centre alignment).
-    target_transform = from_origin(
-        west=cx - size / 2 * res,
-        north=cy + size / 2 * res,
-        xsize=res,
-        ysize=res,
-    )
+    # Fixed ground extent to capture around the target point (metres).
+    # 64 output pixels at 10 m/px = 640 m. All scenes produce the same
+    # ground footprint regardless of their native pixel spacing.
+    ground_extent_m = size * 10.0  # 640 m
 
     try:
         with rasterio.Env(**_GDAL_ENV):
             with rasterio.open(vsis3_path) as src:
-                # Supply explicit transform + dimensions: WarpedVRT warps the
-                # source into exactly this 640 m × 640 m UTM tile, irrespective
-                # of the scene's native pixel spacing or orbit geometry.
-                with WarpedVRT(
-                    src,
-                    crs=target_crs,
-                    transform=target_transform,
-                    width=size,
-                    height=size,
-                ) as vrt:
-                    data = vrt.read(1)
+                # Full-scene WarpedVRT into UTM -- reliable with GCP sources.
+                with WarpedVRT(src, crs=target_crs) as vrt:
+                    # Native pixel spacing of this VRT (varies per orbit).
+                    native_res_x = abs(vrt.transform.a)
+                    native_res_y = abs(vrt.transform.e)
+
+                    # Centre pixel of the target point.
+                    inv = ~vrt.transform
+                    col_c, row_c = inv * (cx, cy)
+
+                    # How many native pixels cover ground_extent_m on each axis.
+                    half_w = ground_extent_m / (2.0 * native_res_x)
+                    half_h = ground_extent_m / (2.0 * native_res_y)
+
+                    col_off = max(0, int(round(col_c - half_w)))
+                    row_off = max(0, int(round(row_c - half_h)))
+                    col_end = min(vrt.width,  int(round(col_c + half_w)))
+                    row_end = min(vrt.height, int(round(row_c + half_h)))
+                    read_w = max(1, col_end - col_off)
+                    read_h = max(1, row_end - row_off)
+
+                    window = Window(col_off, row_off, read_w, read_h)
+                    # Resample variable-size native window → fixed size×size output.
+                    data = vrt.read(1, window=window, out_shape=(size, size))
                     logger.info(
-                        "SAR read OK key=%.80s shape=%s dtype=%s min=%d max=%d mean=%.1f",
-                        key, data.shape, data.dtype,
+                        "SAR read OK key=%.80s native_res=(%.1f,%.1f) "
+                        "native_win=%dx%d → %dx%d min=%d max=%d mean=%.1f",
+                        key, native_res_x, native_res_y,
+                        read_w, read_h, size, size,
                         int(data.min()), int(data.max()), float(data.mean()),
                     )
                     return data.astype(np.uint16)
