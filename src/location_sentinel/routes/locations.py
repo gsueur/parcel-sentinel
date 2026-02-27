@@ -98,6 +98,15 @@ async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str) 
 
     job_store.update(job_id, status="running")
 
+    if req.force_recompute:
+        # Purge stale SAR scene arrays so the pipeline re-downloads fresh COGs.
+        # Without this, INSERT OR REPLACE only updates rows for scene_ids that
+        # appear in the new STAC search; any scene whose COG read fails silently
+        # would leave the old (possibly misaligned) array in place.
+        n_deleted = store.delete_sar_scenes(stable_key, settings.PROCESSING_VERSION)
+        if n_deleted:
+            logger.info("force_recompute: purged %d stale SAR scenes for %s", n_deleted, stable_key)
+
     try:
         location_key, score_result, features, quality, date_start, series = await run_score(
             geom_geojson=req.geometry.model_dump(),

@@ -979,6 +979,22 @@ class DuckDBStore:
             result.setdefault(variable, []).append((int(year), int(month), value))
         return result
 
+    def delete_sar_scenes(self, location_key: str, processing_version: str) -> int:
+        """Delete all stored SAR scene arrays for a location+version.
+
+        Called before a forced recompute to ensure stale arrays from previous
+        pipeline runs (possibly read with a different window geometry) are
+        removed before the fresh COG reads are stored.
+        """
+        if self._conn is None:
+            return 0
+        result = self._conn.execute(
+            "DELETE FROM sar_scene_bands WHERE location_key = ? AND processing_version = ? RETURNING 1",
+            [location_key, processing_version],
+        ).fetchall()
+        self._conn.commit()
+        return len(result)
+
     def delete_location(self, location_key: str) -> dict[str, int]:
         """Delete all data for a location from every table.
 
