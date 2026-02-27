@@ -58,27 +58,30 @@ def _read_vv_dn_sync(
     """Read a 64x64 window of VV uint16 DN from a Sentinel-1 GRD file.
 
     S1 GRD Level-1 files use GCP-based geolocation (no affine transform).
-    To guarantee a consistent ground footprint across all orbital passes,
-    rasterio.warp.reproject() is called with the file's native GCPs and an
-    explicit UTM destination transform that covers exactly GROUND_EXTENT_M
-    metres centred on the target point.
+    Two-step approach to guarantee a fixed UTM footprint across all orbits:
 
-    This is more robust than WarpedVRT approaches because:
-    - The output geographic extent is fixed in UTM regardless of orbit or
-      native pixel spacing -- no pixel-coordinate arithmetic needed.
-    - reproject() inverts the GCP polynomial per output pixel, which works
-      reliably for a small target window embedded in a large GCP scene.
-    - Full-scene WarpedVRT + window computation (previous approach) produced
-      identical results to the original code because with native_res ≈ 10 m
-      and ground_extent_m = 640 m, half_w ≈ 32 = size//2.
-    - Explicit small WarpedVRT with target transform returns all zeros with
-      GCP polynomial sources (GDAL initialization limitation).
+    Step 1 -- GCP → full UTM scene (WarpedVRT):
+      Creates a full-scene virtual raster in UTM with a proper affine
+      transform. This is known to work reliably with GCP polynomial sources.
+
+    Step 2 -- full UTM VRT → fixed 640 m window (reproject):
+      reproject() from an affine-transform source (the WarpedVRT) works
+      without GDAL initialization issues. The destination is exactly
+      (cx±320 m, cy±320 m) in UTM at 10 m/pixel, orbit-independent.
+
+    Alternatives that do NOT work:
+    - Explicit small WarpedVRT with target transform: GDAL returns all zeros
+      when initializing a tiny-extent warp from a GCP polynomial source.
+    - reproject() directly from GCP source to small target: same issue.
+    - Full-scene WarpedVRT + pixel window arithmetic: mathematically
+      equivalent to the original code (native_res ≈ 10 m, half_w ≈ 32 = size//2).
 
     Runs synchronously -- call from an asyncio executor.
     """
     import rasterio
     from rasterio.crs import CRS as RioCRS
     from rasterio.transform import from_bounds
+    from rasterio.vrt import WarpedVRT
     from rasterio.warp import reproject as rio_reproject, Resampling
 
     key = _parse_s1_s3_key(href)
@@ -95,8 +98,7 @@ def _read_vv_dn_sync(
     # Fixed ground extent: 64 pixels × 10 m/px = 640 m on each side.
     half = size * 10.0 / 2.0  # 320 m
 
-    # Destination: exactly (cx±320 m, cy±320 m) in UTM, 64×64 pixels.
-    # from_bounds produces a north-up transform (negative y pixel size).
+    # Destination transform: exactly (cx±320 m, cy±320 m), north-up, 10 m/px.
     dst_transform = from_bounds(
         left=cx - half, bottom=cy - half,
         right=cx + half, top=cy + half,
@@ -106,32 +108,31 @@ def _read_vv_dn_sync(
     try:
         with rasterio.Env(**_GDAL_ENV):
             with rasterio.open(vsis3_path) as src:
-                gcps, gcp_crs = src.gcps
-                destination = np.zeros((size, size), dtype=np.float32)
-                rio_reproject(
-                    source=rasterio.band(src, 1),
-                    destination=destination,
-                    gcps=gcps,
-                    src_crs=gcp_crs,
-                    dst_crs=target_crs,
-                    dst_transform=dst_transform,
-                    resampling=Resampling.bilinear,
-                )
-                data = destination.astype(np.uint16)
-                logger.info(
-                    "SAR read OK key=%.80s cx=%.1f cy=%.1f "
-                    "%dx%d min=%d max=%d mean=%.1f",
-                    key, cx, cy, size, size,
-                    int(data.min()), int(data.max()), float(data.mean()),
-                )
-                if data.max() == 0:
-                    logger.warning(
-                        "SAR read returned all zeros key=%.80s -- "
-                        "GCP reproject may have missed the source window",
-                        key,
+                # Step 1: GCP polynomial → full UTM scene (affine transform).
+                with WarpedVRT(src, crs=target_crs) as vrt:
+                    # Step 2: fixed UTM window from the affine-based VRT.
+                    destination = np.zeros((size, size), dtype=np.float32)
+                    rio_reproject(
+                        source=rasterio.band(vrt, 1),
+                        destination=destination,
+                        dst_crs=target_crs,
+                        dst_transform=dst_transform,
+                        resampling=Resampling.bilinear,
                     )
-                    return None
-                return data
+                    data = destination.astype(np.uint16)
+                    logger.info(
+                        "SAR read OK key=%.80s cx=%.1f cy=%.1f "
+                        "%dx%d min=%d max=%d mean=%.1f",
+                        key, cx, cy, size, size,
+                        int(data.min()), int(data.max()), float(data.mean()),
+                    )
+                    if data.max() == 0:
+                        logger.warning(
+                            "SAR read returned all zeros key=%.80s",
+                            key,
+                        )
+                        return None
+                    return data
     except Exception as exc:
         logger.warning("SAR VV read failed key=%.80s err=%s", key, exc)
         return None
