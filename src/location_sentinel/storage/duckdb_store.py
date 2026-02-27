@@ -542,17 +542,30 @@ class DuckDBStore:
         """Shared location listing query, optionally filtered."""
         rows = self._conn.execute(
             f"""
+            WITH latest_features AS (
+                SELECT location_key, processing_version
+                FROM location_features
+                QUALIFY ROW_NUMBER() OVER (PARTITION BY location_key ORDER BY updated_at DESC) = 1
+            ),
+            latest_scores AS (
+                SELECT location_key, score_version
+                FROM location_scores
+                QUALIFY ROW_NUMBER() OVER (PARTITION BY location_key ORDER BY updated_at DESC) = 1
+            )
             SELECT pg.location_key, pg.geojson_text, pg.name, pg.customer_id,
-                   c.name AS customer_name, pg.updated_at
+                   c.name AS customer_name, pg.updated_at,
+                   lf.processing_version, ls.score_version
             FROM location_geometries pg
             LEFT JOIN customers c ON pg.customer_id = c.customer_id
+            LEFT JOIN latest_features lf ON lf.location_key = pg.location_key
+            LEFT JOIN latest_scores ls ON ls.location_key = pg.location_key
             {where}
             ORDER BY pg.updated_at DESC
             """,
             params,
         ).fetchall()
         result = []
-        for location_key, geojson_text, name, customer_id, customer_name, updated_at in rows:
+        for location_key, geojson_text, name, customer_id, customer_name, updated_at, processing_version, score_version in rows:
             try:
                 geojson = json.loads(geojson_text)
                 centroid = shape(geojson).centroid
@@ -566,6 +579,8 @@ class DuckDBStore:
                 "customer_name": customer_name,
                 "centroid": centroid_lonlat,
                 "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
+                "processing_version": processing_version,
+                "score_version": score_version,
                 "report_url": f"/v1/location/{location_key}/report",
                 "thumbnail_url": f"/v1/thumbnail/{location_key}.png",
             })

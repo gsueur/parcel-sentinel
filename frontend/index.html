@@ -70,6 +70,13 @@
     .card-key { font-size: 0.65rem; color: var(--faint); margin-top: 4px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .card-computing { font-size: 0.75rem; color: var(--accent); margin-top: 3px; }
     .card-failed { font-size: 0.75rem; color: var(--danger); margin-top: 3px; }
+    .badge-stale {
+      display: inline-block; margin-top: 5px;
+      font-size: 0.65rem; font-weight: 600; letter-spacing: 0.02em;
+      background: #fef3c7; color: #92400e;
+      border: 1px solid #fcd34d; border-radius: 3px;
+      padding: 1px 6px; vertical-align: middle;
+    }
     .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
     .card-link { display: block; text-decoration: none; color: inherit; }
     .card-link:hover .card-name { color: var(--accent); }
@@ -239,6 +246,7 @@ L.Icon.Default.mergeOptions({
 });
 
 let map = null, marker = null, drawnGeometry = null;
+let serverVersions = { processing: null, score: null };
 const filterCustomerId = new URLSearchParams(window.location.search).get('customer_id');
 
 // ── LOCATIONS ─────────────────────────────────────────────────────────────────────
@@ -252,6 +260,7 @@ async function loadLocations() {
       const data = await res.json();
       locations = data.locations;
       count = data.count;
+      serverVersions = data.server_versions || { processing: null, score: null };
       showCustomerBadge(data.customer.name);
     } else {
       const res = await fetch(`${API_URL}/v1/locations`);
@@ -259,6 +268,7 @@ async function loadLocations() {
       const data = await res.json();
       locations = data.locations;
       count = data.count;
+      serverVersions = data.server_versions || { processing: null, score: null };
     }
     // Preserve any pending cards already in the grid
     const pending = [...document.querySelectorAll('.card-pending')];
@@ -288,6 +298,13 @@ function renderGrid(locations) {
     const customer = loc.customer_name ? `<div class="card-customer">${loc.customer_name}</div>` : '';
     const keyShort = loc.location_key.slice(0, 24) + '&hellip;';
     const key = loc.location_key;
+    const isStale = serverVersions.processing && (
+      loc.processing_version !== serverVersions.processing ||
+      loc.score_version !== serverVersions.score
+    );
+    const staleBadge = isStale
+      ? `<span class="badge-stale" title="Stored: processing=${loc.processing_version || 'none'}, score=${loc.score_version || 'none'}&#10;Current: processing=${serverVersions.processing}, score=${serverVersions.score}">Update available</span>`
+      : '';
     return `
       <div class="card">
         <a class="card-link" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
@@ -298,6 +315,7 @@ function renderGrid(locations) {
             <div class="card-meta">${meta}</div>
             ${customer}
             <div class="card-key">${keyShort}</div>
+            ${staleBadge}
           </div>
         </a>
         <div class="card-actions">

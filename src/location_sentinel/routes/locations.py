@@ -258,7 +258,14 @@ async def list_locations(format: str = Query(default="json", pattern="^(json|htm
     if format == "html":
         return HTMLResponse(content=_build_html(locations))
 
-    return JSONResponse(content={"count": len(locations), "locations": locations})
+    return JSONResponse(content={
+        "count": len(locations),
+        "server_versions": {
+            "processing": settings.PROCESSING_VERSION,
+            "score": settings.SCORE_VERSION,
+        },
+        "locations": locations,
+    })
 
 
 def _build_html(locations: list[dict]) -> str:

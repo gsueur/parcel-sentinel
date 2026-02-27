@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from ..config import settings
 from ..storage.duckdb_store import store
 
 router = APIRouter()
@@ -37,7 +38,15 @@ async def get_customer_locations_json(customer_id: str):
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found")
     locations = store.get_customer_locations(customer_id)
-    return {"customer": customer, "count": len(locations), "locations": locations}
+    return {
+        "customer": customer,
+        "count": len(locations),
+        "server_versions": {
+            "processing": settings.PROCESSING_VERSION,
+            "score": settings.SCORE_VERSION,
+        },
+        "locations": locations,
+    }
 
 
 # ------------------------------------------------------------------
