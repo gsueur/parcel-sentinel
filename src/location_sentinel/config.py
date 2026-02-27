@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.8.0"
-    SCORE_VERSION: str = "risk-v1.8.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.9.0"
+    SCORE_VERSION: str = "risk-v1.9.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"
@@ -108,9 +108,10 @@ class Settings(BaseSettings):
     NBR_ANOMALY_THRESHOLD: float = 0.15   # NBR must drop this far below seasonal climatology to count as fire anomaly
     # Minimum consecutive months of NBR anomaly / low absolute NBR required to
     # count as a genuine fire event. Single-month agricultural dips (harvest,
-    # bare fallow) are filtered out; persistent fire scars qualify.
-    # Applies to both nbr_burn_freq_5y feature and SAR burn suppression.
-    NBR_MIN_CONSECUTIVE: int = 2
+    # bare fallow) and two-month Mediterranean dry-season stress are filtered out;
+    # persistent fire scars (≥3 months) qualify.
+    # Applies to nbr_burn_freq_5y feature, SAR burn suppression, and chart annotation.
+    NBR_MIN_CONSECUTIVE: int = 3
     NDSI_SNOW_THRESHOLD: float = 0.4      # NDSI above → snow-covered
     BSI_BARE_THRESHOLD: float = 0.0       # BSI above → bare soil exposed
 
