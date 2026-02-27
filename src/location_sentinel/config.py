@@ -75,8 +75,10 @@ class Settings(BaseSettings):
     COG_WINDOW_SIZE: int = 64
 
     # Scene selection
-    MAX_SCENES_PER_MONTH: int = 2
-    MAX_TOTAL_SCENES: int = 120
+    # 1 scene/month keeps quality for long-term features (means, trends, anomaly freq)
+    # while halving S3 read count vs the previous default of 2.
+    MAX_SCENES_PER_MONTH: int = 1
+    MAX_TOTAL_SCENES: int = 60
 
     # Geometry limits
     MAX_PARCEL_AREA_SQM: float = 5_000_000.0  # 500 ha
@@ -85,7 +87,9 @@ class Settings(BaseSettings):
     DEFAULT_POINT_BUFFER_M: float = 100.0
 
     # COG reading
-    MAX_CONCURRENT_COG_READS: int = 8
+    # S3 can handle high concurrency; 32 is a reasonable ceiling before bandwidth
+    # saturation on a server instance. Previously 8, which serialised too aggressively.
+    MAX_CONCURRENT_COG_READS: int = 32
 
     # Cache
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
