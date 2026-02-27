@@ -28,12 +28,19 @@ def compute_trend_slope(records: list[MonthlyRecord]) -> float | None:
 def compute_anomaly_frequency(
     records: list[MonthlyRecord],
     threshold: float = settings.NDVI_ANOMALY_THRESHOLD,
+    min_consecutive: int = 1,
 ) -> float | None:
-    """Fraction of months where anomaly < -threshold vs monthly climatology.
+    """Fraction of observed months where anomaly < -threshold vs monthly climatology.
+
+    When min_consecutive > 1, only months that belong to a run of at least
+    that many calendar-consecutive anomaly observations are counted. This
+    discriminates persistent disturbances (fire scars, which depress NBR for
+    months to years) from transient ones (harvest, single-month drought) that
+    produce isolated dips before snow or regrowth resets the signal.
 
     Returns fraction in [0, 1]. None if insufficient data.
     """
-    # Build monthly climatology
+    # Build monthly climatology from all valid records
     by_calendar_month: dict[int, list[float]] = {}
     for rec in records:
         if rec.mean is None:
@@ -46,24 +53,52 @@ def compute_anomaly_frequency(
 
     climatology = {m: np.mean(vals) for m, vals in by_calendar_month.items()}
 
-    # Count anomalies
-    observed = 0
-    anomaly_count = 0
-    for rec in records:
-        if rec.mean is None:
-            continue
-        cal_month = int(rec.month.split("-")[1])
-        clim = climatology.get(cal_month)
-        if clim is None:
-            continue
-        observed += 1
-        if rec.mean - clim < -threshold:
-            anomaly_count += 1
-
+    # Work on sorted valid records only (chronological order required for run detection)
+    sorted_recs = sorted((r for r in records if r.mean is not None), key=lambda r: r.month)
+    observed = len(sorted_recs)
     if observed == 0:
         return None
 
-    return round(anomaly_count / observed, 4)
+    # Pre-compute per-month anomaly flags
+    is_anomaly = []
+    for rec in sorted_recs:
+        cal_month = int(rec.month.split("-")[1])
+        clim = climatology.get(cal_month)
+        is_anomaly.append(clim is not None and (rec.mean - clim) < -threshold)
+
+    if min_consecutive <= 1:
+        return round(sum(is_anomaly) / observed, 4)
+
+    # Identify qualifying months: those in a run of >= min_consecutive
+    # calendar-consecutive anomaly observations. A gap in observations breaks the run.
+    def _next_month(m: str) -> str:
+        y, mo = int(m[:4]), int(m[5:7])
+        mo += 1
+        if mo > 12:
+            mo, y = 1, y + 1
+        return f"{y:04d}-{mo:02d}"
+
+    qualifying = [False] * observed
+    i = 0
+    while i < observed:
+        if not is_anomaly[i]:
+            i += 1
+            continue
+        # Extend run while months are anomalous AND calendar-consecutive
+        run_start = i
+        j = i + 1
+        while (
+            j < observed
+            and is_anomaly[j]
+            and sorted_recs[j].month == _next_month(sorted_recs[j - 1].month)
+        ):
+            j += 1
+        if j - run_start >= min_consecutive:
+            for k in range(run_start, j):
+                qualifying[k] = True
+        i = j
+
+    return round(sum(qualifying) / observed, 4)
 
 
 def compute_wetness_persistence(
@@ -110,6 +145,55 @@ def compute_burn_frequency(
         return None
     burn_count = sum(1 for r in valid if r.mean < threshold)
     return round(burn_count / len(valid), 4)
+
+
+def get_persistent_burn_months(
+    records: list[MonthlyRecord],
+    threshold: float = settings.NBR_BURN_THRESHOLD,
+    min_consecutive: int = 2,
+) -> set[str]:
+    """Return month keys belonging to genuine burn events.
+
+    A genuine burn event requires at least min_consecutive calendar-consecutive
+    months where NBR < threshold. Single-month agricultural dips (harvest,
+    bare fallow) are filtered out; only persistent fire scars qualify.
+
+    Used for SAR burn suppression to avoid discarding flood data from
+    months where normal agricultural activity, not fire, depresses NBR.
+    """
+    sorted_recs = sorted((r for r in records if r.mean is not None), key=lambda r: r.month)
+    if not sorted_recs:
+        return set()
+
+    is_burn = [r.mean < threshold for r in sorted_recs]
+
+    def _next_month(m: str) -> str:
+        y, mo = int(m[:4]), int(m[5:7])
+        mo += 1
+        if mo > 12:
+            mo, y = 1, y + 1
+        return f"{y:04d}-{mo:02d}"
+
+    burn_months: set[str] = set()
+    i = 0
+    while i < len(sorted_recs):
+        if not is_burn[i]:
+            i += 1
+            continue
+        run_start = i
+        j = i + 1
+        while (
+            j < len(sorted_recs)
+            and is_burn[j]
+            and sorted_recs[j].month == _next_month(sorted_recs[j - 1].month)
+        ):
+            j += 1
+        if j - run_start >= min_consecutive:
+            for k in range(run_start, j):
+                burn_months.add(sorted_recs[k].month)
+        i = j
+
+    return burn_months
 
 
 def compute_snow_persistence(

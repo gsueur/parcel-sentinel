@@ -14,6 +14,7 @@ from ..compute.features import (
     compute_snow_persistence,
     compute_trend_slope,
     compute_wetness_persistence,
+    get_persistent_burn_months,
 )
 from ..config import settings
 from ..geometry.normalize import geojson_to_shapely
@@ -95,7 +96,9 @@ async def run_features(
         # genuine fire events, which produce an abrupt NBR departure from the site norm.
         # NBR_BURN_THRESHOLD (absolute) is kept separately for SAR suppression.
         features["nbr_burn_freq_5y"] = compute_anomaly_frequency(
-            nbr_records, threshold=settings.NBR_ANOMALY_THRESHOLD
+            nbr_records,
+            threshold=settings.NBR_ANOMALY_THRESHOLD,
+            min_consecutive=settings.NBR_MIN_CONSECUTIVE,
         )
 
     # NDSI features -- snow cover persistence
@@ -149,15 +152,18 @@ async def run_features(
             rec.month for rec in ndsi_records
             if rec.mean is not None and rec.mean > settings.NDSI_SNOW_THRESHOLD
         }
-        # Exclude months where co-located S2 NBR confirms a burn scar.
+        # Exclude months where co-located S2 NBR confirms a persistent burn scar.
         # Post-fire bare soil and ash have low VV backscatter that mimics calm
-        # water at the DN threshold, producing false flood signals. Unlike snow
-        # suppression, burn suppression is safe to apply to the anomaly metric
-        # too: a burn scar cannot be mistaken for an actual flood event.
-        burn_months: set[str] = {
-            rec.month for rec in nbr_records
-            if rec.mean is not None and rec.mean < settings.NBR_BURN_THRESHOLD
-        }
+        # water at the DN threshold, producing false flood signals.
+        # We require NBR_MIN_CONSECUTIVE consecutive months of low absolute NBR
+        # to suppress a month: single-month agricultural dips (harvest, bare fallow)
+        # produce NBR < NBR_BURN_THRESHOLD but should NOT suppress flood data,
+        # because post-harvest soil roughness keeps SAR VV above the water threshold.
+        burn_months: set[str] = get_persistent_burn_months(
+            nbr_records,
+            threshold=settings.NBR_BURN_THRESHOLD,
+            min_consecutive=settings.NBR_MIN_CONSECUTIVE,
+        )
         excluded_months = snow_months | burn_months
         non_snow_non_burn = [
             (f, orbit) for mk, f, orbit in sar_scene_fracs
