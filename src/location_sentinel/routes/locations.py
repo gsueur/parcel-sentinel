@@ -169,35 +169,50 @@ class _RegenerateRequest(BaseModel):
     lookback_years: int = Field(default=5, ge=1, le=10)
 
 
-@router.post("/location/{location_key}/regenerate", response_model=LocationResponse)
+@router.post("/location/{location_key}/regenerate", status_code=202)
 async def regenerate_location(location_key: str, req: _RegenerateRequest = _RegenerateRequest()):
-    """Recompute and overwrite data for an existing location using its stored geometry.
+    """Submit regeneration as an async job. Returns job_id to poll via GET /v1/jobs/{job_id}.
 
     The location_key is preserved exactly -- no re-derivation from geometry.
     Use this instead of re-POSTing to /locations to avoid creating duplicate entries.
     """
-    trace_id = uuid.uuid4().hex[:12]
-
     location_info = store.get_location_info(location_key)
     if location_info is None:
         raise HTTPException(status_code=404, detail=f"Location {location_key!r} not found")
 
+    existing = job_store.find_active(location_key)
+    if existing:
+        return {"job_id": existing.job_id, "status": existing.status}
+
+    job = job_store.create(location_key)
+    asyncio.create_task(_run_regenerate_job(job.job_id, location_key, location_info, req))
+    return {"job_id": job.job_id, "status": "pending"}
+
+
+async def _run_regenerate_job(
+    job_id: str,
+    location_key: str,
+    location_info: dict,
+    req: _RegenerateRequest,
+) -> None:
+    trace_id = uuid.uuid4().hex[:12]
     geom_dict = location_info["geojson"]
     name = location_info["name"]
     de = req.date_end.isoformat()
 
+    job_store.update(job_id, status="running")
+
     try:
-        lk, score_result, features, quality, date_start, series = await run_score(
+        _lk, score_result, features, quality, date_start, series = await run_score(
             geom_geojson=geom_dict,
             date_end=de,
             lookback_years=req.lookback_years,
             location_key=location_key,
         )
-    except GeometryValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         logger.exception("Regeneration failed location_key=%s trace_id=%s", location_key, trace_id)
-        raise HTTPException(status_code=500, detail=f"Computation failed (trace_id={trace_id})")
+        job_store.update(job_id, status="failed", error=f"Computation failed (trace_id={trace_id})")
+        return
 
     store.save_geometry(location_key, geom_dict, name=name)
     store.save_scores(location_key, settings.SCORE_VERSION, req.lookback_years, {
@@ -212,28 +227,10 @@ async def regenerate_location(location_key: str, req: _RegenerateRequest = _Rege
     store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,
                         features, quality.model_dump())
     store.save_timeseries(location_key, settings.PROCESSING_VERSION, "monthly", series)
-
     cache.clear()
 
-    return LocationResponse(
-        location_key=location_key,
-        name=name,
-        processing_version=settings.PROCESSING_VERSION,
-        score_version=settings.SCORE_VERSION,
-        date_window=DateWindow(start=date_start, end=de),
-        scores={
-            "drought_score": score_result.drought_score,
-            "wetness_score": score_result.wetness_score,
-            "fire_exposure_score": score_result.fire_exposure_score,
-            "heat_mitigation_score": score_result.heat_mitigation_score,
-            "flood_risk_score": score_result.flood_risk_score,
-            "heat_stress_score": score_result.heat_stress_score,
-            "composite_score": score_result.composite_score,
-        },
-        features=features,
-        quality=quality,
-        map_links=build_map_links(location_key, geom_dict),
-    )
+    job_store.update(job_id, status="ready", location_key=location_key,
+                     report_url=f"/v1/location/{location_key}/report", name=name)
 
 
 @router.delete("/location/{location_key}")

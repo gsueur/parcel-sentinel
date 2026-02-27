@@ -584,6 +584,7 @@ async function regenerateCard(btn) {
 
   actionsEl.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:0.73rem;color:var(--accent)"><div class="spinner" style="width:13px;height:13px;border-width:2px"></div>Regenerating\u2026</div>`;
 
+  let jobId;
   try {
     const res = await fetch(`${API_URL}/v1/location/${key}/regenerate`, {
       method: 'POST',
@@ -594,12 +595,42 @@ async function regenerateCard(btn) {
       const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
-    await loadLocations();
+    const data = await res.json();
+    jobId = data.job_id;
   } catch (e) {
     const computing = card.querySelector('.card-thumb-computing');
     if (computing) computing.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
     actionsEl.innerHTML = `<span style="font-size:0.72rem;color:var(--danger)">Failed: ${e.message}</span>`;
+    return;
   }
+
+  // Poll until done
+  let elapsed = 0;
+  const interval = setInterval(async () => {
+    elapsed += 3;
+    try {
+      const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const job = await res.json();
+
+      if (job.status === 'ready') {
+        clearInterval(interval);
+        await loadLocations();
+      } else if (job.status === 'failed') {
+        clearInterval(interval);
+        const computing = card.querySelector('.card-thumb-computing');
+        if (computing) computing.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
+        actionsEl.innerHTML = `<span style="font-size:0.72rem;color:var(--danger)">Failed: ${job.error}</span>`;
+      } else {
+        actionsEl.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:0.73rem;color:var(--accent)"><div class="spinner" style="width:13px;height:13px;border-width:2px"></div>Regenerating\u2026 ${elapsed}s</div>`;
+      }
+    } catch (e) {
+      clearInterval(interval);
+      const computing = card.querySelector('.card-thumb-computing');
+      if (computing) computing.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
+      actionsEl.innerHTML = `<span style="font-size:0.72rem;color:var(--danger)">Failed: ${e.message}</span>`;
+    }
+  }, 3000);
 }
 
 function showDeleteConfirm(btn) {
