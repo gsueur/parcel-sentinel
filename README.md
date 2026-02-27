@@ -152,12 +152,12 @@ Conversion: `sigma0_dB ≈ 20 * log10(DN) - 83`
 
 Current threshold: `SAR_WATER_DN_THRESHOLD = 75` (above noise floor, below land mean). A pixel is classified as water when `0 < DN < 75`. A scene is classified as flooded when at least 35% of the 64x64 window pixels meet this criterion (`SAR_MIN_WATER_PIXEL_FRACTION = 0.35`).
 
-For the chronic frequency metric two thresholds are evaluated and the higher frequency is returned:
+For the chronic frequency metric two thresholds are evaluated per orbit and the higher frequency is returned:
 
 - **Absolute:** scene water fraction > 35% (fixed). Works well for inland and open-water locations.
-- **Relative:** scene water fraction > location median + 15pp (`SAR_RELATIVE_FLOOD_DELTA = 0.15`). Handles near-water locations (coastal lagoons, river banks, tidal flats) whose baseline water fraction already sits at 15-25%, making the fixed 35% threshold too strict to detect genuine above-baseline flood episodes.
+- **Adaptive (MAD-based):** per orbit, `threshold = max(median + SAR_FLOOD_MAD_K × MAD, SAR_MIN_ANOMALY_FRACTION)`. MAD is resistant to inflation by the flood outliers it is designed to detect. A 0.05 floor prevents statistical noise at low-baseline orbits from triggering false positives.
 
-`sar_water_freq_5y = max(absolute_frequency, relative_frequency)`
+`sar_water_freq_5y = max over orbits of max(absolute_freq, anomaly_freq)`
 
 ---
 
@@ -331,7 +331,7 @@ BSI frequency is also used for urban detection: locations where BSI > 0 in a hig
 ### Two complementary metrics
 
 **Chronic: `sar_water_freq_5y`**
-Fraction of SAR scenes (after snow suppression) where the water pixel fraction exceeds the flood threshold. Two thresholds are evaluated -- absolute (35%) and relative (location median + 15pp) -- and the higher frequency is returned. See [SAR calibration](#sentinel-1-grd-sar) for rationale. Measures persistent or recurring water over the full 5-year window.
+Fraction of SAR scenes (after snow and burn suppression, stratified by relative orbit) where the water pixel fraction exceeds the flood threshold. Two thresholds are evaluated per orbit -- absolute (35%) and adaptive MAD-based -- and the higher frequency is returned. See [SAR calibration](#sentinel-1-grd-sar) for rationale. Measures persistent or recurring water over the full 5-year window.
 
 **Acute: `sar_flood_anomaly`**
 Compares the recent water fraction (last 2 calendar months) to the historical seasonal baseline (median for the same calendar months in prior years). Returns the excess above the seasonal median, clamped to [0, 1]. Detects sudden flood events not captured by the chronic metric.
@@ -365,7 +365,7 @@ Long-term features computed from the full date window (default 5 years):
 | `ndmi_mean_5y` | Mean NDMI over the period |
 | `ndmi_moisture_stress_freq_5y` | Fraction of months with NDMI < 0 (vegetation moisture stress) |
 | `nbr_mean_5y` | Mean NBR over the period |
-| `nbr_burn_freq_5y` | Fraction of months with NBR < 0.1 (burn signal) |
+| `nbr_burn_freq_5y` | Fraction of months where NBR drops anomalously below the site's seasonal climatology (anomaly-based, requires ≥ NBR_MIN_CONSECUTIVE consecutive months) |
 | `ndsi_snow_persistence_5y` | Fraction of months with NDSI > 0.4 (snow covered) |
 | `bsi_mean_5y` | Mean BSI over the period |
 | `bsi_bare_soil_freq_5y` | Fraction of months with BSI > 0 (bare soil exposed) |
@@ -445,8 +445,10 @@ wetness_score = ndwi_wetness_persistence_5y * 100
 ### Fire exposure score
 
 ```
-fire_exposure_score = nbr_burn_freq_5y * 100
+fire_exposure_score = min(100, nbr_burn_freq_5y * 350)
 ```
+
+`nbr_burn_freq_5y` is anomaly-based: it counts only months where NBR drops more than 0.15 units below the site's own seasonal climatology, in runs of at least `NBR_MIN_CONSECUTIVE` (default 3) calendar-consecutive months. This removes seasonal patterns (Mediterranean dry season, dormant prairie, harvested cropland) that produce persistently low absolute NBR without being fire-related. Only abrupt departures from the site's own seasonal norm are counted.
 
 Suppressed to 0 for urban locations (NBR false-positives on impervious surfaces).
 
@@ -462,6 +464,13 @@ Higher canopy = more shade = lower heat risk. This score is **inverted** in the 
 
 ```
 flood_risk_score = max(sar_water_freq_5y, sar_flood_anomaly) * 100
+```
+
+**NDWI optical cross-validation veto:** if the S2 optical `ndwi_wetness_persistence_5y` is below 5% (less than one-in-twenty observed months shows surface water) but SAR shows a significant water fraction, the two sensors contradict each other. Likely causes: coastal specular C-band backscatter from ocean swell, airport runways, or flat smooth rooftops -- all produce low VV returns that mimic water but are invisible in optical NDWI. In this case the raw flood score is multiplied by `SAR_NDWI_VETO_FACTOR = 0.25`. The score is not zeroed entirely in case of partial genuine flooding that the NDWI threshold misses.
+
+```
+if ndwi_wetness_persistence_5y < 0.05 and flood_risk_score > 0:
+    flood_risk_score *= 0.25
 ```
 
 ### Heat stress score
@@ -549,8 +558,8 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.5.0",
-  "score_version": "risk-v1.4.0",
+  "processing_version": "s2l2a-v1.10.0",
+  "score_version": "risk-v1.11.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -625,11 +634,14 @@ Returns the same shape as `POST /v1/locations`.
 
 Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox)
+- Analysis period and processing/score versions in the header
 - Per-index time series charts (Chart.js)
-- SAR water fraction chart with seasonal baseline and flood alert banner
+- SAR water fraction chart with seasonal baseline and flood alert banner; burn-suppressed months annotated
 - TerraClimate charts: monthly tmax/tmin temperature and PPT/VPD dual-axis
 - Feature table grouped by theme with contextual descriptions
 - Six risk score gauges with explanations
+- Quality metadata with colour-coded indicators (green / amber / red) for coverage, cloud fraction, and months observed
+- Data quality disclaimer explaining the satellite-derived nature of estimates and known limitations
 - Climate zone profile and composite weight breakdown
 
 Example: `GET /v1/location/a1b2c3/report`
@@ -648,8 +660,8 @@ Response: `image/png`, `Cache-Control: public, max-age=86400`
 
 Returns all stored locations ordered by last-updated timestamp.
 
-- `?format=json` (default): JSON list
-- `?format=html`: Browsable index page with thumbnails and links to individual reports
+- `?format=json` (default): JSON response with a `server_versions` envelope and a `locations` array. Each location includes `processing_version` and `score_version` (the versions used when that location was last computed). Clients can compare these against `server_versions.processing` and `server_versions.score` to detect stale entries that need regeneration.
+- `?format=html`: Browsable index page with thumbnails, links to individual reports, and "Update available" badges for locations computed with older versions
 
 ---
 
@@ -780,8 +792,8 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.5.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.4.0` | Cache key tag for scores |
+| `PROCESSING_VERSION` | `s2l2a-v1.10.0` | Cache key tag for features |
+| `SCORE_VERSION` | `risk-v1.11.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2
@@ -807,7 +819,10 @@ All settings are environment variables. Defaults work out of the box.
 | `SAR_AWS_REGION` | `eu-central-1` | S1 bucket region |
 | `SAR_WATER_DN_THRESHOLD` | `75` | VV DN below this → water pixel (see calibration table above) |
 | `SAR_MIN_WATER_PIXEL_FRACTION` | `0.35` | Min water pixel fraction for absolute flood classification |
-| `SAR_RELATIVE_FLOOD_DELTA` | `0.15` | Relative threshold delta: scenes where water_frac > location_median + delta also count as flooded |
+| `SAR_FLOOD_MAD_K` | `2.0` | MAD multiplier for orbit-stratified adaptive threshold |
+| `SAR_MIN_ANOMALY_FRACTION` | `0.05` | Floor on adaptive threshold (prevents noise at low-baseline orbits) |
+| `SAR_NDWI_CORROBORATION_THRESHOLD` | `0.05` | Optical water persistence below which SAR flood score is discounted (no NDWI corroboration) |
+| `SAR_NDWI_VETO_FACTOR` | `0.25` | Multiplier applied to flood score when NDWI corroboration is absent |
 | `SAR_MAX_SCENES_PER_MONTH` | `2` | Max SAR scenes per month |
 | `SAR_MAX_TOTAL_SCENES` | `120` | Hard cap on total SAR scenes |
 
@@ -825,7 +840,9 @@ All settings are environment variables. Defaults work out of the box.
 | `NDVI_ANOMALY_THRESHOLD` | `0.1` | NDVI units below climatology = anomaly |
 | `NDWI_WET_THRESHOLD` | `0.0` | NDWI above → surface water |
 | `NDMI_STRESS_THRESHOLD` | `0.0` | NDMI below → moisture stress |
-| `NBR_BURN_THRESHOLD` | `0.1` | NBR below → burn signal |
+| `NBR_BURN_THRESHOLD` | `0.1` | NBR below → burn signal (cosmetic only: SAR chart bar colour) |
+| `NBR_ANOMALY_THRESHOLD` | `0.15` | NBR must drop this far below seasonal climatology to count as fire anomaly |
+| `NBR_MIN_CONSECUTIVE` | `3` | Minimum calendar-consecutive anomaly months required for fire detection and SAR burn suppression |
 | `NDSI_SNOW_THRESHOLD` | `0.4` | NDSI above → snow covered |
 | `BSI_BARE_THRESHOLD` | `0.0` | BSI above → bare soil |
 

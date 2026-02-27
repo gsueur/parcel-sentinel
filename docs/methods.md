@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.7.0` / scoring `risk-v1.7.0`
+**Version:** processing `s2l2a-v1.10.0` / scoring `risk-v1.11.0`
 **Date:** 2026-02-27
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -211,7 +211,7 @@ Reference: Gao (1996), Wilson & Sader (2002).
 NBR = (B08 − B12) / (B08 + B12)
 ```
 
-Range: [−1, +1]. Healthy unburned vegetation has high NIR and low SWIR2 (NBR > 0.3). Post-fire areas lose chlorophyll (NIR decreases) and expose char/soil (SWIR2 increases), driving NBR toward negative values. Threshold for burn signal: NBR < 0.1 (`NBR_BURN_THRESHOLD`).
+Range: [−1, +1]. Healthy unburned vegetation has high NIR and low SWIR2 (NBR > 0.3). Post-fire areas lose chlorophyll (NIR decreases) and expose char/soil (SWIR2 increases), driving NBR toward negative values. An absolute value of NBR < 0.1 (`NBR_BURN_THRESHOLD`) is used for chart bar colour annotation. Fire detection and SAR burn suppression use an anomaly-based approach (see section 7.4): a month is flagged only when NBR drops more than `NBR_ANOMALY_THRESHOLD` below the site's own seasonal climatology.
 
 Reference: Key & Benson (1999).
 
@@ -298,21 +298,26 @@ ndmi_moisture_stress_freq_5y = count(NDMI_monthly < 0) / count(observed months)
 
 **`nbr_mean_5y`** -- Mean of all valid monthly NBR values.
 
-**`nbr_burn_freq_5y`** -- Fraction of observed months where NBR drops anomalously below the site's own seasonal climatology:
+**`nbr_burn_freq_5y`** -- Fraction of observed months where NBR drops anomalously below the site's own seasonal climatology, in runs of at least `NBR_MIN_CONSECUTIVE` calendar-consecutive months:
 
 ```
 For each observed month (year y, calendar month m):
     climatology[m] = mean of all NBR values for calendar month m across all years
     fire_anomaly   = True  iff  NBR[y,m] < climatology[m] − NBR_ANOMALY_THRESHOLD (0.15)
 
-nbr_burn_freq_5y = count(fire_anomaly == True) / count(observed months)
+Qualifying months: those belonging to a run of ≥ NBR_MIN_CONSECUTIVE (default 3) calendar-
+consecutive anomaly observations. A gap in the observation record breaks the run.
+
+nbr_burn_freq_5y = count(qualifying months) / count(observed months)
 ```
 
-This is the same methodology as `ndvi_anomaly_freq_5y`. The seasonal cycle is removed before thresholding, so persistent low NBR that is normal for the site -- dormant grassland, harvested cropland, semi-arid prairie, sparse boreal understorey -- is not flagged. Only abrupt departures from the site's own seasonal norm are counted.
+This is the same anomaly-based methodology as `ndvi_anomaly_freq_5y`. The seasonal cycle is removed before thresholding, so persistent low NBR that is normal for the site -- dormant grassland, harvested cropland, semi-arid prairie, sparse boreal understorey -- is not flagged. Only abrupt departures from the site's own seasonal norm are counted.
 
-The distinction matters in practice: a post-fire chaparral site (Pacific Palisades) shows a sudden drop of ~0.6 NBR units below its pre-fire seasonal mean, which is always caught. A continental prairie site (Calgary) has consistently low NBR in autumn because that is its seasonal norm; the climatology for autumn already expects low values, so no anomaly is generated.
+The consecutive-month requirement filters isolated single-month dips caused by agricultural harvest or a brief drought response, which are spectrally indistinguishable from fire by amplitude alone. Genuine fire events produce burn scars that suppress NBR for multiple consecutive months during post-fire recovery.
 
-Note: `NBR_BURN_THRESHOLD` (absolute, 0.1) is retained separately for SAR burn suppression (section 8.3) and chart annotation, where the goal is to identify months with exposed bare soil regardless of whether the bare soil is anomalous for the site.
+The distinction matters in practice: a post-fire chaparral site (Pacific Palisades) shows a sudden drop of ~0.6 NBR units below its pre-fire seasonal mean, sustained for 3+ months -- always caught. A Mediterranean site (Cape Town fynbos) has naturally low absolute NBR in the summer dry season; because the site's own summer climatology already expects these values, the anomaly is near zero regardless of the consecutive count, and no fire event is detected. A continental prairie site (Calgary) has consistently low NBR in autumn for the same reason: zero anomaly relative to seasonal norm.
+
+Note: `NBR_BURN_THRESHOLD` (absolute, 0.1) is retained for chart bar colour annotation only. All fire detection and SAR burn suppression use `NBR_ANOMALY_THRESHOLD` + `NBR_MIN_CONSECUTIVE`.
 
 ### 7.5 NDSI features
 
@@ -399,7 +404,13 @@ SAR scenes from months where co-located S2 NDSI > 0.4 are excluded from the chro
 
 ### 8.3 Burn suppression
 
-SAR scenes from months where co-located S2 NBR < 0.1 are excluded from both the chronic frequency and the flood anomaly computation. Post-fire bare soil and ash also exhibit low VV backscatter, which can fall below the 75 DN water threshold. The burn suppression is applied to both metrics because (unlike the snow case) there is no risk of suppressing genuine flood events: a flood and a fire cannot be simultaneously responsible for low backscatter at the same pixel in the same month.
+SAR scenes from months that belong to a confirmed fire event are excluded from both the chronic frequency and the flood anomaly computation. Post-fire bare soil and ash exhibit low VV backscatter that can fall below the 75 DN water threshold, producing false flood detections.
+
+Fire events are identified using the same anomaly-based, consecutive-month algorithm as `nbr_burn_freq_5y` (section 7.4): a month is suppressed only if it belongs to a run of ≥ `NBR_MIN_CONSECUTIVE` calendar-consecutive months where NBR drops more than `NBR_ANOMALY_THRESHOLD` below the site's own seasonal climatology. This is climate-zone aware: Mediterranean dry seasons (Cape Town fynbos, California chaparral pre-fire) have near-zero NBR anomaly relative to the site climatology and are never suppressed, even when absolute NBR values are low. Post-fire months show an abrupt departure well below the pre-fire seasonal norm and are correctly suppressed.
+
+The burn suppression is applied to both the chronic and the acute metrics because (unlike the snow case) there is no risk of suppressing genuine flood events: a flood and a fire cannot be simultaneously responsible for low backscatter at the same pixel in the same month.
+
+Residual risk: if the optical SCL mask discards the S2 scene for the same month (e.g. due to wildfire smoke), NBR is not available and burn suppression cannot be applied.
 
 ### 8.4 Orbit stratification
 
@@ -617,10 +628,29 @@ Default (no canopy data): 50.
 ### 11.5 Flood risk score
 
 ```
-flood_risk_score = max(sar_water_freq_5y × 100,  sar_flood_anomaly × 100)
+raw_flood = max(sar_water_freq_5y × 100,  sar_flood_anomaly × 100)
 ```
 
 The maximum of the chronic and acute components ensures that a single significant flood event (captured by the anomaly metric) is not diluted by years of dry baseline in the chronic frequency. Not suppressed for urban locations; flood risk applies regardless of land cover.
+
+**NDWI optical cross-validation veto:**
+
+When Sentinel-2 optical data shows that surface water is essentially absent from the site's history (`ndwi_wetness_persistence_5y < SAR_NDWI_CORROBORATION_THRESHOLD`), but SAR returns a non-zero flood score, the two sensors contradict each other. The most common causes are:
+
+- Coastal locations where the SAR window captures open ocean or a harbour: calm sea surface mimics flood backscatter
+- Airport runways and large flat rooftops: specularly smooth in C-band, invisible as water in optical NDWI
+- Dry lake beds and salt flats with smooth surfaces after rain
+
+In these cases the raw flood score is discounted:
+
+```
+if ndwi_wetness_persistence_5y < SAR_NDWI_CORROBORATION_THRESHOLD (0.05):
+    flood_risk_score = raw_flood × SAR_NDWI_VETO_FACTOR (0.25)
+else:
+    flood_risk_score = raw_flood
+```
+
+The score is not zeroed entirely. Partial genuine flooding may still be present even when NDWI persistence is below the corroboration threshold (e.g. a once-in-5-years flash flood event that NDWI misses under cloud cover). The 25% residual retains a weak signal without overstating the risk.
 
 Default when no SAR data (`no_sar_data` flag set): 0.
 
@@ -723,7 +753,17 @@ NDWI (McFeeters) detects standing surface water in optical data. SAR VV flood de
 
 TerraClimate operates at 1/24° (~4 km). This resolution captures mesoscale climate patterns but not local topographic effects. Urban heat islands, valley cold traps, and coastal fog regimes are not resolved. Features derived from TerraClimate should be interpreted as regional background climate rather than local microclimate.
 
-### 13.6 640 m window and land cover heterogeneity
+### 13.6 SAR specular false positives at coastal and smooth-surface locations
+
+Certain non-water surfaces produce VV backscatter that falls below the 75 DN water threshold and is indistinguishable from calm open water by SAR alone:
+
+- **Coastal ocean / harbours:** calm sea surface at low wind speeds is specularly reflective in C-band. A 640 m window at a coastal location may partially overlap the water body, producing elevated SAR water fractions even when the land parcel itself is never flooded.
+- **Airport runways and large flat rooftops:** smooth impervious surfaces also produce specular C-band returns.
+- **Dry lake beds and salt flats:** smooth surface after drying can persist.
+
+The NDWI optical cross-validation veto (section 11.5) addresses this by discounting the SAR flood score when optical data shows no surface water history at the location. Residual limitation: a coastal site that has genuine flooding (overtopped sea walls, storm surge) may also have persistent optical water nearby and would not be vetoed -- the veto is conservative and does not suppress sites with legitimate NDWI water presence.
+
+### 13.7 640 m window and land cover heterogeneity
 
 The fixed 640 m × 640 m footprint means that a point location in a mixed environment (e.g. a building at the edge of a park) integrates signal from surrounding land cover. The reported NDVI, BSI, and canopy proxy reflect the 640 m neighbourhood average, not the specific parcel land cover. This is by design: the intent is to capture the broader landscape context relevant to climate risk, not parcel-specific green space.
 
@@ -740,8 +780,9 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `NDVI_ANOMALY_THRESHOLD` | 0.1 NDVI units | `ndvi_anomaly_freq_5y` |
 | `NDWI_WET_THRESHOLD` | 0.0 | `ndwi_wetness_persistence_5y` |
 | `NDMI_STRESS_THRESHOLD` | 0.0 | `ndmi_moisture_stress_freq_5y` |
-| `NBR_BURN_THRESHOLD` | 0.1 | SAR burn suppression, chart annotation (absolute) |
-| `NBR_ANOMALY_THRESHOLD` | 0.15 | `nbr_burn_freq_5y` (anomaly detection) |
+| `NBR_BURN_THRESHOLD` | 0.1 | Chart bar colour only (cosmetic); all fire detection uses anomaly threshold |
+| `NBR_ANOMALY_THRESHOLD` | 0.15 | NBR drop below site seasonal climatology required to flag a fire anomaly |
+| `NBR_MIN_CONSECUTIVE` | 3 | Minimum calendar-consecutive anomaly months for fire detection and SAR burn suppression |
 | `NDSI_SNOW_THRESHOLD` | 0.4 | `ndsi_snow_persistence_5y`, SAR snow suppression |
 | `BSI_BARE_THRESHOLD` | 0.0 | `bsi_bare_soil_freq_5y` |
 
@@ -753,6 +794,8 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_MIN_WATER_PIXEL_FRACTION` | 0.35 | Absolute flood threshold: minimum water pixel fraction per scene |
 | `SAR_FLOOD_MAD_K` | 2.0 | MAD multiplier for orbit-stratified adaptive threshold |
 | `SAR_MIN_ANOMALY_FRACTION` | 0.05 | Floor on adaptive threshold (prevents noise at low-baseline orbits) |
+| `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which SAR flood score is vetoed |
+| `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to raw flood score when NDWI corroboration is absent |
 
 ### Urban detection thresholds
 
@@ -792,4 +835,4 @@ All thresholds are configurable via environment variables. Defaults are listed b
 
 ---
 
-*Document generated from source code at commit `9d218be` (master), processing version `s2l2a-v1.7.0`, score version `risk-v1.7.0`.*
+*Document generated from source code at commit `08fdc17` (master), processing version `s2l2a-v1.10.0`, score version `risk-v1.11.0`.*
