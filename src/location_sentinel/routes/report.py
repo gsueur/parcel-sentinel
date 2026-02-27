@@ -43,13 +43,41 @@ async def get_location_report(location_key: str):
         except Exception as exc:
             logger.warning("Could not load TerraClimate data for report: %s", exc)
 
-    # Derive burn months from stored NBR timeseries for SAR chart annotation
+    # Derive burn months from stored NBR timeseries for SAR chart annotation.
+    # Use the same consecutive-month requirement as the pipeline so that the
+    # chart shows exactly the months that were suppressed from SAR analysis.
     burn_months: set[str] = set()
     if timeseries and "nbr" in timeseries:
-        for rec in timeseries["nbr"]:
-            mean = rec.get("mean")
-            if mean is not None and mean < settings.NBR_BURN_THRESHOLD:
-                burn_months.add(rec["month"])
+        nbr_recs = sorted(
+            [r for r in timeseries["nbr"] if r.get("mean") is not None],
+            key=lambda r: r["month"],
+        )
+        is_burn = [r["mean"] < settings.NBR_BURN_THRESHOLD for r in nbr_recs]
+
+        def _next_month(m: str) -> str:
+            y, mo = int(m[:4]), int(m[5:7])
+            mo += 1
+            if mo > 12:
+                mo, y = 1, y + 1
+            return f"{y:04d}-{mo:02d}"
+
+        i = 0
+        while i < len(nbr_recs):
+            if not is_burn[i]:
+                i += 1
+                continue
+            run_start = i
+            j = i + 1
+            while (
+                j < len(nbr_recs)
+                and is_burn[j]
+                and nbr_recs[j]["month"] == _next_month(nbr_recs[j - 1]["month"])
+            ):
+                j += 1
+            if j - run_start >= settings.NBR_MIN_CONSECUTIVE:
+                for k in range(run_start, j):
+                    burn_months.add(nbr_recs[k]["month"])
+            i = j
 
     html = build_report_html(
         location_key=location_key,
