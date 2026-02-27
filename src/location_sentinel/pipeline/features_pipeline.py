@@ -152,16 +152,17 @@ async def run_features(
             rec.month for rec in ndsi_records
             if rec.mean is not None and rec.mean > settings.NDSI_SNOW_THRESHOLD
         }
-        # Exclude months where co-located S2 NBR confirms a persistent burn scar.
-        # Post-fire bare soil and ash have low VV backscatter that mimics calm
-        # water at the DN threshold, producing false flood signals.
-        # We require NBR_MIN_CONSECUTIVE consecutive months of low absolute NBR
-        # to suppress a month: single-month agricultural dips (harvest, bare fallow)
-        # produce NBR < NBR_BURN_THRESHOLD but should NOT suppress flood data,
-        # because post-harvest soil roughness keeps SAR VV above the water threshold.
+        # Exclude months where co-located S2 NBR confirms a persistent anomalous
+        # burn scar. Uses anomaly-based detection (same as fire score): only months
+        # where NBR drops more than NBR_ANOMALY_THRESHOLD below the site's own
+        # seasonal climatology are candidates. This correctly ignores naturally
+        # low NBR in Mediterranean dry seasons (Cape Town fynbos, California
+        # chaparral in unburned years) -- the seasonal low is normal for that site
+        # so it has zero anomaly. Genuine fire scars produce abrupt departures
+        # well below the seasonal norm and still trigger suppression.
         burn_months: set[str] = get_persistent_burn_months(
             nbr_records,
-            threshold=settings.NBR_BURN_THRESHOLD,
+            threshold=settings.NBR_ANOMALY_THRESHOLD,
             min_consecutive=settings.NBR_MIN_CONSECUTIVE,
         )
         excluded_months = snow_months | burn_months

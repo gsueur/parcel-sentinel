@@ -85,8 +85,8 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.9.0"
-    SCORE_VERSION: str = "risk-v1.9.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.10.0"
+    SCORE_VERSION: str = "risk-v1.10.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"
@@ -104,13 +104,12 @@ class Settings(BaseSettings):
     NDVI_ANOMALY_THRESHOLD: float = 0.1
     NDWI_WET_THRESHOLD: float = 0.0
     NDMI_STRESS_THRESHOLD: float = 0.0    # NDMI below → vegetation moisture stress
-    NBR_BURN_THRESHOLD: float = 0.1       # NBR below → burn signal present (SAR suppression + chart annotation)
+    NBR_BURN_THRESHOLD: float = 0.1       # absolute NBR below → burn signal (used for chart bar color only)
     NBR_ANOMALY_THRESHOLD: float = 0.15   # NBR must drop this far below seasonal climatology to count as fire anomaly
-    # Minimum consecutive months of NBR anomaly / low absolute NBR required to
-    # count as a genuine fire event. Single-month agricultural dips (harvest,
-    # bare fallow) and two-month Mediterranean dry-season stress are filtered out;
-    # persistent fire scars (≥3 months) qualify.
-    # Applies to nbr_burn_freq_5y feature, SAR burn suppression, and chart annotation.
+    # Minimum consecutive months of NBR anomaly required to count as a genuine
+    # fire event. Applies to nbr_burn_freq_5y, SAR burn suppression, and chart
+    # annotation -- all three now use anomaly-based detection so Mediterranean
+    # dry seasons (naturally low NBR, zero anomaly) never trigger.
     NBR_MIN_CONSECUTIVE: int = 3
     NDSI_SNOW_THRESHOLD: float = 0.4      # NDSI above → snow-covered
     BSI_BARE_THRESHOLD: float = 0.0       # BSI above → bare soil exposed

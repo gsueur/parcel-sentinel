@@ -149,23 +149,40 @@ def compute_burn_frequency(
 
 def get_persistent_burn_months(
     records: list[MonthlyRecord],
-    threshold: float = settings.NBR_BURN_THRESHOLD,
+    threshold: float = settings.NBR_ANOMALY_THRESHOLD,
     min_consecutive: int = 2,
 ) -> set[str]:
-    """Return month keys belonging to genuine burn events.
+    """Return month keys belonging to genuine burn events (anomaly-based).
 
-    A genuine burn event requires at least min_consecutive calendar-consecutive
-    months where NBR < threshold. Single-month agricultural dips (harvest,
-    bare fallow) are filtered out; only persistent fire scars qualify.
+    Detects months where NBR drops more than `threshold` below the site's own
+    seasonal climatology. This is the same criterion used by the fire score and
+    correctly handles Mediterranean dry seasons: a naturally low NBR in summer
+    (e.g. Cape Town fynbos) has zero anomaly relative to the site climatology
+    and is never suppressed, while a genuine fire scar produces an abrupt
+    departure well below the seasonal norm.
 
-    Used for SAR burn suppression to avoid discarding flood data from
-    months where normal agricultural activity, not fire, depresses NBR.
+    Requires at least min_consecutive calendar-consecutive anomaly months to
+    filter isolated disturbances (agricultural harvest, single drought months).
+
+    Used for SAR burn suppression and chart annotation.
     """
     sorted_recs = sorted((r for r in records if r.mean is not None), key=lambda r: r.month)
     if not sorted_recs:
         return set()
 
-    is_burn = [r.mean < threshold for r in sorted_recs]
+    # Build seasonal climatology
+    by_cal_month: dict[int, list[float]] = {}
+    for r in sorted_recs:
+        cal_month = int(r.month.split("-")[1])
+        by_cal_month.setdefault(cal_month, []).append(r.mean)
+    climatology = {m: float(np.mean(vals)) for m, vals in by_cal_month.items()}
+
+    # Anomaly flag: NBR drops more than threshold below the site's seasonal norm
+    is_burn = []
+    for r in sorted_recs:
+        cal_month = int(r.month.split("-")[1])
+        clim = climatology.get(cal_month)
+        is_burn.append(clim is not None and (r.mean - clim) < -threshold)
 
     def _next_month(m: str) -> str:
         y, mo = int(m[:4]), int(m[5:7])
