@@ -35,12 +35,18 @@ class Settings(BaseSettings):
     # Minimum fraction of window pixels below threshold for a scene to count as flooded.
     # Raised from 0.05 to 0.35 to avoid false positives from mixed land/shadow pixels.
     SAR_MIN_WATER_PIXEL_FRACTION: float = 0.35
-    # Relative flood delta: scenes where water_frac > location_median + delta also count
-    # as flooded for the chronic frequency metric.  Handles near-water locations (coastal
-    # lagoons, river banks) whose baseline water fraction is already 15-25%, making the
-    # fixed 35% absolute threshold too strict to detect genuine above-baseline episodes.
-    # The chronic frequency is max(absolute_freq, relative_freq).
-    SAR_RELATIVE_FLOOD_DELTA: float = 0.15
+    # MAD multiplier for the orbit-stratified anomaly threshold.
+    # Per-orbit anomaly threshold = max(median + SAR_FLOOD_MAD_K × MAD, SAR_MIN_ANOMALY_FRACTION).
+    # k=2 is robust to flood outliers (MAD is not inflated by the anomalies themselves,
+    # unlike std). The floor (SAR_MIN_ANOMALY_FRACTION) prevents instrument noise and
+    # coastal backscatter roughness from triggering false positives at low-baseline orbits.
+    # The absolute threshold (SAR_MIN_WATER_PIXEL_FRACTION) still applies independently
+    # for chronically wet locations; freq = max(absolute_freq, anomaly_freq).
+    SAR_FLOOD_MAD_K: float = 2.0
+    # Minimum water fraction a scene must reach to be counted as anomalously flooded.
+    # Even if median + k*MAD is lower, scenes below this floor are not flagged.
+    # 5% means at least ~200 of the 4096 pixels in the window look like water.
+    SAR_MIN_ANOMALY_FRACTION: float = 0.05
     SAR_MAX_SCENES_PER_MONTH: int = 2
     SAR_MAX_TOTAL_SCENES: int = 120
 

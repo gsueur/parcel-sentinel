@@ -22,47 +22,66 @@ def compute_water_fraction(vv_dn: np.ndarray) -> float | None:
     return float(water_mask.sum()) / valid_count
 
 
+def _mad(fracs: list[float], loc_median: float) -> float:
+    """Median absolute deviation."""
+    return median(abs(f - loc_median) for f in fracs)
+
+
 def _orbit_water_frequency(
     fracs: list[float],
     threshold: float,
-    adaptive_delta: float,
+    mad_k: float,
+    min_anomaly: float,
 ) -> float:
     """Compute water frequency for a single orbital pass.
 
     Two thresholds evaluated; higher frequency returned:
     1. Absolute: fraction of scenes where water_frac > threshold.
-    2. Relative: fraction where water_frac > median + adaptive_delta.
+       Catches chronically wet locations (lakes, bays) independently of baseline.
+    2. Anomaly: fraction where water_frac > max(median + mad_k × MAD, min_anomaly).
+       Adaptive to the orbit's own baseline -- detects spikes at dry sites
+       (e.g. 0.3% baseline → two scenes at 15% flagged) without triggering on
+       instrument noise or coastal backscatter roughness. The min_anomaly floor
+       prevents statistical leakage: MAD is extremely small for stable baselines,
+       so even tiny noise excursions would exceed median + k*MAD without the floor.
+       MAD itself is robust to flood outliers (not inflated by the anomalies it detects,
+       unlike std which is inflated by the very events we want to find).
     """
     n = len(fracs)
     absolute_freq = sum(1 for f in fracs if f > threshold) / n
     loc_median = median(fracs)
-    relative_freq = sum(1 for f in fracs if f > loc_median + adaptive_delta) / n
-    return max(absolute_freq, relative_freq)
+    mad_val = _mad(fracs, loc_median)
+    adaptive_threshold = max(loc_median + mad_k * mad_val, min_anomaly)
+    anomaly_freq = sum(1 for f in fracs if f > adaptive_threshold) / n
+    return max(absolute_freq, anomaly_freq)
 
 
 def compute_sar_water_frequency(
     fracs_with_orbit: list[tuple[float, int]],
     threshold: float = settings.SAR_MIN_WATER_PIXEL_FRACTION,
-    adaptive_delta: float = settings.SAR_RELATIVE_FLOOD_DELTA,
+    mad_k: float = settings.SAR_FLOOD_MAD_K,
+    min_anomaly: float = settings.SAR_MIN_ANOMALY_FRACTION,
 ) -> float | None:
-    """Orbit-stratified SAR water frequency.
+    """Orbit-stratified, MAD-based SAR water frequency.
 
     Sentinel-1 VV backscatter depends strongly on incidence angle and look
     direction, which differ between orbital passes covering the same location.
-    Mixing passes inflates the variance of water_frac and can mask or amplify
-    real flood signals. This function stratifies scenes by relative orbit number,
-    computes water frequency independently within each orbit track, then returns
-    the maximum across tracks.
+    Mixing passes inflates variance and distorts anomaly detection.  Scenes are
+    stratified by relative orbit; frequency is computed per track then the max
+    across tracks is returned.
 
-    Within each track two thresholds are evaluated and the higher frequency kept:
+    Within each track, two thresholds are evaluated and the higher frequency kept:
     1. Absolute: scenes where water_frac > threshold (default 35%).
-    2. Relative: scenes where water_frac > per-track median + adaptive_delta.
-       Handles near-water locations whose baseline already sits at 15-25%.
+    2. Anomaly: scenes where water_frac > max(median + mad_k × MAD, min_anomaly).
+       MAD = median(|xi - median(x)|) is robust to the flood outliers it detects.
+       The min_anomaly floor prevents false positives from instrument noise at
+       tight low-baseline orbits where MAD is near zero.
 
     Args:
         fracs_with_orbit: list of (water_frac, rel_orbit) tuples after snow masking.
-        threshold:        absolute water pixel fraction threshold.
-        adaptive_delta:   delta above per-track median to count as a flood scene.
+        threshold:        absolute water pixel fraction for chronic flooding (default 35%).
+        mad_k:            MAD multiplier for the anomaly threshold (default 2.0).
+        min_anomaly:      floor on the anomaly threshold (default 5%).
 
     Returns None for empty input.
     """
@@ -74,7 +93,7 @@ def compute_sar_water_frequency(
         by_orbit[orbit].append(wf)
 
     orbit_freqs = [
-        _orbit_water_frequency(fracs, threshold, adaptive_delta)
+        _orbit_water_frequency(fracs, threshold, mad_k, min_anomaly)
         for fracs in by_orbit.values()
     ]
     return float(max(orbit_freqs))
