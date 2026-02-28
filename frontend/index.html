@@ -83,9 +83,10 @@
       font-size: 0.67rem; font-weight: 600; letter-spacing: 0.01em;
       border-radius: 3px; padding: 1px 6px; white-space: nowrap;
     }
-    .score-pill.good { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
-    .score-pill.mid  { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
-    .score-pill.poor { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    .score-pill.good     { background: #16a34a18; color: #16a34a; border: 1px solid #16a34a44; }
+    .score-pill.mid      { background: #d9770618; color: #d97706; border: 1px solid #d9770644; }
+    .score-pill.elevated { background: #ea580c18; color: #ea580c; border: 1px solid #ea580c44; }
+    .score-pill.poor     { background: #dc262618; color: #dc2626; border: 1px solid #dc262644; }
     .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
     .card-link { display: block; text-decoration: none; color: inherit; }
     .card-link:hover .card-name { color: var(--accent); }
@@ -317,7 +318,7 @@ function renderGrid(locations) {
     let scorePill = '';
     if (loc.composite_score != null) {
       const s = loc.composite_score;
-      const cls = s >= 70 ? 'good' : s >= 40 ? 'mid' : 'poor';
+      const cls = s < 25 ? 'good' : s < 50 ? 'mid' : s < 75 ? 'elevated' : 'poor';
       scorePill = `<span class="score-pill ${cls}" title="Composite risk score">Score&nbsp;${s}</span>`;
     }
     let qualityPill = '';

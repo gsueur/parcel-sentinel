@@ -266,18 +266,14 @@ def compute_quality_score(
 ) -> float:
     """Quality score in [0, 1].
 
-    quality = coverage_factor * clarity_factor * confidence_factor
+    Weighted sum: 65% temporal coverage + 35% scene clarity.
+    mean_cloud_fraction should be computed only over observed months so that
+    fully-cloudy months are not double-penalised (they already reduce coverage).
     """
     if months_total == 0:
         return 0.0
 
-    coverage = months_observed / months_total
+    coverage = min(months_observed / months_total, 1.0)
     clarity = 1.0 - mean_cloud_fraction
 
-    # Confidence factor: 1.0 if obs >= 50% of total, linear scale-down otherwise
-    if coverage >= 0.5:
-        confidence = 1.0
-    else:
-        confidence = coverage / 0.5
-
-    return round(coverage * clarity * confidence, 4)
+    return round(0.65 * coverage + 0.35 * clarity, 4)

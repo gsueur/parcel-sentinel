@@ -291,6 +291,9 @@ async def run_timeseries(
         series[metric_key] = aggregate_monthly(obs_list)
 
     # Quality info
+    # cloud_fracs only collected from months that have valid observations --
+    # fully-cloudy months are already penalised via coverage; including them
+    # here would double-count the penalty.
     all_months: set[str] = set()
     observed_months: set[str] = set()
     cloud_fracs: list[float] = []
@@ -299,7 +302,7 @@ async def run_timeseries(
             all_months.add(rec.month)
             if rec.mean is not None:
                 observed_months.add(rec.month)
-            cloud_fracs.append(rec.cloud_fraction)
+                cloud_fracs.append(rec.cloud_fraction)
 
     from datetime import date
     d_start = date.fromisoformat(date_start)
