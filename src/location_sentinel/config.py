@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.11.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.12.0"
     SCORE_VERSION: str = "risk-v1.12.0"
 
     # Storage
