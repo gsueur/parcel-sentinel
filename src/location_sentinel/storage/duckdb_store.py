@@ -859,35 +859,39 @@ class DuckDBStore:
         processing_version: str,
         limit: int = 12,
     ) -> list[dict]:
-        """Return up to `limit` most recent SAR scenes with VV array and water_frac.
+        """Return all SAR scenes from the most recent `limit` distinct months.
 
-        One scene per month (lowest water_frac first so we show the most
-        land-like scene, giving visual context for what is and isn't water).
-        Each entry: {"scene_id": str, "month_key": str, "vv_dn": np.ndarray, "water_frac": float}
+        All scenes (orbits) per month are returned, ordered chronologically then
+        by relative orbit. Each entry: {"scene_id", "month_key", "rel_orbit",
+        "vv_dn": np.ndarray, "water_frac": float}.
         """
         if self._conn is None:
             return []
         scenes = self._conn.execute(
             """
-            SELECT scene_id, month_key, width, height, vv_data, water_frac
-            FROM (
-                SELECT scene_id, month_key, width, height, vv_data, water_frac,
-                       ROW_NUMBER() OVER (PARTITION BY month_key ORDER BY water_frac ASC) AS rn
+            WITH recent_months AS (
+                SELECT DISTINCT month_key
                 FROM sar_scene_bands
                 WHERE location_key = ? AND processing_version = ?
+                ORDER BY month_key DESC
+                LIMIT ?
             )
-            WHERE rn = 1
-            ORDER BY month_key DESC
-            LIMIT ?
+            SELECT s.scene_id, s.month_key, s.width, s.height, s.vv_data,
+                   s.water_frac, COALESCE(s.rel_orbit, 0)
+            FROM sar_scene_bands s
+            JOIN recent_months rm ON s.month_key = rm.month_key
+            WHERE s.location_key = ? AND s.processing_version = ?
+            ORDER BY s.month_key DESC, COALESCE(s.rel_orbit, 0) ASC
             """,
-            [location_key, processing_version, limit],
+            [location_key, processing_version, limit, location_key, processing_version],
         ).fetchall()
         result = []
-        for scene_id, month_key, w, h, vv_data, water_frac in scenes:
+        for scene_id, month_key, w, h, vv_data, water_frac, rel_orbit in scenes:
             vv_dn = np.array(vv_data, dtype=np.float32).reshape(h, w).astype(np.uint16)
             result.append({
                 "scene_id": scene_id,
                 "month_key": month_key,
+                "rel_orbit": int(rel_orbit),
                 "vv_dn": vv_dn,
                 "water_frac": water_frac,
             })

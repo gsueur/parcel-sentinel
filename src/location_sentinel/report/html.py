@@ -824,24 +824,42 @@ def _scene_rows(scene_months: list[dict]) -> str:
     return "\n".join(rows)
 
 
-def _sar_scene_rows(sar_scene_months: list[dict], water_threshold: int) -> str:
+def _sar_scene_cards(sar_scene_months: list[dict], water_threshold: int) -> str:
+    """Render SAR scenes as a flex-wrap card grid.
+
+    Each card shows: month + orbit header, VV image, water fraction underneath.
+    All scenes (multiple orbits per month) are shown.
+    """
     if not sar_scene_months:
-        return '<tr><td colspan="3" class="no-data">No SAR scene images cached yet.</td></tr>'
-    from ..config import settings as _s
-    rows = []
+        return '<p class="no-data">No SAR scene images cached yet.</p>'
+    cards = []
     for entry in sar_scene_months:
         month = entry["month_key"]
+        rel_orbit = entry.get("rel_orbit", 0)
         vv_dn = entry["vv_dn"]
         water_frac = entry.get("water_frac")
         frac_str = f"{water_frac * 100:.1f}%" if water_frac is not None else "—"
+        frac_color = "#dc2626" if (water_frac or 0) > 0.30 else (
+            "#ea580c" if (water_frac or 0) > 0.10 else "#64748b"
+        )
         vv_b64 = vv_dn_to_b64(vv_dn, water_threshold)
-        rows.append(f"""
-        <tr>
-          <td>{month}</td>
-          <td><img src="data:image/png;base64,{vv_b64}" alt="VV {month}"></td>
-          <td style="font-family:monospace;font-size:0.82rem">{frac_str}</td>
-        </tr>""")
-    return "\n".join(rows)
+        orbit_label = f"· orbit {rel_orbit}" if rel_orbit else ""
+        cards.append(
+            f'<div style="display:flex;flex-direction:column;align-items:center;'
+            f'gap:4px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px">'
+            f'<div style="font-size:0.72rem;color:#64748b;font-weight:600;white-space:nowrap">'
+            f'{month}{orbit_label}</div>'
+            f'<img src="data:image/png;base64,{vv_b64}" alt="VV {month}" '
+            f'style="display:block;image-rendering:pixelated">'
+            f'<div style="font-size:0.78rem;font-family:monospace;font-weight:600;color:{frac_color}">'
+            f'{frac_str}</div>'
+            f'</div>'
+        )
+    return (
+        '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">'
+        + "\n".join(cards)
+        + "</div>"
+    )
 
 
 def _sar_frac_chart_html(
@@ -1410,9 +1428,9 @@ def build_report_html(
     # Scene image rows
     scene_rows = _scene_rows(scene_months)
 
-    # SAR scene rows
+    # SAR scene cards
     from ..config import settings as _cfg
-    sar_rows = _sar_scene_rows(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD)
+    sar_cards = _sar_scene_cards(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD)
 
     # SAR water fraction chart
     sar_frac_chart = _sar_frac_chart_html(sar_scene_fracs or [], burn_months=burn_months)
@@ -1583,23 +1601,13 @@ def build_report_html(
       Opaque bar = scene above its orbit's threshold; faint = below.
     </div>
     {sar_frac_chart}
-    <h2 style="margin-top:20px;margin-bottom:12px">SAR scene images (most recent {len(sar_scene_months or [])})</h2>
+    <h2 style="margin-top:20px;margin-bottom:8px">SAR scene images &mdash; last 12 months ({len(sar_scene_months or [])} scenes)</h2>
     <div style="font-size:0.76rem;color:#64748b;margin-bottom:12px">
       VV backscatter &mdash; log-scaled grayscale. Blue pixels: DN &lt; {_cfg.SAR_WATER_DN_THRESHOLD} (water threshold).
       Dark = calm water / specular &bull; Bright = vegetation / urban / rough terrain.
+      Water fraction shown below each scene; red &ge; 30%, orange &ge; 10%.
     </div>
-    <div class="scene-grid">
-      <table class="scenes">
-        <thead>
-          <tr>
-            <th>Month</th>
-            <th>VV backscatter</th>
-            <th>Water fraction</th>
-          </tr>
-        </thead>
-        <tbody>{sar_rows}</tbody>
-      </table>
-    </div>
+    {sar_cards}
   </div>
 
 </div>
