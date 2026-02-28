@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.13.0` / scoring `risk-v1.12.0`
+**Version:** processing `s2l2a-v1.14.0` / scoring `risk-v1.12.0`
 **Date:** 2026-02-28
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -140,8 +140,11 @@ Default analysis window: `date_end − lookback_years` to `date_end`. Default `l
 
 1. STAC search for all items in `sentinel-1-grd` intersecting the bounding box over the analysis window.
 2. Filter to IW mode, GRD product, with a VV asset present.
-3. No cloud-cover sorting (SAR is cloud-independent). Items are ordered chronologically.
-4. Keep up to `SAR_MAX_SCENES_PER_MONTH = 2` per month; hard cap `SAR_MAX_TOTAL_SCENES = 120`.
+3. No cloud-cover sorting (SAR is cloud-independent).
+4. Group by calendar month; within each month, select one representative scene per relative orbit (the first scene encountered for that orbit). This guarantees orbital diversity: look-angle-dependent backscatter bias is avoided without including redundant scenes from the same pass.
+5. Keep up to `SAR_MAX_SCENES_PER_MONTH = 2` distinct orbits per month; hard cap `SAR_MAX_TOTAL_SCENES = 120`.
+
+The relative orbit number (`sat:relative_orbit` STAC property, or derived from the absolute orbit and platform) identifies which ground track the scene was acquired from.
 
 ---
 
@@ -431,7 +434,7 @@ sar_water_freq_5y = max over all orbits of: orbit_frequency(orbit_scenes)
 
 ### 8.5 Chronic water frequency (`sar_water_freq_5y`)
 
-Input: post-suppression scenes `(water_fraction, relative_orbit)`.
+Input: post-suppression scenes `(month_key, water_fraction, relative_orbit)`.
 
 For each orbit, two thresholds are evaluated and the higher resulting frequency is retained:
 
@@ -439,16 +442,20 @@ For each orbit, two thresholds are evaluated and the higher resulting frequency 
 ```
 absolute_freq = count(water_fraction > 0.35) / N_orbit_scenes
 ```
+No consecutive-scene requirement: permanently wet sites (lakes, coastal bays) have real water by definition.
 
 **Adaptive (MAD-based) threshold:**
 ```
 loc_median = median(water_fraction for orbit scenes)
 MAD = median(|water_fraction_i − loc_median|)
 adaptive_threshold = max(loc_median + 2.0 × MAD,  0.05)
-anomaly_freq = count(water_fraction > adaptive_threshold) / N_orbit_scenes
+elevated = [water_fraction > adaptive_threshold for each scene, sorted by month]
 ```
 
+Anomalous scenes are counted only when they belong to a run of at least `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS = 2` calendar-consecutive months (i.e., months that are exactly one calendar month apart, handling year boundaries correctly). Single-month spikes from wind roughening, a brief specular glint, or instrument artefacts are discarded; genuine multi-pass flood events spanning 2+ months are preserved.
+
 ```
+anomaly_freq = count(qualifying elevated scenes) / N_orbit_scenes
 orbit_frequency = max(absolute_freq, anomaly_freq)
 ```
 
@@ -458,25 +465,28 @@ The absolute threshold (0.35) independently handles chronically wet locations (l
 
 ### 8.6 Acute flood anomaly (`sar_flood_anomaly`)
 
-Input: **all** SAR scenes `(month_key, water_fraction)` including snow months but excluding burn months. Snow suppression is deliberately omitted here: flooded agricultural fields also exhibit NDSI-like spectral signatures under certain conditions, and the anomaly comparison is relative (recent vs. historical), not absolute, reducing noise sensitivity.
+Input: **all** SAR scenes `(month_key, water_fraction, relative_orbit)` including snow months but excluding burn months. Snow suppression is deliberately omitted here: flooded agricultural fields also exhibit NDSI-like spectral signatures under certain conditions, and the anomaly comparison is relative (recent vs. historical), not absolute, reducing noise sensitivity.
+
+The baseline is orbit-stratified: each recent scene is compared to the historical median for the same (relative orbit, calendar month) pair. This removes look-angle-dependent backscatter bias from the comparison. When insufficient historical data exists for the exact (orbit, cal_month) pair (fewer than 2 scenes), the computation falls back to a combined baseline of all orbits for that calendar month.
 
 ```
 recent_month_keys = {last 2 calendar months of the analysis window}
 
-historical_by_cal_month = {
-    cal_month m: [water_fraction for all scenes NOT in recent_month_keys
-                  where month.MM == m]
-}
+historical[(orbit, cal_month)] = [water_fraction for all scenes NOT in recent_month_keys]
+historical[(0,     cal_month)] = same, orbit-agnostic fallback
 
-For each recent scene (cal_month m, water_fraction w):
-    if len(historical_by_cal_month[m]) >= 2:
-        baseline = median(historical_by_cal_month[m])
+For each recent scene (orbit, cal_month m, water_fraction w):
+    hist = historical[(orbit, m)]
+    if len(hist) < 2:
+        hist = historical[(0, m)]  # fallback to orbit-agnostic baseline
+    if len(hist) >= 2:
+        baseline = median(hist)
         anomaly = max(0,  w − baseline)
 
 sar_flood_anomaly = max(anomalies)  [clamped to [0, 1]]
 ```
 
-This detects sudden increases in water coverage relative to the historical seasonal norm for the same calendar months, identifying acute flood events that may not accumulate to a significant chronic frequency.
+This detects sudden increases in water coverage relative to the historical seasonal norm for the same calendar months and orbital pass, identifying acute flood events that may not accumulate to a significant chronic frequency.
 
 ---
 
@@ -636,30 +646,29 @@ Default (no canopy data): 50.
 
 ### 11.5 Flood risk score
 
-```
-raw_flood = max(sar_water_freq_5y × 100,  sar_flood_anomaly × 100)
-```
-
-The maximum of the chronic and acute components ensures that a single significant flood event (captured by the anomaly metric) is not diluted by years of dry baseline in the chronic frequency. Not suppressed for urban locations; flood risk applies regardless of land cover.
-
-**NDWI optical cross-validation veto:**
-
-When Sentinel-2 optical data shows that surface water is essentially absent from the site's history (`ndwi_wetness_persistence_5y < SAR_NDWI_CORROBORATION_THRESHOLD`), but SAR returns a non-zero flood score, the two sensors contradict each other. The most common causes are:
-
-- Coastal locations where the SAR window captures open ocean or a harbour: calm sea surface mimics flood backscatter
-- Airport runways and large flat rooftops: specularly smooth in C-band, invisible as water in optical NDWI
-- Dry lake beds and salt flats with smooth surfaces after rain
-
-In these cases the raw flood score is discounted:
+The chronic and acute SAR components are combined with the NDWI cross-validation veto applied **only to the chronic component**:
 
 ```
+chronic_score = sar_water_freq_5y × 100
 if ndwi_wetness_persistence_5y < SAR_NDWI_CORROBORATION_THRESHOLD (0.05):
-    flood_risk_score = raw_flood × SAR_NDWI_VETO_FACTOR (0.25)
-else:
-    flood_risk_score = raw_flood
+    chronic_score × = SAR_NDWI_VETO_FACTOR (0.25)
+acute_score = sar_flood_anomaly × 100
+flood_risk_score = max(chronic_score, acute_score)
 ```
 
-The score is not zeroed entirely. Partial genuine flooding may still be present even when NDWI persistence is below the corroboration threshold (e.g. a once-in-5-years flash flood event that NDWI misses under cloud cover). The 25% residual retains a weak signal without overstating the risk.
+The maximum of the two components ensures that a single significant flood event (captured by the anomaly metric) is not diluted by years of dry baseline in the chronic frequency. Not suppressed for urban locations; flood risk applies regardless of land cover.
+
+**NDWI optical cross-validation veto (chronic component only):**
+
+When Sentinel-2 optical data shows that surface water is essentially absent from the site's history (`ndwi_wetness_persistence_5y < 0.05`) but the SAR chronic frequency is elevated, the two sensors contradict each other. The most common causes are:
+
+- Coastal locations where the SAR window captures open ocean or a harbour: calm sea surface mimics flood backscatter chronically
+- Airport runways and large flat rooftops: specularly smooth in C-band, invisible as water in optical NDWI
+- Dry lake beds and salt flats with smooth surfaces after drying
+
+The chronic component is discounted by `SAR_NDWI_VETO_FACTOR = 0.25`. It is not zeroed: partial genuine flooding may still be present even when NDWI persistence is below the threshold.
+
+The veto is **not applied** to `sar_flood_anomaly` (the acute component). A normally-dry agricultural site showing a sudden SAR water spike is the strongest possible episodic flood signal -- the optical sensors may have been obscured by cloud, or the flooding may have subsided before the next clear optical pass. Applying the veto to the acute component would suppress genuine flood detections at the locations most at risk from episodic inundation.
 
 Default when no SAR data (`no_sar_data` flag set): 0.
 
@@ -803,8 +812,9 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_MIN_WATER_PIXEL_FRACTION` | 0.35 | Absolute flood threshold: minimum water pixel fraction per scene |
 | `SAR_FLOOD_MAD_K` | 2.0 | MAD multiplier for orbit-stratified adaptive threshold |
 | `SAR_MIN_ANOMALY_FRACTION` | 0.05 | Floor on adaptive threshold (prevents noise at low-baseline orbits) |
-| `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which SAR flood score is vetoed |
-| `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to raw flood score when NDWI corroboration is absent |
+| `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | 2 | Minimum calendar-consecutive anomalous months to count for the chronic MAD-based frequency |
+| `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
+| `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent (does not affect acute anomaly) |
 
 ### Urban detection thresholds
 
@@ -846,4 +856,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `bb8f864` (master), processing version `s2l2a-v1.13.0`, score version `risk-v1.12.0`.*
+*Document generated from source code at commit `d4300b7` (master), processing version `s2l2a-v1.14.0`, score version `risk-v1.12.0`.*
