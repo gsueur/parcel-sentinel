@@ -376,6 +376,9 @@ Long-term features computed from the full date window (default 5 years):
 | `is_urban` | 1.0 if location classified as urban/impervious, 0.0 otherwise |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
+| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` (acute SAR water anomaly in last ~2 months) |
+| `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
+| `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1 |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
 
 ### TerraClimate-derived features
@@ -565,7 +568,7 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.14.0",
+  "processing_version": "s2l2a-v1.15.0",
   "score_version": "risk-v1.12.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
@@ -593,6 +596,9 @@ Interactive docs: `http://localhost:8000/docs`
     "is_urban": 1.0,
     "sar_water_freq_5y": 0.0,
     "sar_flood_anomaly": 0.097,
+    "active_flood": 0.0,
+    "active_fire": 0.0,
+    "active_drought": 0.0,
     "tmax_mean_5y": 29.4,
     "tmin_mean_5y": 21.1,
     "ppt_annual_mean_5y": 1520.0,
@@ -642,8 +648,10 @@ Returns the same shape as `POST /v1/locations`.
 Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox)
 - Analysis period and processing/score versions in the header
+- Active episode badges (flood / fire / drought) in the header when any flag is set
 - Per-index time series charts (Chart.js)
 - SAR water fraction chart with seasonal baseline and flood alert banner; burn-suppressed months annotated
+- SAR scene table: all scenes from the last 12 months, months as rows, orbits as columns
 - TerraClimate charts: monthly tmax/tmin temperature and PPT/VPD dual-axis
 - Feature table grouped by theme with contextual descriptions
 - Six risk score gauges with explanations
@@ -667,8 +675,8 @@ Response: `image/png`, `Cache-Control: public, max-age=86400`
 
 Returns all stored locations ordered by last-updated timestamp.
 
-- `?format=json` (default): JSON response with a `server_versions` envelope and a `locations` array. Each location includes `processing_version` and `score_version` (the versions used when that location was last computed). Clients can compare these against `server_versions.processing` and `server_versions.score` to detect stale entries that need regeneration.
-- `?format=html`: Browsable index page with thumbnails, links to individual reports, and "Update available" badges for locations computed with older versions
+- `?format=json` (default): JSON response with a `server_versions` envelope and a `locations` array. Each location includes `processing_version`, `score_version`, and `active_episodes` (list of active flag names: `"active_flood"`, `"active_fire"`, `"active_drought"`). Clients can compare version fields against `server_versions.processing` and `server_versions.score` to detect stale entries.
+- `?format=html`: Browsable index page with thumbnails, links to individual reports, "Update available" badges for stale locations, and episode badge pills (flood / fire / drought) on cards with active flags
 
 ---
 
@@ -799,7 +807,7 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.14.0` | Cache key tag for features |
+| `PROCESSING_VERSION` | `s2l2a-v1.15.0` | Cache key tag for features |
 | `SCORE_VERSION` | `risk-v1.12.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 

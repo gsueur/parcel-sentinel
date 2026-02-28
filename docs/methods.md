@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.14.0` / scoring `risk-v1.12.0`
+**Version:** processing `s2l2a-v1.15.0` / scoring `risk-v1.12.0`
 **Date:** 2026-02-28
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -14,7 +14,7 @@
 4. [Cloud and quality masking (SCL)](#4-cloud-and-quality-masking-scl)
 5. [Sentinel-2 spectral indices](#5-sentinel-2-spectral-indices)
 6. [Monthly aggregation](#6-monthly-aggregation)
-7. [Long-term optical features](#7-long-term-optical-features)
+7. [Long-term optical features and episode flags](#7-long-term-optical-features)
 8. [Sentinel-1 SAR flood analysis](#8-sentinel-1-sar-flood-analysis)
 9. [TerraClimate gridded climate features](#9-terraclimate-gridded-climate-features)
 10. [Urban detection](#10-urban-detection)
@@ -369,7 +369,38 @@ SH months are the NH months shifted by 6 calendar months. Köppen code is looked
 
 The canopy proxy approximates canopy closure from the peak photosynthetic signal rather than mean NDVI, which is suppressed in winter. It is used in heat mitigation scoring and urban detection.
 
-### 7.8 Quality score
+### 7.8 Active episode flags
+
+Three binary features (0.0 / 1.0) indicate whether a climate episode is ongoing near the analysis end date. They are recomputed each time the pipeline runs; the threshold logic is intentionally conservative (short recency window, confirmed signals only) to avoid spurious alerts.
+
+**`active_flood`**
+
+```
+active_flood = 1.0  iff  sar_flood_anomaly > 0.10
+```
+
+`sar_flood_anomaly` already covers only the most recent two calendar months of SAR scenes (see §8.6). A value above 10% means SAR water fraction is elevated by at least 10 percentage points above the orbit-stratified seasonal baseline in at least one recent pass.
+
+**`active_fire`**
+
+```
+active_fire = 1.0  iff  any burn_month mk satisfies:
+    (year(date_end) × 12 + month(date_end)) − (year(mk) × 12 + month(mk)) ≤ 3
+```
+
+`burn_months` is the set of consecutive-confirmed NBR anomaly months produced by `get_persistent_burn_months()` (same algorithm as `nbr_burn_freq_5y`). The 3-month recency window is wide enough to catch post-fire NBR suppression during early recovery, which typically persists 2-6 months after the burn event.
+
+**`active_drought`**
+
+```
+For each of the last 3 observed NDVI months before date_end:
+    anomaly = True  iff  NDVI[y,m] < climatology[m] − NDVI_ANOMALY_THRESHOLD (0.1)
+active_drought = 1.0  iff  any of these months is anomalous
+```
+
+Uses the same seasonal climatology as `ndvi_anomaly_freq_5y` -- the mean NDVI for each calendar month across the full analysis window. A single anomalous month in the last 3 observed months is sufficient to set the flag. This is more sensitive than the long-term frequency threshold, intentionally so: drought onset typically manifests in 1-2 months before becoming persistent.
+
+### 7.9 Quality score
 
 **`quality_score`** -- Composite data quality indicator in [0, 1]:
 
@@ -856,4 +887,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `d4300b7` (master), processing version `s2l2a-v1.14.0`, score version `risk-v1.12.0`.*
+*Document generated from source code at commit `6fabf35` (master), processing version `s2l2a-v1.15.0`, score version `risk-v1.12.0`.*
