@@ -60,7 +60,8 @@ def search_scenes(
         collections=[collection],
         intersects=geojson,
         datetime=f"{date_start}/{date_end}",
-        max_items=max_total_scenes * 3,  # fetch extra for filtering
+        max_items=max_total_scenes * 3,  # fetch extra for per-month selection
+        query={"eo:cloud_cover": {"lt": 80}},  # skip scenes that will almost certainly fail SCL threshold
     )
 
     items = list(search.items())

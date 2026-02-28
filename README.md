@@ -189,10 +189,11 @@ Grid cell coordinates are snapped to the nearest 1/24° center before querying. 
 
 ### Step 1: STAC metadata pre-filter (Sentinel-2)
 
-1. Group by calendar month
-2. Sort by `eo:cloud_cover` (scene-level catalog metadata)
-3. Keep up to `MAX_SCENES_PER_MONTH` (default 2) per month
-4. Hard cap at `MAX_TOTAL_SCENES` (default 120) across the full date range
+1. Query STAC with a server-side `eo:cloud_cover < 80` filter to skip heavily clouded scenes before any S3 read
+2. Group by calendar month
+3. Sort remaining scenes by `eo:cloud_cover` (ascending)
+4. Keep up to `MAX_SCENES_PER_MONTH` (default 2) per month
+5. Hard cap at `MAX_TOTAL_SCENES` (default 120) across the full date range
 
 ### Step 2: Per-pixel SCL masking
 
@@ -200,7 +201,7 @@ After reading the SCL band, each pixel is evaluated against the valid class list
 
 ### Step 3: Scene rejection
 
-If fewer than `MIN_VALID_PIXEL_FRACTION` (default 10%) of pixels survive the mask, the scene is discarded entirely.
+If fewer than `MIN_VALID_PIXEL_FRACTION` (default 5%) of pixels survive the mask, the scene is discarded entirely.
 
 ### Sentinel-1 scene selection
 
@@ -218,7 +219,7 @@ SAR has no cloud cover to filter on. Selection criteria:
 |-----------|-------|-----------|
 | 0 | No data | Masked |
 | 1 | Saturated / defective | Masked |
-| 2 | Dark area pixels | Masked |
+| 2 | Dark area pixels | **Valid** |
 | 3 | Cloud shadows | Masked |
 | 4 | Vegetation | **Valid** |
 | 5 | Not vegetated (bare soil, urban) | **Valid** |
@@ -229,7 +230,7 @@ SAR has no cloud cover to filter on. Selection criteria:
 | 10 | Thin cirrus | Masked |
 | 11 | Snow / ice | **Valid** |
 
-Class 11 is included as valid. Snow is a real land surface observation. Excluding it would blank out winter scenes for alpine and high-latitude locations and make NDSI impossible to compute.
+Class 2 (dark area pixels -- dark vegetation, shaded slopes, dark soils) is included as valid: these are genuine land surface observations, not cloud artifacts. Class 11 (snow) is included to preserve winter scenes for alpine and high-latitude locations and enable NDSI computation.
 
 ---
 
@@ -244,7 +245,7 @@ Class 11 is included as valid. Snow is a real land surface observation. Excludin
    - 10m bands (B02, B03, B04, B08): 64x64 native pixels = 640m x 640m footprint
    - 20m bands (B11, B12, SCL): 32x32 native pixels = same 640m footprint, then expanded to 64x64 by 2x pixel block repeat for array alignment
 
-All bands for a scene are read concurrently (up to `MAX_CONCURRENT_COG_READS = 8`).
+All bands for a scene are read concurrently (up to `MAX_CONCURRENT_COG_READS = 32`).
 
 ### Sentinel-1 (rasterio WarpedVRT)
 
@@ -558,8 +559,8 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.10.0",
-  "score_version": "risk-v1.11.0",
+  "processing_version": "s2l2a-v1.13.0",
+  "score_version": "risk-v1.12.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -792,7 +793,7 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.11.0` | Cache key tag for features |
+| `PROCESSING_VERSION` | `s2l2a-v1.13.0` | Cache key tag for features |
 | `SCORE_VERSION` | `risk-v1.12.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
@@ -806,9 +807,9 @@ All settings are environment variables. Defaults work out of the box.
 | `AWS_SENTINEL_REGION` | `us-west-2` | S2 bucket region |
 | `MAX_SCENES_PER_MONTH` | `2` | Max S2 scenes per month |
 | `MAX_TOTAL_SCENES` | `120` | Hard cap on total S2 scenes |
-| `MAX_CONCURRENT_COG_READS` | `8` | Max parallel S3 connections |
+| `MAX_CONCURRENT_COG_READS` | `32` | Max parallel S3 connections |
 | `COG_WINDOW_SIZE` | `64` | Native pixel count (10m bands: 64x64 = 640m footprint) |
-| `MIN_VALID_PIXEL_FRACTION` | `0.1` | Minimum valid pixel fraction to accept a scene |
+| `MIN_VALID_PIXEL_FRACTION` | `0.05` | Minimum valid pixel fraction to accept a scene |
 
 ### Sentinel-1 SAR
 

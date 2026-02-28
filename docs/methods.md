@@ -1,7 +1,7 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.11.0` / scoring `risk-v1.12.0`
-**Date:** 2026-02-27
+**Version:** processing `s2l2a-v1.13.0` / scoring `risk-v1.12.0`
+**Date:** 2026-02-28
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
@@ -128,7 +128,7 @@ All reads use the scene's native UTM CRS. The WGS84 centroid is reprojected to U
 
 ### 3.1 Sentinel-2
 
-1. STAC search for all items in `sentinel-2-l2a` intersecting the location bounding box over the analysis date window.
+1. STAC search for all items in `sentinel-2-l2a` intersecting the location bounding box over the analysis date window, with a server-side filter `eo:cloud_cover < 80` to avoid fetching scenes that will almost certainly fail the pixel-level mask test.
 2. Group items by calendar month (`YYYY-MM`).
 3. Within each month, sort by `eo:cloud_cover` (scene-level catalog metadata, ascending).
 4. Keep up to `MAX_SCENES_PER_MONTH = 2` items per month.
@@ -153,15 +153,16 @@ Valid (unmasked) SCL classes:
 
 | SCL value | Label | Rationale for inclusion |
 |-----------|-------|------------------------|
+| 2 | Dark area pixels | Dark vegetation, shaded slopes, dark soils -- genuine land surface, not cloud |
 | 4 | Vegetation | Core valid class |
 | 5 | Not vegetated (bare soil, urban) | Core valid class |
 | 6 | Water | Core valid class |
 | 7 | Unclassified / low cloud probability | Low contamination risk; retains marginal scenes |
 | 11 | Snow / Ice | Snow is a physical land surface; excluding it would blank alpine/high-latitude winter scenes and prevent NDSI computation |
 
-All other classes (0 No data, 1 Defective, 2 Dark area, 3 Cloud shadow, 8 Cloud medium, 9 Cloud high, 10 Thin cirrus) are masked. Masked pixels are set to NaN before index computation.
+All other classes (0 No data, 1 Defective, 3 Cloud shadow, 8 Cloud medium, 9 Cloud high, 10 Thin cirrus) are masked. Masked pixels are set to NaN before index computation.
 
-**Scene rejection:** if fewer than `MIN_VALID_PIXEL_FRACTION = 10%` of the 64 × 64 window pixels survive the SCL mask, the entire scene is discarded. A scene producing fewer than 410 valid pixels out of 4,096 contributes no observations for that month.
+**Scene rejection:** if fewer than `MIN_VALID_PIXEL_FRACTION = 5%` of the 64 × 64 window pixels survive the SCL mask, the entire scene is discarded. A scene producing fewer than 205 valid pixels out of 4,096 contributes no observations for that month. This threshold allows scenes with a small but usable clear window in otherwise cloudy conditions to contribute observations.
 
 **Cloud fraction per scene:**
 
@@ -373,13 +374,12 @@ The canopy proxy approximates canopy closure from the peak photosynthetic signal
 coverage  = months_observed / months_total
 clarity   = 1 − mean_cloud_fraction
 
-confidence = coverage / 0.5   if coverage < 0.5
-           = 1.0               otherwise
-
-quality_score = coverage × clarity × confidence
+quality_score = 0.65 × coverage + 0.35 × clarity
 ```
 
-The confidence factor penalises locations with very sparse temporal coverage (below 50% of months observed).
+Temporal coverage is weighted more heavily (65%) because missing months directly affect the reliability of trend and anomaly features. Scene clarity (35%) captures residual cloud contamination within accepted scenes.
+
+`mean_cloud_fraction` is computed only over months that have at least one valid observation, so that fully-cloudy months (which already reduce `coverage`) do not also inflate the cloud fraction estimate.
 
 ---
 
@@ -841,9 +841,9 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 | `MAX_TOTAL_SCENES` | 120 | Hard cap on total S2 scenes |
 | `SAR_MAX_SCENES_PER_MONTH` | 2 | S1 scenes per calendar month |
 | `SAR_MAX_TOTAL_SCENES` | 120 | Hard cap on total S1 scenes |
-| `MIN_VALID_PIXEL_FRACTION` | 0.10 | Minimum fraction to accept a scene |
+| `MIN_VALID_PIXEL_FRACTION` | 0.05 | Minimum fraction to accept a scene (5% of 4,096 pixels = 205 px) |
 | `COG_WINDOW_SIZE` | 64 | Window size in native pixels |
 
 ---
 
-*Document generated from source code at commit `049464d` (master), processing version `s2l2a-v1.11.0`, score version `risk-v1.12.0`.*
+*Document generated from source code at commit `bb8f864` (master), processing version `s2l2a-v1.13.0`, score version `risk-v1.12.0`.*

@@ -75,10 +75,8 @@ class Settings(BaseSettings):
     COG_WINDOW_SIZE: int = 64
 
     # Scene selection
-    # 1 scene/month keeps quality for long-term features (means, trends, anomaly freq)
-    # while halving S3 read count vs the previous default of 2.
-    MAX_SCENES_PER_MONTH: int = 1
-    MAX_TOTAL_SCENES: int = 60
+    MAX_SCENES_PER_MONTH: int = 2
+    MAX_TOTAL_SCENES: int = 120
 
     # Geometry limits
     MAX_PARCEL_AREA_SQM: float = 5_000_000.0  # 500 ha
@@ -95,7 +93,7 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.12.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.13.0"
     SCORE_VERSION: str = "risk-v1.12.0"
 
     # Storage
@@ -137,13 +135,14 @@ class Settings(BaseSettings):
     SUBTROPICAL_SEASON_MONTHS: list[int] = [3, 4, 5, 6, 7, 8, 9, 10, 11]
 
     # SCL valid classes
+    # 2=Dark area pixels (dark vegetation/shadow edges -- valid land signal)
     # 4=Vegetation, 5=Bare soils, 6=Water, 7=Unclassified (low cloud prob)
-    # 11=Snow/Ice -- included because snow is a valid land surface observation,
-    # not a cloud artifact. Excluding it would mask winter scenes and zero-out NDSI.
-    SCL_VALID_CLASSES: list[int] = [4, 5, 6, 7, 11]
+    # 11=Snow/Ice -- valid land surface, not a cloud artifact; required for NDSI
+    SCL_VALID_CLASSES: list[int] = [2, 4, 5, 6, 7, 11]
 
-    # Minimum valid pixel fraction to accept an observation
-    MIN_VALID_PIXEL_FRACTION: float = 0.1
+    # Minimum valid pixel fraction to accept an observation.
+    # 0.05 salvages partial clear windows in persistently cloudy regions.
+    MIN_VALID_PIXEL_FRACTION: float = 0.05
 
     # CORS
     CORS_ORIGINS: list[str] = [
