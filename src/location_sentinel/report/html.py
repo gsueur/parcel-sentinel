@@ -1238,9 +1238,24 @@ def _episode_badges_html(feat: dict) -> str:
         )
     if not badges:
         return ""
+    disclaimer = (
+        '<p style="margin:6px 0 0;font-size:0.72rem;color:#64748b;line-height:1.5">'
+        '<strong>Note:</strong> These indicators are derived from automated analysis of '
+        'satellite imagery (Sentinel-1 SAR and Sentinel-2 optical). Detection may be '
+        'delayed depending on satellite revisit schedules and cloud cover at the time '
+        'of acquisition. They are not official emergency alerts and are not intended to '
+        'replace guidance issued by civil protection agencies, national meteorological '
+        'services, or disaster management authorities. Always refer to official sources '
+        'for emergency response decisions.'
+        '</p>'
+    )
     return (
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+        '<div style="margin-top:10px;padding:10px 14px;background:#f8fafc;'
+        'border:1px solid #e2e8f0;border-radius:6px">'
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'
         + "".join(badges)
+        + "</div>"
+        + disclaimer
         + "</div>"
     )
 
