@@ -226,8 +226,7 @@ async def run_sar_features(
             if frac is not None and vv_dn is not None
         ]
 
-        valid_frac_orbit = [(f, orbit) for _, f, orbit in scene_pairs]
-        water_freq = compute_sar_water_frequency(valid_frac_orbit)
+        water_freq = compute_sar_water_frequency(scene_pairs)
         return {
             "sar_water_freq_5y": water_freq,
             "_sar_scene_fracs": scene_pairs,

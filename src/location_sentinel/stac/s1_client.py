@@ -112,18 +112,24 @@ def search_sar_scenes(
         month_key = dt.strftime("%Y-%m")
         by_month[month_key].append(item)
 
+    # Select 1 scene per (orbit, month): guarantees orbit diversity without
+    # redundant same-orbit scenes. max_scenes_per_month caps the number of
+    # distinct orbits kept per month (typically 2-3 for CONUS/Europe).
     selected: list[SARSceneRef] = []
     for month_key in sorted(by_month.keys()):
-        for item in by_month[month_key][:max_scenes_per_month]:
-            if len(selected) >= max_total_scenes:
-                break
-            selected.append(SARSceneRef(
-                item=item,
-                month_key=month_key,
-                rel_orbit=_relative_orbit(item),
-            ))
         if len(selected) >= max_total_scenes:
             break
+        # First item seen per orbit is the representative for that pass
+        by_orbit: dict[int, pystac.Item] = {}
+        for item in by_month[month_key]:
+            orbit = _relative_orbit(item)
+            if orbit not in by_orbit:
+                by_orbit[orbit] = item
+        # Keep up to max_scenes_per_month orbits, sorted for determinism
+        for orbit, item in sorted(by_orbit.items())[:max_scenes_per_month]:
+            if len(selected) >= max_total_scenes:
+                break
+            selected.append(SARSceneRef(item=item, month_key=month_key, rel_orbit=orbit))
 
     months_covered = len({s.month_key for s in selected})
     logger.info(

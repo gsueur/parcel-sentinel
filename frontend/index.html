@@ -319,13 +319,13 @@ function renderGrid(locations) {
     if (loc.composite_score != null) {
       const s = loc.composite_score;
       const cls = s < 25 ? 'good' : s < 50 ? 'mid' : s < 75 ? 'elevated' : 'poor';
-      scorePill = `<span class="score-pill ${cls}" title="Composite risk score">Score&nbsp;${s}</span>`;
+      scorePill = `<span class="score-pill ${cls}" title="Composite risk score">Risk&nbsp;${s}</span>`;
     }
     let qualityPill = '';
     if (loc.quality_score != null) {
       const q = Math.round(loc.quality_score * 100);
       const cls = q >= 70 ? 'good' : q >= 40 ? 'mid' : 'poor';
-      qualityPill = `<span class="score-pill ${cls}" title="Data quality">Quality&nbsp;${q}%</span>`;
+      qualityPill = `<span class="score-pill ${cls}" title="Data quality">Data Quality&nbsp;${q}%</span>`;
     }
     const scoresRow = (scorePill || qualityPill)
       ? `<div class="card-scores">${scorePill}${qualityPill}</div>`
@@ -340,7 +340,7 @@ function renderGrid(locations) {
             <div class="card-meta">${meta}</div>
             ${customer}
             ${scoresRow}
-            <div class="card-key">${keyShort}</div>
+            
             ${staleBadge}
           </div>
         </a>

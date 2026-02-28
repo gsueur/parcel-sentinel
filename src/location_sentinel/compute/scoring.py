@@ -183,19 +183,20 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     # Not suppressed for urban locations.
     sar_water_freq = features.get("sar_water_freq_5y") or 0.0
     sar_flood_anomaly = features.get("sar_flood_anomaly") or 0.0
-    flood_risk_score = max(sar_water_freq * 100, sar_flood_anomaly * 100)
 
-    # NDWI optical cross-validation veto:
-    # If S2 optical shows no persistent surface water (ndwi_wetness_persistence
-    # below threshold) but SAR shows a significant water fraction, the two sensors
-    # contradict each other. This happens at coastal locations (ocean in the SAR
-    # window), airport runways, or large smooth rooftops -- all produce specular
-    # C-band backscatter that mimics water but are invisible as water in optical.
-    # Apply a strong discount factor; the score is not zeroed in case of partial
-    # genuine flooding that the NDWI threshold misses.
+    # NDWI optical cross-validation veto applied ONLY to the chronic component.
+    # A normally-dry location (NDWI ≈ 0%) showing a sudden SAR water anomaly is
+    # the strongest possible episodic flood signal -- the veto must NOT suppress it.
+    # The veto targets structural false positives: coastal SAR windows capturing
+    # open ocean, airport runways, or smooth rooftops that chronically mimic water
+    # in C-band but are invisible to optical NDWI. These produce elevated
+    # sar_water_freq_5y (chronic), not sar_flood_anomaly (anomaly above baseline).
     ndwi_pers = features.get("ndwi_wetness_persistence_5y") or 0.0
-    if ndwi_pers < settings.SAR_NDWI_CORROBORATION_THRESHOLD and flood_risk_score > 0:
-        flood_risk_score *= settings.SAR_NDWI_VETO_FACTOR
+    chronic_score = sar_water_freq * 100
+    if ndwi_pers < settings.SAR_NDWI_CORROBORATION_THRESHOLD and chronic_score > 0:
+        chronic_score *= settings.SAR_NDWI_VETO_FACTOR
+    acute_score = sar_flood_anomaly * 100
+    flood_risk_score = max(chronic_score, acute_score)
 
     if flood_risk_score > 10:
         driver = "sar_flood_anomaly" if sar_flood_anomaly * 100 >= sar_water_freq * 100 else "sar_water_freq_5y"

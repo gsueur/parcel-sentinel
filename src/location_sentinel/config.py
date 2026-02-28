@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     # Even if median + k*MAD is lower, scenes below this floor are not flagged.
     # 5% means at least ~200 of the 4096 pixels in the window look like water.
     SAR_MIN_ANOMALY_FRACTION: float = 0.05
+    # Minimum number of calendar-consecutive anomalous months required to count
+    # as a genuine chronic flood event. Suppresses single-pass instrument noise
+    # (wind roughening, specular glint from individual scenes).
+    SAR_MIN_CONSECUTIVE_FLOOD_MONTHS: int = 2
     SAR_MAX_SCENES_PER_MONTH: int = 2
     SAR_MAX_TOTAL_SCENES: int = 120
     # NDWI optical cross-validation veto for SAR flood score.
@@ -93,7 +97,7 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.13.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.14.0"
     SCORE_VERSION: str = "risk-v1.12.0"
 
     # Storage

@@ -170,7 +170,7 @@ async def run_features(
         )
         excluded_months = snow_months | burn_months
         non_snow_non_burn = [
-            (f, orbit) for mk, f, orbit in sar_scene_fracs
+            (mk, f, orbit) for mk, f, orbit in sar_scene_fracs
             if mk not in excluded_months
         ]
         if snow_months:
@@ -194,7 +194,7 @@ async def run_features(
         # months that NDSI falsely flags as snow (flooded floodplains).
         # Burn months are excluded: a post-fire anomaly is not a flood anomaly.
         flood_anomaly = compute_sar_flood_anomaly(
-            [(mk, f) for mk, f, _orbit in sar_scene_fracs if mk not in burn_months],
+            [(mk, f, orbit) for mk, f, orbit in sar_scene_fracs if mk not in burn_months],
             date_end,
         )
         if flood_anomaly is not None:
