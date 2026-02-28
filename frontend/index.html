@@ -77,6 +77,15 @@
       border: 1px solid #fcd34d; border-radius: 3px;
       padding: 1px 6px; vertical-align: middle;
     }
+    .card-scores { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+    .score-pill {
+      display: inline-flex; align-items: center;
+      font-size: 0.67rem; font-weight: 600; letter-spacing: 0.01em;
+      border-radius: 3px; padding: 1px 6px; white-space: nowrap;
+    }
+    .score-pill.good { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .score-pill.mid  { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .score-pill.poor { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
     .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
     .card-link { display: block; text-decoration: none; color: inherit; }
     .card-link:hover .card-name { color: var(--accent); }
@@ -305,6 +314,21 @@ function renderGrid(locations) {
     const staleBadge = isStale
       ? `<span class="badge-stale" title="Stored: processing=${loc.processing_version || 'none'}, score=${loc.score_version || 'none'}&#10;Current: processing=${serverVersions.processing}, score=${serverVersions.score}">Update available</span>`
       : '';
+    let scorePill = '';
+    if (loc.composite_score != null) {
+      const s = loc.composite_score;
+      const cls = s >= 70 ? 'good' : s >= 40 ? 'mid' : 'poor';
+      scorePill = `<span class="score-pill ${cls}" title="Composite risk score">Score&nbsp;${s}</span>`;
+    }
+    let qualityPill = '';
+    if (loc.quality_score != null) {
+      const q = Math.round(loc.quality_score * 100);
+      const cls = q >= 70 ? 'good' : q >= 40 ? 'mid' : 'poor';
+      qualityPill = `<span class="score-pill ${cls}" title="Data quality">Quality&nbsp;${q}%</span>`;
+    }
+    const scoresRow = (scorePill || qualityPill)
+      ? `<div class="card-scores">${scorePill}${qualityPill}</div>`
+      : '';
     return `
       <div class="card">
         <a class="card-link" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
@@ -314,6 +338,7 @@ function renderGrid(locations) {
             <div class="card-name">${name}</div>
             <div class="card-meta">${meta}</div>
             ${customer}
+            ${scoresRow}
             <div class="card-key">${keyShort}</div>
             ${staleBadge}
           </div>

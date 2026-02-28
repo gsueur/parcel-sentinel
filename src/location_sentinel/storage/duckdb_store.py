@@ -543,18 +543,19 @@ class DuckDBStore:
         rows = self._conn.execute(
             f"""
             WITH latest_features AS (
-                SELECT location_key, processing_version
+                SELECT location_key, processing_version, features_json
                 FROM location_features
                 QUALIFY ROW_NUMBER() OVER (PARTITION BY location_key ORDER BY updated_at DESC) = 1
             ),
             latest_scores AS (
-                SELECT location_key, score_version
+                SELECT location_key, score_version, scores_json
                 FROM location_scores
                 QUALIFY ROW_NUMBER() OVER (PARTITION BY location_key ORDER BY updated_at DESC) = 1
             )
             SELECT pg.location_key, pg.geojson_text, pg.name, pg.customer_id,
                    c.name AS customer_name, pg.updated_at,
-                   lf.processing_version, ls.score_version
+                   lf.processing_version, ls.score_version,
+                   lf.features_json, ls.scores_json
             FROM location_geometries pg
             LEFT JOIN customers c ON pg.customer_id = c.customer_id
             LEFT JOIN latest_features lf ON lf.location_key = pg.location_key
@@ -565,13 +566,27 @@ class DuckDBStore:
             params,
         ).fetchall()
         result = []
-        for location_key, geojson_text, name, customer_id, customer_name, updated_at, processing_version, score_version in rows:
+        for (location_key, geojson_text, name, customer_id, customer_name,
+             updated_at, processing_version, score_version,
+             features_json_str, scores_json_str) in rows:
             try:
                 geojson = json.loads(geojson_text)
                 centroid = shape(geojson).centroid
                 centroid_lonlat = [round(centroid.x, 5), round(centroid.y, 5)]
             except Exception:
                 centroid_lonlat = None
+            quality_score: float | None = None
+            composite_score: int | None = None
+            if features_json_str:
+                try:
+                    quality_score = json.loads(features_json_str).get("quality_score")
+                except Exception:
+                    pass
+            if scores_json_str:
+                try:
+                    composite_score = json.loads(scores_json_str).get("composite_score")
+                except Exception:
+                    pass
             result.append({
                 "location_key": location_key,
                 "name": name,
@@ -581,6 +596,8 @@ class DuckDBStore:
                 "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else str(updated_at),
                 "processing_version": processing_version,
                 "score_version": score_version,
+                "quality_score": quality_score,
+                "composite_score": composite_score,
                 "report_url": f"/v1/location/{location_key}/report",
                 "thumbnail_url": f"/v1/thumbnail/{location_key}.png",
             })
