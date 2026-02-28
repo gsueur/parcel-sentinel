@@ -78,6 +78,12 @@
       padding: 1px 6px; vertical-align: middle;
     }
     .card-scores { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+    .card-episodes { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+    .ep-badge { display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.67rem; font-weight: 600; border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+    .ep-badge.flood  { background: #f0f9ff; color: #0369a1; border: 1px solid #7dd3fc; }
+    .ep-badge.fire   { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+    .ep-badge.drought { background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; }
     .score-pill {
       display: inline-flex; align-items: center;
       font-size: 0.67rem; font-weight: 600; letter-spacing: 0.01em;
@@ -330,6 +336,18 @@ function renderGrid(locations) {
     const scoresRow = (scorePill || qualityPill)
       ? `<div class="card-scores">${scorePill}${qualityPill}</div>`
       : '';
+    const EP_META = {
+      active_flood:   { cls: 'flood',   icon: '💧', label: 'Flood' },
+      active_fire:    { cls: 'fire',    icon: '🔥', label: 'Fire' },
+      active_drought: { cls: 'drought', icon: '🌵', label: 'Drought' },
+    };
+    const eps = loc.active_episodes || [];
+    const episodeBadges = eps.length
+      ? `<div class="card-episodes">${eps.map(ep => {
+          const m = EP_META[ep] || { cls: 'flood', icon: '⚠', label: ep };
+          return `<span class="ep-badge ${m.cls}" title="Active episode">${m.icon}&nbsp;${m.label}</span>`;
+        }).join('')}</div>`
+      : '';
     return `
       <div class="card">
         <a class="card-link" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
@@ -340,7 +358,7 @@ function renderGrid(locations) {
             <div class="card-meta">${meta}</div>
             ${customer}
             ${scoresRow}
-            
+            ${episodeBadges}
             ${staleBadge}
           </div>
         </a>

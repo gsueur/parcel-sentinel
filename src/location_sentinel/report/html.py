@@ -861,9 +861,9 @@ def _sar_scene_cards(sar_scene_months: list[dict], water_threshold: int) -> str:
                 )
                 vv_b64 = vv_dn_to_b64(entry["vv_dn"], water_threshold)
                 cells.append(
-                    f'<td>'
-                    f'<img src="data:image/png;base64,{vv_b64}" alt="VV {month}">'
-                    f'<div style="text-align:center;font-family:monospace;font-size:0.72rem;'
+                    f'<td style="text-align:center">'
+                    f'<img style="margin:0 auto" src="data:image/png;base64,{vv_b64}" alt="VV {month}">'
+                    f'<div style="font-family:monospace;font-size:0.72rem;'
                     f'font-weight:600;color:{frac_color};margin-top:3px">{frac_str}</div>'
                     f'</td>'
                 )
@@ -1205,6 +1205,39 @@ def _tc_climate_charts_html(
     return "\n".join(parts)
 
 
+def _episode_badges_html(feat: dict) -> str:
+    """Return a flex row of colored badge pills for any active episode flags."""
+    badges = []
+    if (feat.get("active_flood") or 0.0) > 0.5:
+        badges.append(
+            '<span style="display:inline-flex;align-items:center;gap:5px;'
+            'background:#f0f9ff;border:1px solid #7dd3fc;border-radius:5px;'
+            'padding:3px 11px;font-size:0.8rem;font-weight:600;color:#0369a1">'
+            '&#x1F4A7;&nbsp;Flood event</span>'
+        )
+    if (feat.get("active_fire") or 0.0) > 0.5:
+        badges.append(
+            '<span style="display:inline-flex;align-items:center;gap:5px;'
+            'background:#fef2f2;border:1px solid #fca5a5;border-radius:5px;'
+            'padding:3px 11px;font-size:0.8rem;font-weight:600;color:#dc2626">'
+            '&#x1F525;&nbsp;Active fire</span>'
+        )
+    if (feat.get("active_drought") or 0.0) > 0.5:
+        badges.append(
+            '<span style="display:inline-flex;align-items:center;gap:5px;'
+            'background:#fffbeb;border:1px solid #fcd34d;border-radius:5px;'
+            'padding:3px 11px;font-size:0.8rem;font-weight:600;color:#d97706">'
+            '&#x1F335;&nbsp;Drought</span>'
+        )
+    if not badges:
+        return ""
+    return (
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+        + "".join(badges)
+        + "</div>"
+    )
+
+
 def build_report_html(
     location_key: str,
     name: str | None,
@@ -1265,9 +1298,10 @@ def build_report_html(
     else:
         thumb_html = '<div class="no-thumb">No geometry stored</div>'
 
-    # Urban flag
+    # Urban flag and episode badges
     feat = features or {}
     is_urban = (feat.get("is_urban") or 0.0) > 0.5
+    episode_badges_html = _episode_badges_html(feat)
 
     # Scores
     s = scores or {}
@@ -1498,6 +1532,7 @@ def build_report_html(
     <span style="color:#94a3b8;font-size:0.72rem">generated {generated}</span>
     {f'<span style="color:#64748b;font-size:0.76rem">&#x1F4C5; Analysis period: <strong>{date_range_str}</strong></span>' if date_range_str else ''}
   </div>
+  {episode_badges_html}
 </div>
 
 <div class="container">

@@ -143,56 +143,35 @@ async def run_features(
     sar_scene_fracs: list[tuple[str, float, int]] = sar_features.pop("_sar_scene_fracs", [])
     sar_scene_arrays: list[tuple[str, str, object, float, int]] = sar_features.pop("_sar_scene_arrays", [])
 
+    # Burn months derived from NBR: used for SAR suppression and the active_fire flag.
+    # Computed unconditionally (NBR does not depend on SAR data being available).
+    burn_months: set[str] = get_persistent_burn_months(
+        nbr_records,
+        threshold=settings.NBR_ANOMALY_THRESHOLD,
+        min_consecutive=settings.NBR_MIN_CONSECUTIVE,
+    )
+
     if sar_scene_fracs:
         # -- Chronic water frequency (snow- and burn-suppressed, orbit-stratified) --
-        # Exclude months where co-located S2 NDSI confirms actual snow cover.
-        # Note: flooded fields also produce high NDSI (specular reflection), so
-        # snow suppression is intentionally limited to locations where persistent
-        # snow is physically plausible (high elevation / high latitude).
-        # For flood-prone lowland sites the suppression may over-exclude; the
-        # anomaly metric below is immune to this because it uses all scenes.
         snow_months: set[str] = {
             rec.month for rec in ndsi_records
             if rec.mean is not None and rec.mean > settings.NDSI_SNOW_THRESHOLD
         }
-        # Exclude months where co-located S2 NBR confirms a persistent anomalous
-        # burn scar. Uses anomaly-based detection (same as fire score): only months
-        # where NBR drops more than NBR_ANOMALY_THRESHOLD below the site's own
-        # seasonal climatology are candidates. This correctly ignores naturally
-        # low NBR in Mediterranean dry seasons (Cape Town fynbos, California
-        # chaparral in unburned years) -- the seasonal low is normal for that site
-        # so it has zero anomaly. Genuine fire scars produce abrupt departures
-        # well below the seasonal norm and still trigger suppression.
-        burn_months: set[str] = get_persistent_burn_months(
-            nbr_records,
-            threshold=settings.NBR_ANOMALY_THRESHOLD,
-            min_consecutive=settings.NBR_MIN_CONSECUTIVE,
-        )
         excluded_months = snow_months | burn_months
         non_snow_non_burn = [
             (mk, f, orbit) for mk, f, orbit in sar_scene_fracs
             if mk not in excluded_months
         ]
         if snow_months:
-            logger.info(
-                "SAR snow suppression: excluded %d snow months",
-                len(snow_months),
-            )
+            logger.info("SAR snow suppression: excluded %d snow months", len(snow_months))
         if burn_months:
-            logger.info(
-                "SAR burn suppression: excluded %d burn months",
-                len(burn_months),
-            )
+            logger.info("SAR burn suppression: excluded %d burn months", len(burn_months))
             quality.flags.append("sar_burn_suppression")
         sar_features["sar_water_freq_5y"] = (
             compute_sar_water_frequency(non_snow_non_burn) if non_snow_non_burn else None
         )
 
         # -- Flood anomaly (burn-suppressed, no snow suppression) --
-        # Compares recent water_frac to historical seasonal baseline for the same
-        # calendar month. Detects sudden flood events even when they coincide with
-        # months that NDSI falsely flags as snow (flooded floodplains).
-        # Burn months are excluded: a post-fire anomaly is not a flood anomaly.
         flood_anomaly = compute_sar_flood_anomaly(
             [(mk, f, orbit) for mk, f, orbit in sar_scene_fracs if mk not in burn_months],
             date_end,
@@ -222,5 +201,36 @@ async def run_features(
     features["is_urban"] = 1.0 if is_urban else 0.0
     if is_urban:
         quality.flags.append("urban_location")
+
+    # Active episode flags (drives UI badges on report header and dashboard cards)
+    _end_abs = int(date_end[:4]) * 12 + int(date_end[5:7])
+
+    # active_flood: SAR acute anomaly > 10% in recent scenes (sar_flood_anomaly covers last 2 months)
+    features["active_flood"] = 1.0 if (features.get("sar_flood_anomaly") or 0.0) > 0.10 else 0.0
+
+    # active_fire: any consecutive-confirmed burn month within 3 months of date_end
+    features["active_fire"] = 1.0 if burn_months and any(
+        _end_abs - (int(mk[:4]) * 12 + int(mk[5:7])) <= 3
+        for mk in burn_months
+    ) else 0.0
+
+    # active_drought: any of the 3 most recent NDVI months below seasonal climatology
+    _recent_drought = False
+    if ndvi_records:
+        _valid_ndvi = [r for r in ndvi_records if r.mean is not None]
+        _recent = [
+            r for r in _valid_ndvi
+            if _end_abs - (int(r.month[:4]) * 12 + int(r.month[5:7])) <= 3
+        ]
+        if _recent:
+            _by_cal: dict[int, list[float]] = {}
+            for r in _valid_ndvi:
+                _by_cal.setdefault(int(r.month[5:7]), []).append(r.mean)
+            _clim = {mo: sum(v) / len(v) for mo, v in _by_cal.items()}
+            _recent_drought = any(
+                r.mean < _clim.get(int(r.month[5:7]), r.mean) - settings.NDVI_ANOMALY_THRESHOLD
+                for r in _recent
+            )
+    features["active_drought"] = 1.0 if _recent_drought else 0.0
 
     return location_key, features, quality, series

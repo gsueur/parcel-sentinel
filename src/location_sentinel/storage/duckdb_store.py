@@ -582,9 +582,14 @@ class DuckDBStore:
                 centroid_lonlat = None
             quality_score: float | None = None
             composite_score: int | None = None
+            active_episodes: list[str] = []
             if features_json_str:
                 try:
-                    quality_score = json.loads(features_json_str).get("quality_score")
+                    _feat = json.loads(features_json_str)
+                    quality_score = _feat.get("quality_score")
+                    for _ep in ("active_flood", "active_fire", "active_drought"):
+                        if (_feat.get(_ep) or 0.0) > 0.5:
+                            active_episodes.append(_ep)
                 except Exception:
                     pass
             if scores_json_str:
@@ -603,6 +608,7 @@ class DuckDBStore:
                 "score_version": score_version,
                 "quality_score": quality_score,
                 "composite_score": composite_score,
+                "active_episodes": active_episodes,
                 "report_url": f"/v1/location/{location_key}/report",
                 "thumbnail_url": f"/v1/thumbnail/{location_key}.png",
             })
