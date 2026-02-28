@@ -859,13 +859,20 @@ def _sar_scene_cards(sar_scene_months: list[dict], water_threshold: int) -> str:
                 frac_color = "#dc2626" if (water_frac or 0) > 0.30 else (
                     "#ea580c" if (water_frac or 0) > 0.10 else "#94a3b8"
                 )
+                # Extract acquisition day from scene_id: S1X_IW_GRDH_1SDV_YYYYMMDDTHHMMSS_...
+                scene_id = entry.get("scene_id", "")
+                try:
+                    day_str = scene_id.split("_")[4][6:8]
+                except (IndexError, AttributeError):
+                    day_str = ""
                 vv_b64 = vv_dn_to_b64(entry["vv_dn"], water_threshold)
                 cells.append(
                     f'<td style="text-align:center">'
                     f'<img style="margin:0 auto" src="data:image/png;base64,{vv_b64}" alt="VV {month}">'
                     f'<div style="font-family:monospace;font-size:0.72rem;'
                     f'font-weight:600;color:{frac_color};margin-top:3px">{frac_str}</div>'
-                    f'</td>'
+                    + (f'<div style="font-family:monospace;font-size:0.68rem;color:#94a3b8;margin-top:1px">day&nbsp;{day_str}</div>' if day_str else '')
+                    + f'</td>'
                 )
         rows.append(f'<tr><td>{month}</td>{"".join(cells)}</tr>')
 
