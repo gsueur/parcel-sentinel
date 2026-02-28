@@ -825,40 +825,56 @@ def _scene_rows(scene_months: list[dict]) -> str:
 
 
 def _sar_scene_cards(sar_scene_months: list[dict], water_threshold: int) -> str:
-    """Render SAR scenes as a flex-wrap card grid.
+    """Render SAR scenes as a table: months as rows, one column per relative orbit.
 
-    Each card shows: month + orbit header, VV image, water fraction underneath.
-    All scenes (multiple orbits per month) are shown.
+    Column headers show the orbit number. Each cell contains the VV image
+    with the water fraction below it. Uses the same table.scenes CSS as S2 scenes.
     """
     if not sar_scene_months:
         return '<p class="no-data">No SAR scene images cached yet.</p>'
-    cards = []
+
+    # Index entries by (month_key, rel_orbit)
+    lookup: dict[tuple[str, int], dict] = {}
     for entry in sar_scene_months:
-        month = entry["month_key"]
-        rel_orbit = entry.get("rel_orbit", 0)
-        vv_dn = entry["vv_dn"]
-        water_frac = entry.get("water_frac")
-        frac_str = f"{water_frac * 100:.1f}%" if water_frac is not None else "—"
-        frac_color = "#dc2626" if (water_frac or 0) > 0.30 else (
-            "#ea580c" if (water_frac or 0) > 0.10 else "#64748b"
-        )
-        vv_b64 = vv_dn_to_b64(vv_dn, water_threshold)
-        orbit_label = f"· orbit {rel_orbit}" if rel_orbit else ""
-        cards.append(
-            f'<div style="display:flex;flex-direction:column;align-items:center;'
-            f'gap:4px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px">'
-            f'<div style="font-size:0.72rem;color:#64748b;font-weight:600;white-space:nowrap">'
-            f'{month}{orbit_label}</div>'
-            f'<img src="data:image/png;base64,{vv_b64}" alt="VV {month}" '
-            f'style="display:block;image-rendering:pixelated">'
-            f'<div style="font-size:0.78rem;font-family:monospace;font-weight:600;color:{frac_color}">'
-            f'{frac_str}</div>'
-            f'</div>'
-        )
+        key = (entry["month_key"], entry.get("rel_orbit", 0))
+        lookup[key] = entry
+
+    # Sorted unique orbits (ascending) and months (descending)
+    orbits = sorted({entry.get("rel_orbit", 0) for entry in sar_scene_months})
+    months = sorted({entry["month_key"] for entry in sar_scene_months}, reverse=True)
+
+    orbit_headers = "".join(
+        f'<th>Orbit {o if o else "?"}</th>' for o in orbits
+    )
+    rows = []
+    for month in months:
+        cells = []
+        for orbit in orbits:
+            entry = lookup.get((month, orbit))
+            if entry is None:
+                cells.append('<td><div class="no-img">—</div></td>')
+            else:
+                water_frac = entry.get("water_frac")
+                frac_str = f"{water_frac * 100:.1f}%" if water_frac is not None else "—"
+                frac_color = "#dc2626" if (water_frac or 0) > 0.30 else (
+                    "#ea580c" if (water_frac or 0) > 0.10 else "#94a3b8"
+                )
+                vv_b64 = vv_dn_to_b64(entry["vv_dn"], water_threshold)
+                cells.append(
+                    f'<td>'
+                    f'<img src="data:image/png;base64,{vv_b64}" alt="VV {month}">'
+                    f'<div style="text-align:center;font-family:monospace;font-size:0.72rem;'
+                    f'font-weight:600;color:{frac_color};margin-top:3px">{frac_str}</div>'
+                    f'</td>'
+                )
+        rows.append(f'<tr><td>{month}</td>{"".join(cells)}</tr>')
+
     return (
-        '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start">'
-        + "\n".join(cards)
-        + "</div>"
+        '<div class="scene-grid">'
+        '<table class="scenes">'
+        f'<thead><tr><th>Month</th>{orbit_headers}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table></div>'
     )
 
 
