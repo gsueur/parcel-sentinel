@@ -18,46 +18,51 @@ from ..config import settings
 # Koeppen-Geiger climate classification metadata
 # ---------------------------------------------------------------------------
 _KG_DESCRIPTIONS: dict[str, tuple[str, str]] = {
-    # code: (short label, criterion/notes)
-    "Af": ("Equatorial rainforest, fully humid",    "Pmin ≥ 60 mm/month"),
-    "Am": ("Equatorial monsoon",                     "Pann ≥ 25(100−Pmin)"),
-    "As": ("Equatorial savannah, dry summer",        "Pmin < 60 mm in summer"),
-    "Aw": ("Equatorial savannah, dry winter",        "Pmin < 60 mm in winter"),
-    "BWh": ("Hot desert",                            "Pann ≤ 5 Pth, Tann ≥ +18 °C"),
-    "BWk": ("Cold desert",                           "Pann ≤ 5 Pth, Tann < +18 °C"),
-    "BSh": ("Hot steppe",                            "Pann > 5 Pth, Tann ≥ +18 °C"),
-    "BSk": ("Cold steppe",                           "Pann > 5 Pth, Tann < +18 °C"),
-    "Csa": ("Warm temperate, dry hot summer",        "Dry summer, Tmax ≥ +22 °C"),
-    "Csb": ("Warm temperate, dry warm summer",       "Dry summer, warm summers"),
-    "Csc": ("Warm temperate, dry cool summer",       "Dry summer, cool summers"),
-    "Cwa": ("Warm temperate, dry winter, hot summer","Dry winter, Tmax ≥ +22 °C"),
-    "Cwb": ("Warm temperate, dry winter, warm summer","Dry winter, warm summers"),
-    "Cwc": ("Warm temperate, dry winter, cool summer","Dry winter, cool summers"),
-    "Cfa": ("Warm temperate, fully humid, hot summer","Tmax ≥ +22 °C"),
-    "Cfb": ("Warm temperate, fully humid, warm summer","Warm summers"),
-    "Cfc": ("Warm temperate, fully humid, cool summer","Cool summers"),
-    "Dsa": ("Snow, dry summer, hot summer",          "Psmin < Pwmin, Tmax ≥ +22 °C"),
-    "Dsb": ("Snow, dry summer, warm summer",         "Psmin < Pwmin, warm summers"),
-    "Dsc": ("Snow, dry summer, cool summer",         "Psmin < Pwmin, cool summers"),
-    "Dsd": ("Snow, dry summer, extremely continental","Psmin < Pwmin, Tmin ≤ −38 °C"),
-    "Dwa": ("Snow, dry winter, hot summer",          "Pwmin < Psmin, Tmax ≥ +22 °C"),
-    "Dwb": ("Snow, dry winter, warm summer",         "Pwmin < Psmin, warm summers"),
-    "Dwc": ("Snow, dry winter, cool summer",         "Pwmin < Psmin, cool summers"),
-    "Dwd": ("Snow, dry winter, extremely continental","Pwmin < Psmin, Tmin ≤ −38 °C"),
-    "Dfa": ("Snow, fully humid, hot summer",         "Tmax ≥ +22 °C"),
-    "Dfb": ("Snow, fully humid, warm summer",        "Warm summers"),
-    "Dfc": ("Snow, fully humid, cool summer",        "Cool summers"),
-    "Dfd": ("Snow, fully humid, extremely continental","Tmin ≤ −38 °C"),
-    "ET":  ("Tundra",                                "0 °C ≤ Tmax < +10 °C"),
-    "EF":  ("Ice cap / frost",                       "Tmax < 0 °C"),
+    # code: (standard climate name, quantitative criterion)
+    # -- Tropical --
+    "Af": ("Tropical rainforest climate",                                           "Pmin ≥ 60 mm/month"),
+    "Am": ("Tropical monsoon climate",                                              "Pann ≥ 25(100−Pmin)"),
+    "As": ("Tropical dry savanna climate",                                          "Pmin < 60 mm in summer"),
+    "Aw": ("Tropical savanna climate (wet)",                                        "Pmin < 60 mm in winter"),
+    # -- Arid --
+    "BWh": ("Hot desert climate",                                                   "Pann ≤ 5 Pth, Tann ≥ +18 °C"),
+    "BWk": ("Cold desert climate",                                                  "Pann ≤ 5 Pth, Tann < +18 °C"),
+    "BSh": ("Hot semi-arid (steppe) climate",                                       "5 Pth < Pann ≤ 10 Pth, Tann ≥ +18 °C"),
+    "BSk": ("Cold semi-arid (steppe) climate",                                      "5 Pth < Pann ≤ 10 Pth, Tann < +18 °C"),
+    # -- Temperate --
+    "Cfa": ("Humid subtropical climate",                                            "No dry season, Thot ≥ +22 °C"),
+    "Cfb": ("Temperate oceanic climate",                                            "No dry season, 4+ months ≥ +10 °C, Thot < +22 °C"),
+    "Cfc": ("Subpolar oceanic climate",                                             "No dry season, 1–3 months ≥ +10 °C"),
+    "Csa": ("Hot-summer Mediterranean climate",                                     "Dry summer, Thot ≥ +22 °C"),
+    "Csb": ("Warm-summer Mediterranean climate",                                    "Dry summer, Thot < +22 °C, 4+ months ≥ +10 °C"),
+    "Csc": ("Cool-summer Mediterranean climate",                                    "Dry summer, 1–3 months ≥ +10 °C"),
+    "Cwa": ("Monsoon-influenced humid subtropical climate",                         "Dry winter, Thot ≥ +22 °C"),
+    "Cwb": ("Subtropical highland / oceanic climate with dry winters",              "Dry winter, Thot < +22 °C, 4+ months ≥ +10 °C"),
+    "Cwc": ("Cold subtropical highland / subpolar oceanic climate with dry winters","Dry winter, 1–3 months ≥ +10 °C"),
+    # -- Continental --
+    "Dfa": ("Hot-summer humid continental climate",                                 "No dry season, Thot ≥ +22 °C"),
+    "Dfb": ("Warm-summer humid continental climate",                                "No dry season, Thot < +22 °C, 4+ months ≥ +10 °C"),
+    "Dfc": ("Subarctic climate",                                                    "No dry season, 1–3 months ≥ +10 °C"),
+    "Dfd": ("Extremely cold subarctic climate",                                     "No dry season, Tcold ≤ −38 °C"),
+    "Dsa": ("Hot, dry-summer continental climate",                                  "Dry summer, Thot ≥ +22 °C"),
+    "Dsb": ("Warm, dry-summer continental climate",                                 "Dry summer, Thot < +22 °C, 4+ months ≥ +10 °C"),
+    "Dsc": ("Dry-summer subarctic climate",                                         "Dry summer, 1–3 months ≥ +10 °C"),
+    "Dsd": ("Dry-summer extremely cold subarctic climate",                          "Dry summer, Tcold ≤ −38 °C"),
+    "Dwa": ("Monsoon-influenced hot-summer humid continental climate",              "Dry winter, Thot ≥ +22 °C"),
+    "Dwb": ("Monsoon-influenced warm-summer humid continental climate",             "Dry winter, Thot < +22 °C, 4+ months ≥ +10 °C"),
+    "Dwc": ("Monsoon-influenced subarctic climate",                                 "Dry winter, 1–3 months ≥ +10 °C"),
+    "Dwd": ("Monsoon-influenced extremely cold subarctic climate",                  "Dry winter, Tcold ≤ −38 °C"),
+    # -- Polar --
+    "ET":  ("Tundra climate",                                                       "0 °C ≤ Thot < +10 °C"),
+    "EF":  ("Ice cap climate",                                                      "Thot < 0 °C"),
 }
 
 # Main-class descriptions (first letter)
 _KG_MAIN: dict[str, str] = {
-    "A": "Equatorial",
+    "A": "Tropical",
     "B": "Arid",
-    "C": "Warm temperate",
-    "D": "Snow (continental)",
+    "C": "Temperate",
+    "D": "Cold (continental)",
     "E": "Polar",
 }
 
