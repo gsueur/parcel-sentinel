@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import settings
 from ..report.html import build_report_html
@@ -116,6 +116,75 @@ async def get_location_report(location_key: str):
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
     return HTMLResponse(content=html, status_code=200, headers=headers)
+
+
+@router.get("/location/{location_key}/report.json")
+async def get_location_report_json(location_key: str):
+    """Return the full report data as JSON (same payload as the HTML report, without image arrays)."""
+    location_info = store.get_location_info(location_key)
+    if location_info is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Location {location_key!r} not found. Run a POST request first.",
+        )
+
+    features_data = _get_any_features(location_key)
+    scores = store.get_scores(location_key, settings.SCORE_VERSION)
+    timeseries = store.get_timeseries(location_key, settings.PROCESSING_VERSION)
+    sar_scene_months = store.get_sar_scene_months(location_key, settings.PROCESSING_VERSION, limit=12)
+    sar_scene_fracs = store.get_sar_scene_fracs_with_orbit(location_key, settings.PROCESSING_VERSION)
+
+    tc_monthly = None
+    centroid = location_info.get("centroid")
+    if centroid:
+        try:
+            lon, lat = centroid
+            grid_lat, grid_lon = snap_to_grid(lat, lon)
+            tc_monthly = store.get_all_terraclimate_for_grid(grid_lat, grid_lon)
+        except Exception as exc:
+            logger.warning("Could not load TerraClimate data for report.json: %s", exc)
+
+    # SAR scene metadata without pixel arrays
+    sar_scenes = [
+        {
+            "scene_id": s["scene_id"],
+            "month_key": s["month_key"],
+            "rel_orbit": s["rel_orbit"],
+            "water_frac": s["water_frac"],
+        }
+        for s in sar_scene_months
+    ]
+
+    payload = {
+        "location_key": location_key,
+        "name": location_info.get("name"),
+        "centroid": centroid,
+        "geometry": location_info.get("geojson"),
+        "climate": location_info.get("climate"),
+        "processing_version": settings.PROCESSING_VERSION,
+        "score_version": settings.SCORE_VERSION,
+        "date_window": {
+            "start": features_data.get("date_start") if features_data else None,
+            "end": features_data.get("date_end") if features_data else None,
+        },
+        "scores": scores,
+        "features": features_data.get("features") if features_data else None,
+        "quality": features_data.get("quality") if features_data else None,
+        "timeseries": timeseries,
+        "sar_scene_fracs": [
+            {"month_key": mk, "water_frac": wf, "rel_orbit": orb}
+            for mk, wf, orb in (sar_scene_fracs or [])
+        ],
+        "sar_scenes": sar_scenes,
+        "tc_monthly": tc_monthly,
+        "map_links": {
+            "report_url": f"/v1/location/{location_key}/report",
+            "thumbnail_url": f"/v1/thumbnail/{location_key}.png",
+        },
+    }
+
+    headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
+    return JSONResponse(content=payload, status_code=200, headers=headers)
 
 
 def _get_any_features(location_key: str) -> dict | None:
