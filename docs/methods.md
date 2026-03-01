@@ -393,12 +393,24 @@ active_fire = 1.0  iff  any burn_month mk satisfies:
 **`active_drought`**
 
 ```
-For each of the last 3 observed NDVI months before date_end:
+For each of the last 3 observed NDVI months before date_end
+    (excluding snow months and persistently wet sites -- see suppression guards below):
     anomaly = True  iff  NDVI[y,m] < climatology[m] − NDVI_ANOMALY_THRESHOLD (0.1)
 active_drought = 1.0  iff  any of these months is anomalous
 ```
 
 Uses the same seasonal climatology as `ndvi_anomaly_freq_5y` -- the mean NDVI for each calendar month across the full analysis window. A single anomalous month in the last 3 observed months is sufficient to set the flag. This is more sensitive than the long-term frequency threshold, intentionally so: drought onset typically manifests in 1-2 months before becoming persistent.
+
+**Suppression guards:** NDVI is a vegetation health proxy and is only meaningful as a drought indicator on vegetated land. Two land cover conditions produce near-zero or negative NDVI that is spectrally indistinguishable from drought stress but has a different physical cause:
+
+1. **Snow cover:** Snow reflects nearly equally in Red and NIR, collapsing NDVI to near zero. Months where co-located NDSI > `NDSI_SNOW_THRESHOLD` (0.4) are excluded from the recency window before the anomaly check. This mirrors the SAR snow suppression logic.
+
+2. **Persistently wet sites (tidal flats, marshes, wetlands):** Emergent marsh vegetation senesces fully in winter, exposing open water that drives NDVI near zero or negative. This is driven by seasonal water dynamics, not moisture deficit. The drought flag is suppressed entirely when:
+   ```
+   sar_water_freq_5y > 0.70   (SAR confirms near-permanent surface water)
+   OR ndwi_wetness_persistence_5y > 0.30  (optical confirms frequent surface water)
+   ```
+   These thresholds identify sites where NDVI is governed by water surface dynamics rather than vegetation stress.
 
 ### 7.9 Quality score
 
@@ -887,4 +899,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `6fabf35` (master), processing version `s2l2a-v1.15.0`, score version `risk-v1.12.0`.*
+*Document generated from source code at commit `be03ed4` (master), processing version `s2l2a-v1.15.0`, score version `risk-v1.12.0`.*

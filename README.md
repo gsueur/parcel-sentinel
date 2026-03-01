@@ -378,7 +378,7 @@ Long-term features computed from the full date window (default 5 years):
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
 | `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` (acute SAR water anomaly in last ~2 months) |
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
-| `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1 |
+| `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1; suppressed for snow months (NDSI > 0.4) and persistently wet sites (SAR water freq > 70% or NDWI persistence > 30%) |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
 
 ### TerraClimate-derived features
