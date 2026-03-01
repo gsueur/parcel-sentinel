@@ -663,6 +663,30 @@ Example: `GET /v1/location/a1b2c3/report`
 
 ---
 
+### GET /v1/location/{location_key}/report.json
+
+Returns the same data as the HTML report as structured JSON. Useful for programmatic access, downstream processing, or building custom visualizations without screen-scraping the HTML.
+
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `location_key`, `name`, `centroid`, `geometry`, `climate` | Location metadata |
+| `processing_version`, `score_version` | Versions used for the stored results |
+| `date_window` | `{ start, end }` of the analysis period |
+| `scores` | All six sub-scores and `composite_score` |
+| `features` | All derived features (optical, SAR, TerraClimate, episode flags) |
+| `quality` | `months_total`, `months_observed`, `mean_cloud_fraction`, `flags` |
+| `timeseries` | Monthly series per metric: `[{ month, mean, obs, cloud }, ...]` |
+| `sar_scene_fracs` | All SAR scenes: `[{ month_key, water_frac, rel_orbit }, ...]` |
+| `sar_scenes` | Last 12 months of SAR scene metadata: `[{ scene_id, month_key, rel_orbit, water_frac }, ...]` -- pixel arrays excluded |
+| `tc_monthly` | TerraClimate monthly values per variable |
+| `map_links` | `report_url` and `thumbnail_url` |
+
+Example: `GET /v1/location/a1b2c3/report.json`
+
+---
+
 ### GET /v1/thumbnail/{location_key}.png
 
 Returns a 300x200 PNG map thumbnail on a Mapbox basemap.

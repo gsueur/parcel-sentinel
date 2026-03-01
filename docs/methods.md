@@ -899,4 +899,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `be03ed4` (master), processing version `s2l2a-v1.15.0`, score version `risk-v1.12.0`.*
+*Document generated from source code at commit `c5dce73` (master), processing version `s2l2a-v1.15.0`, score version `risk-v1.12.0`.*
