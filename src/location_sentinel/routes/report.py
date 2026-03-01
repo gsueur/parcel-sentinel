@@ -184,7 +184,18 @@ async def get_location_report_json(location_key: str):
     }
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
-    return JSONResponse(content=payload, status_code=200, headers=headers)
+    return JSONResponse(content=_round_floats(payload), status_code=200, headers=headers)
+
+
+def _round_floats(obj, ndigits: int = 4):
+    """Recursively round all floats in a JSON-serializable structure."""
+    if isinstance(obj, float):
+        return round(obj, ndigits)
+    if isinstance(obj, dict):
+        return {k: _round_floats(v, ndigits) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_round_floats(v, ndigits) for v in obj]
+    return obj
 
 
 def _get_any_features(location_key: str) -> dict | None:
