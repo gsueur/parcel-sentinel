@@ -214,13 +214,20 @@ async def run_features(
         for mk in burn_months
     ) else 0.0
 
-    # active_drought: any of the 3 most recent NDVI months below seasonal climatology
+    # active_drought: any of the 3 most recent NDVI months below seasonal climatology,
+    # excluding months where NDSI indicates snow cover (snow depresses NDVI to near-zero
+    # and is spectrally indistinguishable from a drought-driven NDVI drop).
+    _snow_months: set[str] = {
+        r.month for r in ndsi_records
+        if r.mean is not None and r.mean > settings.NDSI_SNOW_THRESHOLD
+    }
     _recent_drought = False
     if ndvi_records:
         _valid_ndvi = [r for r in ndvi_records if r.mean is not None]
         _recent = [
             r for r in _valid_ndvi
             if _end_abs - (int(r.month[:4]) * 12 + int(r.month[5:7])) <= 3
+            and r.month not in _snow_months
         ]
         if _recent:
             _by_cal: dict[int, list[float]] = {}
