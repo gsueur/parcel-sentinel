@@ -215,14 +215,22 @@ async def run_features(
     ) else 0.0
 
     # active_drought: any of the 3 most recent NDVI months below seasonal climatology,
-    # excluding months where NDSI indicates snow cover (snow depresses NDVI to near-zero
-    # and is spectrally indistinguishable from a drought-driven NDVI drop).
+    # with two suppression guards:
+    # 1. Snow months: NDSI > threshold depresses NDVI to near-zero, indistinguishable
+    #    from drought stress spectrally.
+    # 2. Persistently wet sites (tidal flats, marshes, wetlands): NDVI is governed by
+    #    water surface dynamics and emergent vegetation senescence, not moisture deficit.
+    #    SAR water frequency > 0.7 or NDWI persistence > 0.3 identifies these sites.
     _snow_months: set[str] = {
         r.month for r in ndsi_records
         if r.mean is not None and r.mean > settings.NDSI_SNOW_THRESHOLD
     }
+    _site_is_wet = (
+        (features.get("sar_water_freq_5y") or 0.0) > 0.70
+        or (features.get("ndwi_wetness_persistence_5y") or 0.0) > 0.30
+    )
     _recent_drought = False
-    if ndvi_records:
+    if ndvi_records and not _site_is_wet:
         _valid_ndvi = [r for r in ndvi_records if r.mean is not None]
         _recent = [
             r for r in _valid_ndvi
