@@ -67,6 +67,17 @@ _KG_MAIN: dict[str, str] = {
 }
 
 
+def _round_floats(obj, ndigits: int = 4):
+    """Recursively round all floats in a JSON-serializable structure."""
+    if isinstance(obj, float):
+        return round(obj, ndigits)
+    if isinstance(obj, dict):
+        return {k: _round_floats(v, ndigits) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_round_floats(v, ndigits) for v in obj]
+    return obj
+
+
 def _snap_to_koeppen_grid(coord: float) -> float:
     """Snap a lat or lon to the nearest 0.5° Koeppen-Geiger grid center.
 
@@ -370,7 +381,7 @@ class DuckDBStore:
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [location_key, processing_version, date_start, date_end,
-             json.dumps(features), json.dumps(quality), now],
+             json.dumps(_round_floats(features)), json.dumps(quality), now],
         )
         self._conn.commit()
 
@@ -407,7 +418,7 @@ class DuckDBStore:
                 if dataclasses.is_dataclass(r):
                     return dataclasses.asdict(r)
                 return r
-            serialized = json.dumps([_to_dict(r) for r in records])
+            serialized = json.dumps(_round_floats([_to_dict(r) for r in records]))
             self._conn.execute(
                 """
                 INSERT OR REPLACE INTO location_timeseries
@@ -855,7 +866,7 @@ class DuckDBStore:
                  width, height, vv_data, water_frac, rel_orbit, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            [location_key, scene_id, month_key, processing_version, w, h, flat, water_frac, rel_orbit, now],
+            [location_key, scene_id, month_key, processing_version, w, h, flat, round(water_frac, 4), rel_orbit, now],
         )
         self._conn.commit()
 
@@ -996,7 +1007,8 @@ class DuckDBStore:
                     (grid_lat, grid_lon, variable, year, month, value)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                [grid_lat, grid_lon, row["variable"], row["year"], row["month"], row["value"]],
+                [grid_lat, grid_lon, row["variable"], row["year"], row["month"],
+                 round(row["value"], 4) if row["value"] is not None else None],
             )
         self._conn.commit()
 
