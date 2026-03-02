@@ -276,6 +276,19 @@ class DuckDBStore:
             )
         """)
 
+        # NOAA CO-OPS tidal station cache
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS noaa_tidal_stations (
+                station_id VARCHAR PRIMARY KEY,
+                name VARCHAR,
+                lat FLOAT,
+                lon FLOAT,
+                state VARCHAR,
+                tide_type VARCHAR,
+                fetched_at VARCHAR
+            )
+        """)
+
         # Climate reference tables
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS climate_descriptions (
@@ -1053,6 +1066,85 @@ class DuckDBStore:
         ).fetchall()
         self._conn.commit()
         return len(result)
+
+    # ------------------------------------------------------------------
+    # NOAA tidal station cache
+    # ------------------------------------------------------------------
+
+    def store_tidal_stations(self, stations: list[dict]) -> None:
+        """Truncate and bulk-insert the NOAA tidal station list."""
+        if self._conn is None:
+            return
+        fetched_at = datetime.now(timezone.utc).isoformat()
+        self._conn.execute("DELETE FROM noaa_tidal_stations")
+        self._conn.executemany(
+            """
+            INSERT INTO noaa_tidal_stations
+                (station_id, name, lat, lon, state, tide_type, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (s["station_id"], s["name"], s["lat"], s["lon"],
+                 s.get("state", ""), s.get("tide_type", ""), fetched_at)
+                for s in stations
+            ],
+        )
+        self._conn.commit()
+
+    def needs_tidal_station_refresh(self, max_age_days: int) -> bool:
+        """Return True if the tidal station table is empty or older than max_age_days."""
+        if self._conn is None:
+            return False
+        row = self._conn.execute(
+            "SELECT MIN(fetched_at) FROM noaa_tidal_stations"
+        ).fetchone()
+        if row is None or row[0] is None:
+            return True
+        oldest_str = row[0]
+        try:
+            oldest = datetime.fromisoformat(oldest_str)
+            # Ensure timezone-aware comparison
+            if oldest.tzinfo is None:
+                oldest = oldest.replace(tzinfo=timezone.utc)
+            age_days = (datetime.now(timezone.utc) - oldest).days
+            return age_days >= max_age_days
+        except Exception:
+            return True
+
+    def get_nearest_tidal_station(
+        self, lat: float, lon: float, max_distance_km: float
+    ) -> dict | None:
+        """Return the nearest tidal station within max_distance_km, or None."""
+        if self._conn is None:
+            return None
+        result = self._conn.execute(
+            """
+            SELECT station_id, name, lat, lon, tide_type, state,
+                6371.0 * 2 * asin(sqrt(
+                    pow(sin(radians((lat - ?) / 2)), 2) +
+                    cos(radians(?)) * cos(radians(lat)) *
+                    pow(sin(radians((lon - ?) / 2)), 2)
+                )) AS distance_km
+            FROM noaa_tidal_stations
+            ORDER BY distance_km ASC
+            LIMIT 1
+            """,
+            [lat, lat, lon],
+        ).fetchone()
+        if result is None:
+            return None
+        station_id, name, slat, slon, tide_type, state, distance_km = result
+        if distance_km > max_distance_km:
+            return None
+        return {
+            "station_id": station_id,
+            "name": name,
+            "lat": slat,
+            "lon": slon,
+            "tide_type": tide_type,
+            "state": state,
+            "distance_km": round(distance_km, 2),
+        }
 
     def delete_location(self, location_key: str) -> dict[str, int]:
         """Delete all data for a location from every table.

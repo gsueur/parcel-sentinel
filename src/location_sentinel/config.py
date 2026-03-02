@@ -96,8 +96,12 @@ class Settings(BaseSettings):
     # Cache
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
+    # NOAA CO-OPS tidal station proximity
+    TIDAL_ZONE_RADIUS_KM: float = 30.0      # Max distance to nearest tidal station to classify as tidal zone
+    NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last fetch
+
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.15.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.16.0"
     SCORE_VERSION: str = "risk-v1.12.0"
 
     # Storage

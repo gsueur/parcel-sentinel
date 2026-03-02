@@ -120,6 +120,14 @@ table.scenes img { display: block; width: 96px; height: 96px;
 /* No-data */
 .no-data { color: #94a3b8; font-style: italic; font-size: 0.85rem; }
 
+/* Tidal zone badge */
+.tidal-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #ecfeff; border: 1px solid #a5f3fc; border-radius: 6px;
+  padding: 3px 10px; font-size: 0.82rem; color: #0e7490; cursor: default;
+}
+.tidal-icon { font-size: 1rem; }
+
 /* Feature groups */
 .feat-groups { display: flex; flex-direction: column; gap: 10px; }
 .feat-group { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;
@@ -1279,6 +1287,7 @@ def build_report_html(
     burn_months: set[str] | None = None,
     date_start: str | None = None,
     date_end: str | None = None,
+    nearest_tidal: dict | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -1312,6 +1321,18 @@ def build_report_html(
         )
     else:
         climate_html = ""
+
+    # Tidal zone badge
+    if nearest_tidal:
+        tidal_html = (
+            f'<span class="tidal-badge"'
+            f' title="Nearest NOAA tidal station: {nearest_tidal["station_id"]}">'
+            f'<span class="tidal-icon">&#127754;</span>'
+            f'<span>{nearest_tidal["name"]} &nbsp;&middot;&nbsp; {nearest_tidal["distance_km"]:.1f} km</span>'
+            f'</span>'
+        )
+    else:
+        tidal_html = ""
 
     # Thumbnail
     thumb_url = f"/v1/thumbnail/{location_key}.png"
@@ -1548,6 +1569,7 @@ def build_report_html(
   <div style="margin-top:6px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
     <span style="color:#64748b;font-size:0.9rem">&#x1F4CD; {coord_str}</span>
     {climate_html}
+    {tidal_html}
     <small style="color:#94a3b8;font-size:0.75rem;font-family:monospace">{location_key}</small>
   </div>
   <div style="margin-top:4px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">

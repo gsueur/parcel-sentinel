@@ -202,6 +202,16 @@ async def run_features(
     if is_urban:
         quality.flags.append("urban_location")
 
+    # Tidal zone detection (NOAA CO-OPS proximity)
+    nearest_tidal = store.get_nearest_tidal_station(
+        geom_centroid.y, geom_centroid.x, settings.TIDAL_ZONE_RADIUS_KM
+    )
+    is_tidal_zone = nearest_tidal is not None
+    features["is_tidal_zone"] = 1.0 if is_tidal_zone else 0.0
+    features["nearest_tidal_station_km"] = nearest_tidal["distance_km"] if nearest_tidal else None
+    if is_tidal_zone:
+        quality.flags.append("tidal_zone")
+
     # Active episode flags (drives UI badges on report header and dashboard cards)
     _end_abs = int(date_end[:4]) * 12 + int(date_end[5:7])
 
@@ -215,18 +225,20 @@ async def run_features(
     ) else 0.0
 
     # active_drought: any of the 3 most recent NDVI months below seasonal climatology,
-    # with two suppression guards:
+    # with suppression guards:
     # 1. Snow months: NDSI > threshold depresses NDVI to near-zero, indistinguishable
     #    from drought stress spectrally.
-    # 2. Persistently wet sites (tidal flats, marshes, wetlands): NDVI is governed by
-    #    water surface dynamics and emergent vegetation senescence, not moisture deficit.
-    #    SAR water frequency > 0.7 or NDWI persistence > 0.3 identifies these sites.
+    # 2. Tidal zone (NOAA CO-OPS proximity): site is persistently inundated by tides,
+    #    NDVI governed by water/emergent vegetation dynamics, not moisture deficit.
+    # 3. Persistently wet sites (marshes, wetlands) not in tidal database: SAR water
+    #    frequency > 0.7 or NDWI persistence > 0.3 identifies these sites.
     _snow_months: set[str] = {
         r.month for r in ndsi_records
         if r.mean is not None and r.mean > settings.NDSI_SNOW_THRESHOLD
     }
     _site_is_wet = (
-        (features.get("sar_water_freq_5y") or 0.0) > 0.70
+        is_tidal_zone
+        or (features.get("sar_water_freq_5y") or 0.0) > 0.70
         or (features.get("ndwi_wetness_persistence_5y") or 0.0) > 0.30
     )
     _recent_drought = False

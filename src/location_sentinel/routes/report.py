@@ -34,6 +34,7 @@ async def get_location_report(location_key: str):
 
     # TerraClimate monthly data for climate charts (served from DuckDB cache)
     tc_monthly = None
+    nearest_tidal = None
     centroid = location_info.get("centroid")
     if centroid:
         try:
@@ -42,6 +43,11 @@ async def get_location_report(location_key: str):
             tc_monthly = store.get_all_terraclimate_for_grid(grid_lat, grid_lon)
         except Exception as exc:
             logger.warning("Could not load TerraClimate data for report: %s", exc)
+        try:
+            lon, lat = centroid
+            nearest_tidal = store.get_nearest_tidal_station(lat, lon, settings.TIDAL_ZONE_RADIUS_KM)
+        except Exception as exc:
+            logger.warning("Could not look up tidal station for report: %s", exc)
 
     # Derive burn months for SAR chart annotation using the same anomaly-based
     # logic as the pipeline. Months where NBR drops more than NBR_ANOMALY_THRESHOLD
@@ -112,6 +118,7 @@ async def get_location_report(location_key: str):
         score_version=settings.SCORE_VERSION,
         tc_monthly=tc_monthly or {},
         burn_months=burn_months or None,
+        nearest_tidal=nearest_tidal,
     )
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
@@ -135,6 +142,7 @@ async def get_location_report_json(location_key: str):
     sar_scene_fracs = store.get_sar_scene_fracs_with_orbit(location_key, settings.PROCESSING_VERSION)
 
     tc_monthly = None
+    nearest_tidal_json = None
     centroid = location_info.get("centroid")
     if centroid:
         try:
@@ -143,6 +151,11 @@ async def get_location_report_json(location_key: str):
             tc_monthly = store.get_all_terraclimate_for_grid(grid_lat, grid_lon)
         except Exception as exc:
             logger.warning("Could not load TerraClimate data for report.json: %s", exc)
+        try:
+            lon, lat = centroid
+            nearest_tidal_json = store.get_nearest_tidal_station(lat, lon, settings.TIDAL_ZONE_RADIUS_KM)
+        except Exception as exc:
+            logger.warning("Could not look up tidal station for report.json: %s", exc)
 
     # SAR scene metadata without pixel arrays
     sar_scenes = [
@@ -177,6 +190,7 @@ async def get_location_report_json(location_key: str):
         ],
         "sar_scenes": sar_scenes,
         "tc_monthly": tc_monthly,
+        "nearest_tidal_station": nearest_tidal_json,
         "map_links": {
             "report_url": f"/v1/location/{location_key}/report",
             "thumbnail_url": f"/v1/thumbnail/{location_key}.png",
