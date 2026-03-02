@@ -832,7 +832,11 @@ def _scene_rows(scene_months: list[dict]) -> str:
     return "\n".join(rows)
 
 
-def _sar_scene_cards(sar_scene_months: list[dict], water_threshold: int) -> str:
+def _sar_scene_cards(
+    sar_scene_months: list[dict],
+    water_threshold: int,
+    scene_tide_levels: dict[str, float] | None = None,
+) -> str:
     """Render SAR scenes as a table: months as rows, one column per relative orbit.
 
     Column headers show the orbit number. Each cell contains the VV image
@@ -840,6 +844,8 @@ def _sar_scene_cards(sar_scene_months: list[dict], water_threshold: int) -> str:
     """
     if not sar_scene_months:
         return '<p class="no-data">No SAR scene images cached yet.</p>'
+
+    tide_levels = scene_tide_levels or {}
 
     # Index entries by (month_key, rel_orbit)
     lookup: dict[tuple[str, int], dict] = {}
@@ -874,12 +880,26 @@ def _sar_scene_cards(sar_scene_months: list[dict], water_threshold: int) -> str:
                 except (IndexError, AttributeError):
                     day_str = ""
                 vv_b64 = vv_dn_to_b64(entry["vv_dn"], water_threshold)
+
+                # Tide level (MSL) if available for this scene
+                tide_html = ""
+                if scene_id in tide_levels:
+                    level = tide_levels[scene_id]
+                    sign = "+" if level >= 0 else ""
+                    tide_color = "#0284c7" if level >= 0 else "#64748b"
+                    tide_html = (
+                        f'<div style="font-family:monospace;font-size:0.68rem;'
+                        f'font-weight:600;color:{tide_color};margin-top:2px">'
+                        f'&#127754;&nbsp;{sign}{level:.2f}&thinsp;m</div>'
+                    )
+
                 cells.append(
                     f'<td style="text-align:center">'
                     f'<img style="margin:0 auto" src="data:image/png;base64,{vv_b64}" alt="VV {month}">'
                     f'<div style="font-family:monospace;font-size:0.72rem;'
                     f'font-weight:600;color:{frac_color};margin-top:3px">{frac_str}</div>'
                     + (f'<div style="font-family:monospace;font-size:0.68rem;color:#94a3b8;margin-top:1px">day&nbsp;{day_str}</div>' if day_str else '')
+                    + tide_html
                     + f'</td>'
                 )
         rows.append(f'<tr><td>{month}</td>{"".join(cells)}</tr>')
@@ -1288,6 +1308,7 @@ def build_report_html(
     date_start: str | None = None,
     date_end: str | None = None,
     nearest_tidal: dict | None = None,
+    scene_tide_levels: dict[str, float] | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -1523,7 +1544,7 @@ def build_report_html(
 
     # SAR scene cards
     from ..config import settings as _cfg
-    sar_cards = _sar_scene_cards(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD)
+    sar_cards = _sar_scene_cards(sar_scene_months or [], _cfg.SAR_WATER_DN_THRESHOLD, scene_tide_levels)
 
     # SAR water fraction chart
     sar_frac_chart = _sar_frac_chart_html(sar_scene_fracs or [], burn_months=burn_months)

@@ -7,12 +7,97 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..config import settings
 from ..report.html import build_report_html
+from ..stac.noaa_tide_data_client import fetch_tide_predictions
 from ..stac.terraclimate_client import snap_to_grid
 from ..storage.duckdb_store import store
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _parse_scene_datetime(scene_id: str) -> tuple[str, int, int] | None:
+    """Extract (date_str, hour, minute) from a Sentinel-1 scene ID.
+
+    Scene ID format: S1A_IW_GRDH_1SDV_YYYYMMDDTHHMMSS_...
+    Part index 4 (0-based, split on '_') contains the acquisition start time.
+    Returns (YYYY-MM-DD, hour, minute) or None if parsing fails.
+    """
+    try:
+        part = scene_id.split("_")[4]  # e.g. "20230512T114512"
+        date_str = f"{part[0:4]}-{part[4:6]}-{part[6:8]}"
+        hour = int(part[9:11])
+        minute = int(part[11:13])
+        return date_str, hour, minute
+    except (IndexError, ValueError, AttributeError):
+        return None
+
+
+def _interpolate_tide(predictions: list[tuple[int, float]], hour: int, minute: int) -> float | None:
+    """Linear interpolation of tide level to the exact scene acquisition time.
+
+    predictions: sorted list of (hour, water_level_m) covering the day.
+    Returns None if insufficient data.
+    """
+    by_hour = {h: v for h, v in predictions}
+    if hour in by_hour:
+        v0 = by_hour[hour]
+        v1 = by_hour.get(hour + 1, v0)
+        return round(v0 + (minute / 60.0) * (v1 - v0), 3)
+    # Fallback: nearest available hour
+    for h in (hour - 1, hour + 1):
+        if h in by_hour:
+            return round(by_hour[h], 3)
+    return None
+
+
+async def _build_scene_tide_levels(
+    scene_months: list[dict], station_id: str
+) -> dict[str, float]:
+    """Fetch (or reuse cached) MSL tidal predictions for all SAR scenes.
+
+    Returns {scene_id: tide_level_m}.
+    """
+    # Parse datetimes and collect unique dates to fetch
+    parsed: dict[str, tuple[str, int, int]] = {}
+    for entry in scene_months:
+        sid = entry.get("scene_id", "")
+        result = _parse_scene_datetime(sid)
+        if result:
+            parsed[sid] = result
+
+    unique_dates = list({dt for dt, _, _ in parsed.values()})
+    if not unique_dates:
+        return {}
+
+    # Fetch missing dates from NOAA; use DuckDB cache for already-fetched ones
+    cached_dates = store.get_cached_tide_dates(station_id, unique_dates)
+    for date_str in unique_dates:
+        if date_str in cached_dates:
+            continue
+        try:
+            rows = await fetch_tide_predictions(station_id, date_str)
+            if rows:
+                store.store_tide_predictions(station_id, date_str, rows)
+                logger.info(
+                    "Fetched %d tide predictions for station %s on %s",
+                    len(rows), station_id, date_str,
+                )
+        except Exception as exc:
+            logger.warning("NOAA tide fetch failed for %s %s: %s", station_id, date_str, exc)
+
+    # Load all predictions from cache
+    all_preds = store.get_tide_predictions(station_id, unique_dates)
+
+    # Interpolate to each scene's exact acquisition time
+    levels: dict[str, float] = {}
+    for sid, (date_str, hour, minute) in parsed.items():
+        preds = all_preds.get(date_str)
+        if preds:
+            level = _interpolate_tide(preds, hour, minute)
+            if level is not None:
+                levels[sid] = level
+    return levels
 
 
 @router.get("/location/{location_key}/report", response_class=HTMLResponse)
@@ -48,6 +133,16 @@ async def get_location_report(location_key: str):
             nearest_tidal = store.get_nearest_tidal_station(lat, lon, settings.TIDAL_ZONE_RADIUS_KM)
         except Exception as exc:
             logger.warning("Could not look up tidal station for report: %s", exc)
+
+    # Tide level per SAR scene (only for tidal zone sites)
+    scene_tide_levels: dict[str, float] = {}
+    if nearest_tidal and sar_scene_months:
+        try:
+            scene_tide_levels = await _build_scene_tide_levels(
+                sar_scene_months, nearest_tidal["station_id"]
+            )
+        except Exception as exc:
+            logger.warning("Could not build scene tide levels: %s", exc)
 
     # Derive burn months for SAR chart annotation using the same anomaly-based
     # logic as the pipeline. Months where NBR drops more than NBR_ANOMALY_THRESHOLD
@@ -119,6 +214,7 @@ async def get_location_report(location_key: str):
         tc_monthly=tc_monthly or {},
         burn_months=burn_months or None,
         nearest_tidal=nearest_tidal,
+        scene_tide_levels=scene_tide_levels or None,
     )
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}

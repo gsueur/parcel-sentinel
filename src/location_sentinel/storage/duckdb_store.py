@@ -276,6 +276,17 @@ class DuckDBStore:
             )
         """)
 
+        # NOAA CO-OPS tidal predictions cache (hourly MSL, keyed by station+date)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS noaa_tide_predictions (
+                station_id VARCHAR NOT NULL,
+                date VARCHAR NOT NULL,
+                hour INTEGER NOT NULL,
+                water_level_m FLOAT,
+                PRIMARY KEY (station_id, date, hour)
+            )
+        """)
+
         # NOAA CO-OPS tidal station cache
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS noaa_tidal_stations (
@@ -1070,6 +1081,57 @@ class DuckDBStore:
     # ------------------------------------------------------------------
     # NOAA tidal station cache
     # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # NOAA tidal predictions cache (hourly MSL per station+date)
+    # ------------------------------------------------------------------
+
+    def get_cached_tide_dates(self, station_id: str, date_strs: list[str]) -> set[str]:
+        """Return the subset of date_strs that are already cached for this station."""
+        if self._conn is None or not date_strs:
+            return set()
+        ph = ",".join("?" * len(date_strs))
+        rows = self._conn.execute(
+            f"SELECT DISTINCT date FROM noaa_tide_predictions WHERE station_id = ? AND date IN ({ph})",
+            [station_id] + list(date_strs),
+        ).fetchall()
+        return {row[0] for row in rows}
+
+    def store_tide_predictions(
+        self, station_id: str, date_str: str, rows: list[tuple[int, float]]
+    ) -> None:
+        """Persist hourly MSL predictions for one station+date."""
+        if self._conn is None or not rows:
+            return
+        self._conn.executemany(
+            """
+            INSERT OR REPLACE INTO noaa_tide_predictions (station_id, date, hour, water_level_m)
+            VALUES (?, ?, ?, ?)
+            """,
+            [(station_id, date_str, hour, round(level, 4)) for hour, level in rows],
+        )
+        self._conn.commit()
+
+    def get_tide_predictions(
+        self, station_id: str, date_strs: list[str]
+    ) -> dict[str, list[tuple[int, float]]]:
+        """Return {date_str: [(hour, water_level_m), ...]} for cached dates."""
+        if self._conn is None or not date_strs:
+            return {}
+        ph = ",".join("?" * len(date_strs))
+        rows = self._conn.execute(
+            f"""
+            SELECT date, hour, water_level_m FROM noaa_tide_predictions
+            WHERE station_id = ? AND date IN ({ph})
+            ORDER BY date, hour
+            """,
+            [station_id] + list(date_strs),
+        ).fetchall()
+        result: dict[str, list[tuple[int, float]]] = {}
+        for date_str, hour, level in rows:
+            if level is not None:
+                result.setdefault(date_str, []).append((int(hour), float(level)))
+        return result
 
     def store_tidal_stations(self, stations: list[dict]) -> None:
         """Truncate and bulk-insert the NOAA tidal station list."""
