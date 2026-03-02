@@ -253,6 +253,16 @@ async def get_location_report_json(location_key: str):
         except Exception as exc:
             logger.warning("Could not look up tidal station for report.json: %s", exc)
 
+    # Tide level per SAR scene (only for tidal zone sites)
+    scene_tide_levels_json: dict[str, float] = {}
+    if nearest_tidal_json and sar_scene_months:
+        try:
+            scene_tide_levels_json = await _build_scene_tide_levels(
+                sar_scene_months, nearest_tidal_json["station_id"]
+            )
+        except Exception as exc:
+            logger.warning("Could not build scene tide levels for report.json: %s", exc)
+
     # SAR scene metadata without pixel arrays
     sar_scenes = [
         {
@@ -260,6 +270,7 @@ async def get_location_report_json(location_key: str):
             "month_key": s["month_key"],
             "rel_orbit": s["rel_orbit"],
             "water_frac": s["water_frac"],
+            "tide_level_m": scene_tide_levels_json.get(s["scene_id"]),
         }
         for s in sar_scene_months
     ]

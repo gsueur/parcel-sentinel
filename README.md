@@ -161,6 +161,19 @@ For the chronic frequency metric two thresholds are evaluated per orbit and the 
 
 ---
 
+### NOAA CO-OPS (tidal stations and predictions)
+
+**Provider:** NOAA Center for Operational Oceanographic Products and Services
+**Coverage:** ~1,000 active US water-level tidal stations
+**Metadata API:** `https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=waterlevels`
+**Predictions API:** `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter` (hourly, MSL datum, GMT)
+
+On startup the service fetches the full station list (tidal stations only) and caches it in DuckDB. A site is classified as a **tidal zone** when the nearest tidal station is within `TIDAL_ZONE_RADIUS_KM` (default 30 km). For tidal zone sites, the HTML and JSON reports cross-reference each Sentinel-1 SAR scene acquisition time (parsed from the scene ID filename) with the predicted MSL tide level at the nearest station, linearly interpolated to the exact acquisition minute. Tide predictions are cached permanently in DuckDB (they are deterministic and never change for past dates).
+
+The station list is refreshed every `NOAA_STATION_REFRESH_DAYS` days (default 30). If NOAA is unreachable at startup, existing cached stations are used and the service starts normally.
+
+---
+
 ### TerraClimate (monthly gridded climate)
 
 **Provider:** University of Idaho Climatology Lab / Northwest Knowledge Network
@@ -374,11 +387,13 @@ Long-term features computed from the full date window (default 5 years):
 | `canopy_proxy_50m` | Peak growing-season NDVI mean within 50m; season window is Köppen + hemisphere aware |
 | `canopy_proxy_200m` | Peak growing-season NDVI mean within 200m; season window is Köppen + hemisphere aware |
 | `is_urban` | 1.0 if location classified as urban/impervious, 0.0 otherwise |
+| `is_tidal_zone` | 1.0 if a NOAA tidal station is within `TIDAL_ZONE_RADIUS_KM` (30 km), 0.0 otherwise |
+| `nearest_tidal_station_km` | Distance in km to the nearest NOAA tidal station, or null if none within radius |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
 | `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` (acute SAR water anomaly in last ~2 months) |
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
-| `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1; suppressed for snow months (NDSI > 0.4) and persistently wet sites (SAR water freq > 70% or NDWI persistence > 30%) |
+| `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%) |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
 
 ### TerraClimate-derived features
@@ -649,9 +664,10 @@ Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox)
 - Analysis period and processing/score versions in the header
 - Active episode badges (flood / fire / drought) in the header when any flag is set
+- Climate zone badge (Köppen code) and, for tidal zone sites, a tidal station badge (nearest NOAA station name and distance)
 - Per-index time series charts (Chart.js)
 - SAR water fraction chart with seasonal baseline and flood alert banner; burn-suppressed months annotated
-- SAR scene table: all scenes from the last 12 months, months as rows, orbits as columns
+- SAR scene table: all scenes from the last 12 months, months as rows, orbits as columns; for tidal zone sites each scene additionally shows the MSL tide level at the Sentinel-1 acquisition time (interpolated from NOAA hourly predictions)
 - TerraClimate charts: monthly tmax/tmin temperature and PPT/VPD dual-axis
 - Feature table grouped by theme with contextual descriptions
 - Six risk score gauges with explanations
@@ -675,12 +691,13 @@ Returns the same data as the HTML report as structured JSON. Useful for programm
 | `processing_version`, `score_version` | Versions used for the stored results |
 | `date_window` | `{ start, end }` of the analysis period |
 | `scores` | All six sub-scores and `composite_score` |
-| `features` | All derived features (optical, SAR, TerraClimate, episode flags) |
+| `features` | All derived features (optical, SAR, TerraClimate, tidal zone, episode flags) |
 | `quality` | `months_total`, `months_observed`, `mean_cloud_fraction`, `flags` |
 | `timeseries` | Monthly series per metric: `[{ month, mean, obs, cloud }, ...]` |
 | `sar_scene_fracs` | All SAR scenes: `[{ month_key, water_frac, rel_orbit }, ...]` |
-| `sar_scenes` | Last 12 months of SAR scene metadata: `[{ scene_id, month_key, rel_orbit, water_frac }, ...]` -- pixel arrays excluded |
+| `sar_scenes` | Last 12 months of SAR scene metadata: `[{ scene_id, month_key, rel_orbit, water_frac, tide_level_m }, ...]` -- pixel arrays excluded; `tide_level_m` is MSL tide at acquisition time for tidal zone sites (null otherwise) |
 | `tc_monthly` | TerraClimate monthly values per variable |
+| `nearest_tidal_station` | Nearest NOAA tidal station within 30 km: `{ station_id, name, lat, lon, tide_type, state, distance_km }`, or null for inland sites |
 | `map_links` | `report_url` and `thumbnail_url` |
 
 Example: `GET /v1/location/a1b2c3/report.json`
@@ -831,7 +848,7 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.15.0` | Cache key tag for features |
+| `PROCESSING_VERSION` | `s2l2a-v1.16.0` | Cache key tag for features |
 | `SCORE_VERSION` | `risk-v1.12.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
@@ -906,6 +923,13 @@ SH months are NH months shifted by +6 calendar months. The latitude boundary and
 | `NBR_MIN_CONSECUTIVE` | `3` | Minimum calendar-consecutive anomaly months required for fire detection and SAR burn suppression |
 | `NDSI_SNOW_THRESHOLD` | `0.4` | NDSI above → snow covered |
 | `BSI_BARE_THRESHOLD` | `0.0` | BSI above → bare soil |
+
+### NOAA tidal station integration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TIDAL_ZONE_RADIUS_KM` | `30.0` | Max distance to nearest NOAA tidal station to classify a site as a tidal zone |
+| `NOAA_STATION_REFRESH_DAYS` | `30` | Days between station list refreshes (list fetched once on first boot, then on expiry) |
 
 ### TerraClimate
 

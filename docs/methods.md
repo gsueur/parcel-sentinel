@@ -1,8 +1,8 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.15.0` / scoring `risk-v1.12.0`
-**Date:** 2026-02-28
-**Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, risk scoring. Infrastructure, routing, and persistence are excluded.
+**Version:** processing `s2l2a-v1.16.0` / scoring `risk-v1.12.0`
+**Date:** 2026-03-02
+**Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
 
@@ -18,10 +18,11 @@
 8. [Sentinel-1 SAR flood analysis](#8-sentinel-1-sar-flood-analysis)
 9. [TerraClimate gridded climate features](#9-terraclimate-gridded-climate-features)
 10. [Urban detection](#10-urban-detection)
-11. [Risk scoring](#11-risk-scoring)
-12. [Quality metadata](#12-quality-metadata)
-13. [Known limitations and spectral confounds](#13-known-limitations-and-spectral-confounds)
-14. [Parameter reference](#14-parameter-reference)
+11. [Tidal zone classification (NOAA CO-OPS)](#11-tidal-zone-classification)
+12. [Risk scoring](#12-risk-scoring)
+13. [Quality metadata](#13-quality-metadata)
+14. [Known limitations and spectral confounds](#14-known-limitations-and-spectral-confounds)
+15. [Parameter reference](#15-parameter-reference)
 
 ---
 
@@ -104,6 +105,24 @@ lon_idx = round((lon + 179.979167) × 24)
 grid_lat = 89.979167 − lat_idx / 24
 grid_lon = lon_idx / 24 − 179.979167
 ```
+
+---
+
+### 1.4 NOAA CO-OPS (tidal stations and tide predictions)
+
+| Attribute | Value |
+|-----------|-------|
+| Provider | NOAA Center for Operational Oceanographic Products and Services |
+| Coverage | ~1,000 active US water-level tidal stations |
+| Station metadata API | `mdapi/prod/webapi/stations.json?type=waterlevels` |
+| Predictions API | `api/prod/datagetter` |
+| Datum | MSL (Mean Sea Level): 0 = mean sea level, positive above, negative below |
+| Interval | Hourly, UTC |
+| Caching | Station list refreshed every 30 days; predictions cached permanently per (station, date) |
+
+The station list is downloaded at application startup and stored in DuckDB. For each analysis location the service finds the nearest tidal station. If within `TIDAL_ZONE_RADIUS_KM` (default 30 km) the site is classified as a tidal zone.
+
+For tidal zone sites, each Sentinel-1 SAR scene acquisition UTC time is parsed from the scene ID filename (`S1X_IW_GRDH_1SDV_YYYYMMDDTHHMMSS_...`). The NOAA predictions API is queried for hourly MSL values covering the acquisition date. The tide level at the exact acquisition minute is obtained by linear interpolation between the two bounding hourly values. Results are displayed in the HTML report below each SAR thumbnail and returned as `tide_level_m` in the `sar_scenes` array of the JSON report.
 
 ---
 
@@ -405,7 +424,9 @@ Uses the same seasonal climatology as `ndvi_anomaly_freq_5y` -- the mean NDVI fo
 
 1. **Snow cover:** Snow reflects nearly equally in Red and NIR, collapsing NDVI to near zero. Months where co-located NDSI > `NDSI_SNOW_THRESHOLD` (0.4) are excluded from the recency window before the anomaly check. This mirrors the SAR snow suppression logic.
 
-2. **Persistently wet sites (tidal flats, marshes, wetlands):** Emergent marsh vegetation senesces fully in winter, exposing open water that drives NDVI near zero or negative. This is driven by seasonal water dynamics, not moisture deficit. The drought flag is suppressed entirely when:
+2. **Tidal zone sites (NOAA CO-OPS proximity):** A site classified as tidal zone (`is_tidal_zone = 1.0`) is permanently inundated or strongly influenced by tidal dynamics. NDVI at these locations reflects emergent vegetation senescence and water surface exposure driven by tidal cycles, not atmospheric moisture deficit. `active_drought` is suppressed unconditionally for all tidal zone sites. This replaces the prior empirical SAR/NDWI thresholds as the primary suppression mechanism for coastal inundation.
+
+3. **Persistently wet non-tidal sites (marshes, inland wetlands):** Sites not in the NOAA tidal database but where remote sensing signals consistently indicate permanent or near-permanent water. The drought flag is suppressed when:
    ```
    sar_water_freq_5y > 0.70   (SAR confirms near-permanent surface water)
    OR ndwi_wetness_persistence_5y > 0.30  (optical confirms frequent surface water)
@@ -620,7 +641,45 @@ Urban classification has the following downstream effects:
 
 ---
 
-## 11. Risk scoring
+## 11. Tidal zone classification
+
+### 11.1 Station proximity lookup
+
+On startup the service downloads the NOAA CO-OPS water-level station list and stores it in DuckDB (`noaa_tidal_stations` table). For each analysis location the nearest station is found using the haversine formula:
+
+```
+distance_km = 6371 × 2 × arcsin(√(sin²(Δlat/2) + cos(lat1)×cos(lat2)×sin²(Δlon/2)))
+```
+
+A location is classified as **tidal zone** (`is_tidal_zone = 1.0`) when `distance_km ≤ TIDAL_ZONE_RADIUS_KM` (default 30 km). The distance to the nearest station is stored as `nearest_tidal_station_km`.
+
+The 30 km radius is calibrated to reliably capture tidal flats, coastal marshes, estuaries, and barrier island environments without over-reaching into purely inland areas. US coastal geography means that a 30 km inland buffer from any tidal station still encompasses most tidal influence zones.
+
+### 11.2 Effect on feature computation
+
+Classification as a tidal zone immediately suppresses `active_drought` (section 7.5). This is the primary use of the tidal zone flag: NDVI anomalies at persistently inundated coastal sites reflect tidal water dynamics, not atmospheric drought, and should not trigger the drought episode badge.
+
+Tidal zone classification is independent of the SAR and NDWI wet-site heuristics (SAR water freq > 0.70, NDWI persistence > 0.30), which remain as fallback suppressors for inland wetlands and marshes not captured by the NOAA station network.
+
+### 11.3 SAR tide cross-reference
+
+For tidal zone sites, each Sentinel-1 SAR scene is annotated with the NOAA predicted MSL tide level at the exact acquisition time (UTC). Scene IDs encode the acquisition start timestamp (`YYYYMMDDTHHMMSS` at position 4 in the `_`-delimited filename). The hourly predictions for the nearest station and acquisition date are fetched from NOAA and cached in DuckDB (`noaa_tide_predictions` table). The tide level at the acquisition minute is obtained by linear interpolation between the two bounding hourly values.
+
+This cross-reference allows visual validation that SAR-detected water fraction follows the expected tidal cycle: scenes acquired near high tide should show higher water fractions than scenes acquired at low tide for the same location.
+
+**Output fields added for tidal zone sites:**
+
+| Field | Location | Description |
+|-------|----------|-------------|
+| `is_tidal_zone` | `features` | 1.0 for tidal zone, 0.0 otherwise |
+| `nearest_tidal_station_km` | `features` | Distance to nearest NOAA station (km), null if none within radius |
+| `tidal_zone` | `quality.flags` | Set when `is_tidal_zone == 1.0` |
+| `tide_level_m` | `sar_scenes[*]` in report.json | MSL tide at SAR acquisition time (m); null for non-tidal sites |
+| `nearest_tidal_station` | report.json top level | `{ station_id, name, lat, lon, tide_type, state, distance_km }` |
+
+---
+
+## 12. Risk scoring
 
 All scores are integers in [0, 100]. A uniform rounding and clamping function is applied to all final values: `score = clamp(round(raw), 0, 100)`.
 
@@ -769,7 +828,7 @@ Köppen classification is derived from the location centroid using a 1/12° grid
 
 ---
 
-## 12. Quality metadata
+## 13. Quality metadata
 
 Each computation returns a quality object:
 
@@ -786,13 +845,14 @@ Quality flags:
 | Flag | Trigger condition |
 |------|------------------|
 | `urban_location` | `is_urban == True` |
+| `tidal_zone` | `is_tidal_zone == True` (nearest NOAA tidal station within `TIDAL_ZONE_RADIUS_KM`) |
 | `no_sar_data` | No Sentinel-1 scenes found or all scenes failed to read |
 | `sar_burn_suppression` | At least one SAR month excluded due to co-located NBR burn signal |
 | `no_terraclimate_data` | TerraClimate fetch failed for all requested variables |
 
 ---
 
-## 13. Known limitations and spectral confounds
+## 14. Known limitations and spectral confounds
 
 ### 13.1 NBR false positives on urban impervious surfaces
 
@@ -830,7 +890,7 @@ The fixed 640 m × 640 m footprint means that a point location in a mixed enviro
 
 ---
 
-## 14. Parameter reference
+## 15. Parameter reference
 
 All thresholds are configurable via environment variables. Defaults are listed below.
 
@@ -858,6 +918,13 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | 2 | Minimum calendar-consecutive anomalous months to count for the chronic MAD-based frequency |
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
 | `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent (does not affect acute anomaly) |
+
+### NOAA tidal zone parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `TIDAL_ZONE_RADIUS_KM` | 30.0 km | Maximum distance to nearest NOAA tidal station for tidal zone classification |
+| `NOAA_STATION_REFRESH_DAYS` | 30 days | Age after which the cached station list is refreshed on next server startup |
 
 ### Urban detection thresholds
 
