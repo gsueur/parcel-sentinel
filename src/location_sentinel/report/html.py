@@ -1449,25 +1449,20 @@ def build_report_html(
     else:
         tidal_html = ""
 
-    # Mapbox thumbnail
+    # Mapbox thumbnail + DEM relief stacked in left column
     thumb_url = f"/v1/thumbnail/{location_key}.png"
+    dem_html = (
+        f'<img src="data:image/png;base64,{dem_png_b64}" alt="Terrain relief (GLO-30)"'
+        f' style="margin-top:8px;border-radius:6px;display:block;width:256px">'
+        f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">&#9651; Terrain relief &mdash; Copernicus GLO-30</div>'
+    ) if dem_png_b64 else ""
     if geometry_geojson:
-        thumb_html = f'<img src="{thumb_url}" alt="Location map" onerror="this.parentNode.innerHTML=\'<div class=&quot;no-thumb&quot;>Thumbnail unavailable</div>\'">'
-    else:
-        thumb_html = '<div class="no-thumb">No geometry stored</div>'
-
-    # DEM terrain relief card (separate, shown below overview grid)
-    if dem_png_b64:
-        dem_card_html = (
-            f'<div class="card">'
-            f'<h2>&#9651; Terrain relief</h2>'
-            f'<img src="data:image/png;base64,{dem_png_b64}" alt="Terrain relief (GLO-30)"'
-            f' style="border-radius:6px;display:block;width:100%;max-width:512px">'
-            f'<div style="font-size:0.72rem;color:#94a3b8;margin-top:6px">Hillshade from Copernicus GLO-30 DEM &mdash; 640 m window &mdash; NW sun</div>'
-            f'</div>'
+        thumb_html = (
+            f'<img src="{thumb_url}" alt="Location map" onerror="this.parentNode.innerHTML=\'<div class=&quot;no-thumb&quot;>Thumbnail unavailable</div>\'">'
+            f'{dem_html}'
         )
     else:
-        dem_card_html = ""
+        thumb_html = f'<div class="no-thumb">No geometry stored</div>{dem_html}'
 
     # Urban flag and episode badges
     feat = features or {}
@@ -1732,8 +1727,6 @@ def build_report_html(
       </div>
     </div>
   </div>
-
-  {dem_card_html}
 
   <!-- Quality -->
   <div class="card">
