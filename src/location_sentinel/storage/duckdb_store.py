@@ -739,7 +739,12 @@ class DuckDBStore:
         processing_version: str,
         cadence: str = "monthly",
     ) -> dict[str, list[dict]] | None:
-        """Load all stored time series records for a location."""
+        """Load all stored time series records for a location.
+
+        Falls back to the latest available processing version when the
+        requested version is not yet stored (e.g. right after a
+        PROCESSING_VERSION bump, before the location is reprocessed).
+        """
         if self._conn is None:
             return None
         rows = self._conn.execute(
@@ -750,6 +755,24 @@ class DuckDBStore:
             [location_key, processing_version, cadence],
         ).fetchall()
         if not rows:
+            # Fallback: latest available version for this location
+            latest = self._conn.execute(
+                """
+                SELECT processing_version FROM location_timeseries
+                WHERE location_key = ? AND cadence = ?
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                [location_key, cadence],
+            ).fetchone()
+            if latest:
+                rows = self._conn.execute(
+                    """
+                    SELECT metric, series_json FROM location_timeseries
+                    WHERE location_key = ? AND processing_version = ? AND cadence = ?
+                    """,
+                    [location_key, latest[0], cadence],
+                ).fetchall()
+        if not rows:
             return None
         return {metric: json.loads(series_json) for metric, series_json in rows}
 
@@ -758,7 +781,12 @@ class DuckDBStore:
         location_key: str,
         score_version: str,
     ) -> dict | None:
-        """Load most recent scores for a location."""
+        """Load most recent scores for a location.
+
+        Falls back to the latest available score version when the requested
+        version is not yet stored (e.g. right after a SCORE_VERSION bump,
+        before the location is reprocessed).
+        """
         if self._conn is None:
             return None
         result = self._conn.execute(
@@ -769,6 +797,15 @@ class DuckDBStore:
             """,
             [location_key, score_version],
         ).fetchone()
+        if result is None:
+            result = self._conn.execute(
+                """
+                SELECT scores_json FROM location_scores
+                WHERE location_key = ?
+                ORDER BY updated_at DESC LIMIT 1
+                """,
+                [location_key],
+            ).fetchone()
         if result is None:
             return None
         return json.loads(result[0])
@@ -782,9 +819,23 @@ class DuckDBStore:
         """Return up to `limit` most recent scenes with all their band arrays.
 
         Each entry: {"scene_id": str, "month_key": str, "bands": {band_key: np.ndarray}}
+        Falls back to the latest available processing version when the
+        requested version is not yet stored.
         """
         if self._conn is None:
             return []
+        # Resolve version: use requested if available, else fall back to latest
+        check = self._conn.execute(
+            "SELECT 1 FROM scene_bands WHERE location_key = ? AND processing_version = ? LIMIT 1",
+            [location_key, processing_version],
+        ).fetchone()
+        if check is None:
+            latest = self._conn.execute(
+                "SELECT processing_version FROM scene_bands WHERE location_key = ? ORDER BY created_at DESC LIMIT 1",
+                [location_key],
+            ).fetchone()
+            if latest:
+                processing_version = latest[0]
         # One scene per month: pick the scene with lowest cloud fraction,
         # excluding scenes that exceed the max allowed cloud cover (invalid scenes).
         max_cloud = 1.0 - settings.MIN_VALID_PIXEL_FRACTION
@@ -929,9 +980,23 @@ class DuckDBStore:
         All scenes (orbits) per month are returned, ordered chronologically then
         by relative orbit. Each entry: {"scene_id", "month_key", "rel_orbit",
         "vv_dn": np.ndarray, "water_frac": float}.
+        Falls back to the latest available processing version when the
+        requested version is not yet stored.
         """
         if self._conn is None:
             return []
+        # Resolve version fallback
+        check = self._conn.execute(
+            "SELECT 1 FROM sar_scene_bands WHERE location_key = ? AND processing_version = ? LIMIT 1",
+            [location_key, processing_version],
+        ).fetchone()
+        if check is None:
+            latest = self._conn.execute(
+                "SELECT processing_version FROM sar_scene_bands WHERE location_key = ? ORDER BY created_at DESC LIMIT 1",
+                [location_key],
+            ).fetchone()
+            if latest:
+                processing_version = latest[0]
         scenes = self._conn.execute(
             """
             WITH recent_months AS (
@@ -993,6 +1058,8 @@ class DuckDBStore:
         """Return all (month_key, water_frac, rel_orbit) triples, ordered chronologically.
 
         Includes orbit number for per-orbit MAD threshold visualization in the report.
+        Falls back to the latest available processing version when the
+        requested version is not yet stored.
         """
         if self._conn is None:
             return []
@@ -1005,6 +1072,21 @@ class DuckDBStore:
             """,
             [location_key, processing_version],
         ).fetchall()
+        if not rows:
+            latest = self._conn.execute(
+                "SELECT processing_version FROM sar_scene_bands WHERE location_key = ? ORDER BY created_at DESC LIMIT 1",
+                [location_key],
+            ).fetchone()
+            if latest:
+                rows = self._conn.execute(
+                    """
+                    SELECT month_key, water_frac, COALESCE(rel_orbit, 0)
+                    FROM sar_scene_bands
+                    WHERE location_key = ? AND processing_version = ?
+                    ORDER BY month_key ASC
+                    """,
+                    [location_key, latest[0]],
+                ).fetchall()
         return [(row[0], float(row[1]), int(row[2])) for row in rows if row[1] is not None]
 
     # ------------------------------------------------------------------
