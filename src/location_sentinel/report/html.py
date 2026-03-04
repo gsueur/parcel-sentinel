@@ -1448,22 +1448,24 @@ def build_report_html(
     else:
         tidal_html = ""
 
-    # Thumbnail (Mapbox + DEM stacked)
+    # Mapbox thumbnail
     thumb_url = f"/v1/thumbnail/{location_key}.png"
-    dem_thumb_url = f"/v1/thumbnail/{location_key}_dem.png"
-    dem_thumb_html = (
-        f'<img src="{dem_thumb_url}" alt="Terrain relief (GLO-30)"'
-        f' style="margin-top:8px;border-radius:6px;display:block;max-width:256px;width:100%"'
-        f' onerror="this.style.display=\'none\'">'
-        f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">&#9651; Terrain relief &mdash; Copernicus GLO-30</div>'
-    )
     if geometry_geojson:
-        thumb_html = (
-            f'<img src="{thumb_url}" alt="Location map" onerror="this.parentNode.innerHTML=\'<div class=&quot;no-thumb&quot;>Thumbnail unavailable</div>\'">'
-            f'{dem_thumb_html}'
-        )
+        thumb_html = f'<img src="{thumb_url}" alt="Location map" onerror="this.parentNode.innerHTML=\'<div class=&quot;no-thumb&quot;>Thumbnail unavailable</div>\'">'
     else:
-        thumb_html = f'<div class="no-thumb">No geometry stored</div>{dem_thumb_html}'
+        thumb_html = '<div class="no-thumb">No geometry stored</div>'
+
+    # DEM terrain relief card (separate, shown below overview grid)
+    dem_thumb_url = f"/v1/thumbnail/{location_key}_dem.png"
+    dem_card_html = (
+        f'<div class="card">'
+        f'<h2>&#9651; Terrain relief</h2>'
+        f'<img src="{dem_thumb_url}" alt="Terrain relief (GLO-30)"'
+        f' style="border-radius:6px;display:block;width:100%;max-width:512px"'
+        f' onerror="this.parentNode.style.display=\'none\'">'
+        f'<div style="font-size:0.72rem;color:#94a3b8;margin-top:6px">Hillshade from Copernicus GLO-30 DEM &mdash; 640 m window &mdash; NW sun</div>'
+        f'</div>'
+    )
 
     # Urban flag and episode badges
     feat = features or {}
@@ -1728,6 +1730,8 @@ def build_report_html(
       </div>
     </div>
   </div>
+
+  {dem_card_html}
 
   <!-- Quality -->
   <div class="card">
