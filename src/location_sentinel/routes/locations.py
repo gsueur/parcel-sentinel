@@ -134,6 +134,7 @@ async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str) 
         "heat_mitigation_score": score_result.heat_mitigation_score,
         "flood_risk_score": score_result.flood_risk_score,
         "heat_stress_score": score_result.heat_stress_score,
+        "landslide_risk_score": score_result.landslide_risk_score,
         "composite_score": score_result.composite_score,
     })
     store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,
@@ -153,6 +154,7 @@ async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str) 
             "heat_mitigation_score": score_result.heat_mitigation_score,
             "flood_risk_score": score_result.flood_risk_score,
             "heat_stress_score": score_result.heat_stress_score,
+            "landslide_risk_score": score_result.landslide_risk_score,
             "composite_score": score_result.composite_score,
         },
         features=features,
@@ -222,6 +224,7 @@ async def _run_regenerate_job(
         "heat_mitigation_score": score_result.heat_mitigation_score,
         "flood_risk_score": score_result.flood_risk_score,
         "heat_stress_score": score_result.heat_stress_score,
+        "landslide_risk_score": score_result.landslide_risk_score,
         "composite_score": score_result.composite_score,
     })
     store.save_features(location_key, settings.PROCESSING_VERSION, date_start, de,

@@ -60,6 +60,7 @@ class ScoreResult:
     heat_mitigation_score: int
     flood_risk_score: int
     heat_stress_score: int
+    landslide_risk_score: int
     composite_score: int
     top_factors: list[dict]
     climate_profile: str = field(default="Generic")
@@ -132,11 +133,20 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         if pdsi_drought > 0.15:
             factors.append({"name": "pdsi_drought_freq_5y", "direction": "positive", "weight": 0.25})
 
+    slope_deg = features.get("slope_deg")
+
     if is_urban:
         drought_score = 0.0
     elif drought_components:
         total_w = sum(drought_weights)
         drought_score = sum(c * wt for c, wt in zip(drought_components, drought_weights)) / total_w
+        # Terrain drought amplifier: steep slopes → thin soils → amplified drought stress
+        if slope_deg is not None and slope_deg > settings.TERRAIN_DROUGHT_SLOPE_MIN:
+            terrain_amp = 1.0 + min(
+                settings.TERRAIN_DROUGHT_AMP_MAX,
+                (slope_deg - settings.TERRAIN_DROUGHT_SLOPE_MIN) / 100.0,
+            )
+            drought_score = min(100.0, drought_score * terrain_amp)
     else:
         drought_score = 50.0
 
@@ -196,7 +206,22 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     if ndwi_pers < settings.SAR_NDWI_CORROBORATION_THRESHOLD and chronic_score > 0:
         chronic_score *= settings.SAR_NDWI_VETO_FACTOR
     acute_score = sar_flood_anomaly * 100
-    flood_risk_score = max(chronic_score, acute_score)
+
+    # Terrain flash flood: low elevation + significant slope = fast runoff concentration
+    elev_m = features.get("elevation_m")
+    terrain_flash_score = 0.0
+    if (
+        elev_m is not None
+        and slope_deg is not None
+        and elev_m < settings.TERRAIN_FLASH_ELEV_MAX
+        and slope_deg > settings.TERRAIN_FLASH_SLOPE_MIN
+    ):
+        low_elev_factor = (settings.TERRAIN_FLASH_ELEV_MAX - elev_m) / settings.TERRAIN_FLASH_ELEV_MAX
+        slope_factor = min(1.0, slope_deg / settings.TERRAIN_FLASH_SLOPE_MAX)
+        terrain_flash_score = low_elev_factor * slope_factor * 100
+
+    # SAR observations dominate; terrain is a 50%-weighted potential signal
+    flood_risk_score = max(chronic_score, acute_score, terrain_flash_score * 0.5)
 
     if flood_risk_score > 10:
         driver = "sar_flood_anomaly" if sar_flood_anomaly * 100 >= sar_water_freq * 100 else "sar_water_freq_5y"
@@ -248,6 +273,16 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     else:
         heat_stress_score = 50.0
 
+    # --- Landslide risk score (0-100, standalone -- not in composite) ---
+    # Slope is the primary driver (shear stress); relief is secondary (slope length).
+    elev_range_m = features.get("elevation_range_m")
+    if slope_deg is not None:
+        slope_score = min(100.0, slope_deg / settings.TERRAIN_LANDSLIDE_SLOPE_MAX * 100)
+        relief_score = min(100.0, (elev_range_m or 0.0) / settings.TERRAIN_LANDSLIDE_RELIEF_MAX * 100)
+        landslide_score = 0.70 * slope_score + 0.30 * relief_score
+    else:
+        landslide_score = 0.0
+
     # --- Composite (0-100) ---
     if is_urban:
         # Urban: canopy deficit dominates; wetness, flood, and heat stress are secondary.
@@ -276,6 +311,7 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         heat_mitigation_score=_clamp(heat_mitigation_score),
         flood_risk_score=_clamp(flood_risk_score),
         heat_stress_score=_clamp(heat_stress_score),
+        landslide_risk_score=_clamp(landslide_score),
         composite_score=_clamp(composite),
         top_factors=sorted(factors, key=lambda f: f["weight"], reverse=True)[:3],
         climate_profile=profile,

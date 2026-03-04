@@ -85,7 +85,9 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
             return None
 
         elev_m = float(np.nanmean(data))
-        elev_range_m = float(np.nanmax(data) - np.nanmin(data))
+        elev_min_m = float(np.nanmin(data))
+        elev_max_m = float(np.nanmax(data))
+        elev_range_m = elev_max_m - elev_min_m
 
         # Slope from central differences.
         # np.gradient(data) returns [grad_row, grad_col] in units of elev/pixel.
@@ -102,9 +104,11 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
             path, elev_m, elev_range_m, slope_deg,
         )
         return {
-            "elevation_m": round(elev_m, 1),
+            "elevation_m":       round(elev_m, 1),
+            "elevation_min_m":   round(elev_min_m, 1),
+            "elevation_max_m":   round(elev_max_m, 1),
             "elevation_range_m": round(elev_range_m, 1),
-            "slope_deg": round(slope_deg, 2),
+            "slope_deg":         round(slope_deg, 2),
         }
 
     except Exception as exc:

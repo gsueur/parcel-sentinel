@@ -1354,13 +1354,19 @@ def build_report_html(
     # Elevation badge (Copernicus GLO-30)
     if elevation and elevation.get("elevation_m") is not None:
         elev_m = elevation["elevation_m"]
+        elev_min = elevation.get("elevation_min_m")
+        elev_max = elevation.get("elevation_max_m")
         slope = elevation.get("slope_deg")
         range_m = elevation.get("elevation_range_m")
         slope_str = f" &middot; {slope:.1f}° slope" if slope is not None else ""
         range_str = f" &middot; &plusmn;{range_m:.0f} m relief" if range_m is not None else ""
+        if elev_min is not None and elev_max is not None:
+            elev_str = f"&#9651; {elev_min:.0f}&thinsp;/&thinsp;{elev_m:.0f}&thinsp;/&thinsp;{elev_max:.0f} m"
+        else:
+            elev_str = f"&#9651; {elev_m:.0f} m"
         elevation_html = (
-            f'<span class="elev-badge" title="Copernicus GLO-30 DEM &mdash; mean elevation of 640 m window{slope_str}">'
-            f'&#9651; {elev_m:.0f} m{slope_str}{range_str}'
+            f'<span class="elev-badge" title="Copernicus GLO-30 DEM &mdash; min / mean / max elevation of 640 m window{slope_str}">'
+            f'{elev_str}{slope_str}{range_str}'
             f'</span>'
         )
     else:
@@ -1430,13 +1436,21 @@ def build_report_html(
         f'</div>'
     )
 
+    landslide_score = s.get("landslide_risk_score")
+    slope_available = elevation is not None and elevation.get("slope_deg") is not None
+    show_landslide = slope_available or (landslide_score is not None and landslide_score > 0)
+
     score_bars = (
         _score_bar("Drought", s.get("drought_score"), suppressed=is_urban) +
         _score_bar("Wetness", s.get("wetness_score")) +
         _score_bar("Fire exposure", s.get("fire_exposure_score"), suppressed=is_urban) +
-        _score_bar("Flood risk (SAR)", s.get("flood_risk_score")) +
+        _score_bar("Flood risk (SAR + terrain)", s.get("flood_risk_score")) +
         _score_bar("Heat stress (TerraClimate)", s.get("heat_stress_score")) +
-        _score_bar("Heat mitigation (higher = more canopy = safer)", s.get("heat_mitigation_score"), inverted=True)
+        _score_bar("Heat mitigation (higher = more canopy = safer)", s.get("heat_mitigation_score"), inverted=True) +
+        (
+            _score_bar("&#9651; Landslide risk (slope + relief)", landslide_score)
+            if show_landslide else ""
+        )
     )
 
     # Urban banner + formula note

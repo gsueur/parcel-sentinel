@@ -310,6 +310,12 @@ class DuckDBStore:
                 fetched_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        self._conn.execute(
+            "ALTER TABLE elevation_cache ADD COLUMN IF NOT EXISTS elevation_min_m FLOAT"
+        )
+        self._conn.execute(
+            "ALTER TABLE elevation_cache ADD COLUMN IF NOT EXISTS elevation_max_m FLOAT"
+        )
 
         # Climate reference tables
         self._conn.execute("""
@@ -1252,16 +1258,18 @@ class DuckDBStore:
         """Return cached elevation features or None if not yet fetched."""
         assert self._conn is not None
         row = self._conn.execute(
-            "SELECT elevation_m, elevation_range_m, slope_deg "
+            "SELECT elevation_m, elevation_range_m, slope_deg, elevation_min_m, elevation_max_m "
             "FROM elevation_cache WHERE location_key = ?",
             [location_key],
         ).fetchone()
         if row is None:
             return None
         return {
-            "elevation_m": row[0],
+            "elevation_m":       row[0],
             "elevation_range_m": row[1],
-            "slope_deg": row[2],
+            "slope_deg":         row[2],
+            "elevation_min_m":   row[3],
+            "elevation_max_m":   row[4],
         }
 
     def store_elevation(self, location_key: str, data: dict[str, float]) -> None:
@@ -1269,13 +1277,16 @@ class DuckDBStore:
         assert self._conn is not None
         self._conn.execute(
             """INSERT OR REPLACE INTO elevation_cache
-               (location_key, elevation_m, elevation_range_m, slope_deg)
-               VALUES (?, ?, ?, ?)""",
+               (location_key, elevation_m, elevation_range_m, slope_deg,
+                elevation_min_m, elevation_max_m)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             [
                 location_key,
                 data.get("elevation_m"),
                 data.get("elevation_range_m"),
                 data.get("slope_deg"),
+                data.get("elevation_min_m"),
+                data.get("elevation_max_m"),
             ],
         )
         self._conn.commit()

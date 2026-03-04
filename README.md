@@ -64,7 +64,9 @@ POST /v1/locations (geometry + options)
         v                  v                        v                               v
   Scene selection    Scene selection         DuckDB grid-cell cache        64x64 px window
   monthly best cloud IW GRD, VV asset        (1/24° ~4 km, shared)         elevation_m
-  ≤2/month, max 120  ≤2/month, max 120       Fetch missing via OPeNDAP     elevation_range_m
+  ≤2/month, max 120  ≤2/month, max 120       Fetch missing via OPeNDAP     elevation_min_m
+        |                  |                        |                         elevation_max_m
+        |                  |                        |                         elevation_range_m
         |                  |                        |                         slope_deg
         v                  v                        v                               |
   Async COG reads    Sync VV reads via        Derive climate features:             |
@@ -174,9 +176,11 @@ One 1°x1° tile is opened per location. The tile path follows the convention:
 Copernicus_DSM_COG_10_{N|S}{lat:02d}_00_{E|W}{lon:03d}_00_DEM/{tile}.tif
 ```
 
-Three terrain features are derived from the 64x64 window (640m x 640m footprint):
+Five terrain features are derived from the 64x64 window (640m x 640m footprint):
 - `elevation_m` -- mean ellipsoidal elevation in metres
-- `elevation_range_m` -- max minus min (terrain relief proxy, useful for drainage and landslide assessment)
+- `elevation_min_m` -- minimum elevation within the window
+- `elevation_max_m` -- maximum elevation within the window
+- `elevation_range_m` -- `elevation_max_m − elevation_min_m` (terrain relief proxy)
 - `slope_deg` -- mean slope angle in degrees, computed from numpy central-difference gradient scaled by arc-second pixel size in metres
 
 ---
@@ -416,6 +420,8 @@ Long-term features computed from the full date window (default 5 years):
 | `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%) |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
 | `elevation_m` | Mean terrain elevation of the 640m footprint (metres, WGS84 ellipsoidal) -- Copernicus GLO-30 |
+| `elevation_min_m` | Minimum elevation within the footprint |
+| `elevation_max_m` | Maximum elevation within the footprint |
 | `elevation_range_m` | Max minus min elevation within the footprint (terrain relief proxy) |
 | `slope_deg` | Mean slope angle in degrees across the footprint |
 
@@ -606,8 +612,8 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.15.0",
-  "score_version": "risk-v1.12.0",
+  "processing_version": "s2l2a-v1.18.0",
+  "score_version": "risk-v1.13.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -616,6 +622,7 @@ Interactive docs: `http://localhost:8000/docs`
     "heat_mitigation_score": 22,
     "flood_risk_score": 10,
     "heat_stress_score": 41,
+    "landslide_risk_score": 8,
     "composite_score": 60
   },
   "features": {
@@ -687,13 +694,13 @@ Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox)
 - Analysis period and processing/score versions in the header
 - Active episode badges (flood / fire / drought) in the header when any flag is set
-- Climate zone badge (Köppen code), elevation badge (▲ elevation · slope · relief from GLO-30), and for tidal zone sites a tidal station badge (nearest NOAA station name and distance)
+- Climate zone badge (Köppen code), elevation badge (▲ min / mean / max m · slope · relief from GLO-30), and for tidal zone sites a tidal station badge (nearest NOAA station name and distance)
 - Per-index time series charts (Chart.js)
 - SAR water fraction chart with seasonal baseline and flood alert banner; burn-suppressed months annotated
 - SAR scene table: all scenes from the last 12 months, months as rows, orbits as columns; for tidal zone sites each scene additionally shows the MSL tide level at the Sentinel-1 acquisition time (interpolated from NOAA hourly predictions)
 - TerraClimate charts: monthly tmax/tmin temperature and PPT/VPD dual-axis
 - Feature table grouped by theme with contextual descriptions
-- Six risk score gauges with explanations
+- Seven risk score gauges with explanations (including landslide risk when DEM data is available)
 - Quality metadata with colour-coded indicators (green / amber / red) for coverage, cloud fraction, and months observed
 - Data quality disclaimer explaining the satellite-derived nature of estimates and known limitations
 - Climate zone profile and composite weight breakdown
@@ -713,7 +720,7 @@ Returns the same data as the HTML report as structured JSON. Useful for programm
 | `location_key`, `name`, `centroid`, `geometry`, `climate` | Location metadata |
 | `processing_version`, `score_version` | Versions used for the stored results |
 | `date_window` | `{ start, end }` of the analysis period |
-| `scores` | All six sub-scores and `composite_score` |
+| `scores` | All sub-scores and `composite_score`; includes `landslide_risk_score` (terrain-derived, standalone) |
 | `features` | All derived features (optical, SAR, TerraClimate, tidal zone, episode flags) |
 | `quality` | `months_total`, `months_observed`, `mean_cloud_fraction`, `flags` |
 | `timeseries` | Monthly series per metric: `[{ month, mean, obs, cloud }, ...]` |
@@ -721,7 +728,7 @@ Returns the same data as the HTML report as structured JSON. Useful for programm
 | `sar_scenes` | Last 12 months of SAR scene metadata: `[{ scene_id, month_key, rel_orbit, water_frac, tide_level_m }, ...]` -- pixel arrays excluded; `tide_level_m` is MSL tide at acquisition time for tidal zone sites (null otherwise) |
 | `tc_monthly` | TerraClimate monthly values per variable |
 | `nearest_tidal_station` | Nearest NOAA tidal station within 30 km: `{ station_id, name, lat, lon, tide_type, state, distance_km }`, or null for inland sites |
-| `elevation` | Copernicus GLO-30 terrain features: `{ elevation_m, elevation_range_m, slope_deg }`, or null if tile unavailable |
+| `elevation` | Copernicus GLO-30 terrain features: `{ elevation_m, elevation_min_m, elevation_max_m, elevation_range_m, slope_deg }`, or null if tile unavailable |
 | `map_links` | `report_url` and `thumbnail_url` |
 
 Example: `GET /v1/location/a1b2c3/report.json`
@@ -872,8 +879,8 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.17.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.12.0` | Cache key tag for scores |
+| `PROCESSING_VERSION` | `s2l2a-v1.18.0` | Cache key tag for features |
+| `SCORE_VERSION` | `risk-v1.13.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2

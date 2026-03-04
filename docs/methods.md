@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.17.0` / scoring `risk-v1.12.0`
+**Version:** processing `s2l2a-v1.18.0` / scoring `risk-v1.13.0`
 **Date:** 2026-03-04
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -702,7 +702,9 @@ A single 64×64 pixel window (640m × 640m footprint) is read from the Copernicu
 | Feature | Formula | Unit |
 |---------|---------|------|
 | `elevation_m` | `nanmean(window)` | metres (WGS84 ellipsoidal) |
-| `elevation_range_m` | `nanmax(window) − nanmin(window)` | metres |
+| `elevation_min_m` | `nanmin(window)` | metres |
+| `elevation_max_m` | `nanmax(window)` | metres |
+| `elevation_range_m` | `elevation_max_m − elevation_min_m` | metres |
 | `slope_deg` | `mean(degrees(arctan(sqrt(dz_dy² + dz_dx²))))` | degrees |
 
 **Slope computation:** The slope is derived from numpy central differences applied to the elevation window. Gradients in the row direction (north-south) are divided by the arc-second pixel size in metres (≈ 30.87 m), and gradients in the column direction (east-west) are divided by `30.87 × cos(lat)` to account for meridian convergence at higher latitudes. The result is the mean slope angle over the 640m footprint, equivalent to the area-average of the per-pixel first-order terrain gradient.
@@ -720,7 +722,7 @@ Higher `elevation_range_m` correlates with better drainage (lower flood risk) bu
 
 ### 12.4 Report display
 
-The elevation badge appears in the HTML report header: `▲ {elevation_m:.0f} m · {slope_deg:.1f}° slope · ±{elevation_range_m:.0f} m relief`. In the JSON report the three values are nested under the top-level `elevation` key.
+The elevation badge appears in the HTML report header as `▲ {min} / {mean} / {max} m · {slope}° slope · ±{range} m relief`, showing the full elevation spread of the 640m analysis window. In the JSON report all five values are nested under the top-level `elevation` key (`elevation_min_m`, `elevation_m`, `elevation_max_m`, `elevation_range_m`, `slope_deg`). Older cached rows that predate v1.18.0 have `null` for `elevation_min_m` and `elevation_max_m`; the badge falls back to mean-only display in that case.
 
 ---
 
@@ -746,6 +748,15 @@ Weighted combination of four optical components and one climate component. Only 
 | PDSI drought frequency | `pdsi_drought_freq_5y × 100` | 0.25 |
 
 Trend slope mapping: a slope of −0.05 NDVI/yr maps to 100 (severe decline); +0.05 NDVI/yr maps to 0 (vegetation recovering). NDVI mean mapping: NDVI = 0 maps to 100 (bare); NDVI = 0.8 maps to 0 (dense healthy vegetation).
+
+**Terrain drought amplifier (non-urban only):** Steep slopes produce thin, poorly developed soils with reduced plant-available water capacity. When `slope_deg > TERRAIN_DROUGHT_SLOPE_MIN` (10°), the computed drought score is multiplied by a terrain amplifier:
+
+```
+terrain_amp = 1.0 + min(TERRAIN_DROUGHT_AMP_MAX, (slope_deg − 10.0) / 100.0)
+drought_score = min(100, drought_score × terrain_amp)
+```
+
+At 25°: +15% amplification. At 35°+: capped at +20%. Only applied when DEM data is available.
 
 Forced to 0 for urban locations.
 
@@ -793,17 +804,28 @@ Default (no canopy data): 50.
 
 ### 11.5 Flood risk score
 
-The chronic and acute SAR components are combined with the NDWI cross-validation veto applied **only to the chronic component**:
+Three components are combined, with the NDWI cross-validation veto applied **only to the chronic SAR component**:
 
 ```
 chronic_score = sar_water_freq_5y × 100
 if ndwi_wetness_persistence_5y < SAR_NDWI_CORROBORATION_THRESHOLD (0.05):
     chronic_score × = SAR_NDWI_VETO_FACTOR (0.25)
 acute_score = sar_flood_anomaly × 100
-flood_risk_score = max(chronic_score, acute_score)
+
+# Terrain flash flood potential (static, no observation required)
+if elevation_m < TERRAIN_FLASH_ELEV_MAX (300 m) and slope_deg > TERRAIN_FLASH_SLOPE_MIN (3°):
+    low_elev_factor = (300 − elevation_m) / 300        # 1.0 at sea level, 0 at 300 m
+    slope_factor    = min(1.0, slope_deg / 20.0)       # 1.0 at 20°+
+    terrain_flash_score = low_elev_factor × slope_factor × 100
+else:
+    terrain_flash_score = 0
+
+flood_risk_score = max(chronic_score, acute_score, terrain_flash_score × 0.5)
 ```
 
-The maximum of the two components ensures that a single significant flood event (captured by the anomaly metric) is not diluted by years of dry baseline in the chronic frequency. Not suppressed for urban locations; flood risk applies regardless of land cover.
+The terrain flash component models fast runoff concentration: it requires **both** low absolute elevation (a flood accumulation zone) **and** significant slope (fast inflow velocity). Flat lowlands and steep highlands both score near zero; low-elevation + steep terrain scores up to 50 (the 0.5 weight ensures observed SAR flooding always dominates when present).
+
+The maximum of all three components ensures that a significant flood event or terrain susceptibility signal is not diluted. Not suppressed for urban locations.
 
 **NDWI optical cross-validation veto (chronic component only):**
 
@@ -833,7 +855,33 @@ Trend mapping: 0.05 °C/yr maps to 100; 0 °C/yr maps to 0; negative trends are 
 
 Default (no TerraClimate data, `no_terraclimate_data` flag): 50.
 
-### 11.7 Composite score
+### 11.7 Landslide risk score
+
+A standalone terrain hazard score (0-100) derived from the GLO-30 DEM. It is **not included in the composite** -- landslide is an independent geophysical hazard orthogonal to the climate risk dimensions. It is surfaced separately in the API response and the HTML report.
+
+**Physical basis:** Slope angle is the primary driver of gravitational shear stress. Terrain relief (elevation range of the 640m footprint) is a secondary proxy for slope length and material accumulation potential.
+
+```
+slope_score  = min(100, slope_deg / TERRAIN_LANDSLIDE_SLOPE_MAX × 100)
+relief_score = min(100, elevation_range_m / TERRAIN_LANDSLIDE_RELIEF_MAX × 100)
+landslide_risk_score = 0.70 × slope_score + 0.30 × relief_score
+```
+
+Indicative mapping:
+
+| slope_deg | landslide_risk_score (flat terrain) | Interpretation |
+|-----------|-------------------------------------|----------------|
+| < 5° | < 20 | Negligible slope hazard |
+| 10° | 28 | Low |
+| 15° | 42 | Moderate |
+| 20° | 56 | Elevated |
+| 25°+ | 70-100 | High to very high |
+
+Default when no DEM data (`no_dem_data` flag): 0.
+
+The gauge is hidden in the HTML report when `slope_deg` is null (no DEM data) and the score is 0.
+
+### 11.8 Composite score
 
 **Urban locations** (climate-zone weights are not applicable to impervious surfaces):
 
@@ -972,6 +1020,18 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `DEM_AWS_BUCKET` | `copernicus-dem-30m` | S3 bucket for GLO-30 COG tiles |
 | `DEM_AWS_REGION` | `eu-central-1` | Bucket region for GDAL virtual filesystem routing |
 
+### Terrain risk scoring thresholds
+
+| Parameter | Default | Applied in |
+|-----------|---------|-----------|
+| `TERRAIN_LANDSLIDE_SLOPE_MAX` | 25.0° | `landslide_risk_score` slope component (maps to 100) |
+| `TERRAIN_LANDSLIDE_RELIEF_MAX` | 300.0 m | `landslide_risk_score` relief component (maps to 100) |
+| `TERRAIN_FLASH_ELEV_MAX` | 300.0 m | Terrain flash flood: elevation above which contribution = 0 |
+| `TERRAIN_FLASH_SLOPE_MIN` | 3.0° | Terrain flash flood: minimum slope to activate |
+| `TERRAIN_FLASH_SLOPE_MAX` | 20.0° | Terrain flash flood: slope mapped to 1.0 |
+| `TERRAIN_DROUGHT_SLOPE_MIN` | 10.0° | Terrain drought amplifier: slope threshold for activation |
+| `TERRAIN_DROUGHT_AMP_MAX` | 0.20 | Terrain drought amplifier: maximum multiplier (+20%) |
+
 ### NOAA tidal zone parameters
 
 | Parameter | Default | Description |
@@ -1019,4 +1079,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `c5dce73` (master), processing version `s2l2a-v1.15.0`, score version `risk-v1.12.0`.*
+*Document generated from source code at commit `b46a60c` (master), processing version `s2l2a-v1.18.0`, score version `risk-v1.13.0`.*

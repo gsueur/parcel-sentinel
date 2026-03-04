@@ -105,8 +105,8 @@ class Settings(BaseSettings):
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last fetch
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.17.0"
-    SCORE_VERSION: str = "risk-v1.12.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.18.0"
+    SCORE_VERSION: str = "risk-v1.13.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"
@@ -140,6 +140,15 @@ class Settings(BaseSettings):
     TERRACLIMATE_VPD_HIGH_THRESHOLD: float = 1.5     # kPa
     TERRACLIMATE_PDSI_DROUGHT_THRESHOLD: float = -2.0
     TERRACLIMATE_TMAX_ANOMALY_SIGMA: float = 1.0     # stdevs above monthly mean
+
+    # Terrain risk scoring thresholds (GLO-30 DEM derived)
+    TERRAIN_LANDSLIDE_SLOPE_MAX: float = 25.0     # slope_deg mapped to 100 for landslide score
+    TERRAIN_LANDSLIDE_RELIEF_MAX: float = 300.0   # elevation_range_m mapped to 100
+    TERRAIN_FLASH_ELEV_MAX: float = 300.0         # elevation_m above which terrain flash = 0
+    TERRAIN_FLASH_SLOPE_MIN: float = 3.0          # minimum slope_deg for flash flood terrain
+    TERRAIN_FLASH_SLOPE_MAX: float = 20.0         # slope_deg mapped to 1.0 for flash factor
+    TERRAIN_DROUGHT_SLOPE_MIN: float = 10.0       # slope_deg threshold for drought amplifier
+    TERRAIN_DROUGHT_AMP_MAX: float = 0.20         # max drought amplification (+20%)
 
     # Growing season (latitude threshold for zone split)
     GROWING_SEASON_LAT_THRESHOLD: float = 33.0
