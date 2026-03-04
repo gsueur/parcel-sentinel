@@ -1453,7 +1453,7 @@ def build_report_html(
     thumb_url = f"/v1/thumbnail/{location_key}.png"
     dem_html = (
         f'<img src="data:image/png;base64,{dem_png_b64}" alt="Terrain relief (GLO-30)"'
-        f' style="margin-top:8px;border-radius:4px;display:block;width:64px;height:64px;image-rendering:pixelated">'
+        f' style="margin-top:8px;border-radius:4px;display:block;width:96px;height:96px;image-rendering:pixelated">'
         f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">&#9651; Terrain relief &mdash; Copernicus GLO-30</div>'
     ) if dem_png_b64 else ""
     if geometry_geojson:
