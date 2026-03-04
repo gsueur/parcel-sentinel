@@ -81,6 +81,7 @@ class Settings(BaseSettings):
 
     # Standardized window size for all raster reads
     COG_WINDOW_SIZE: int = 64
+    S2_PIXEL_SIZE_M: float = 10.0  # Sentinel-2 native pixel size (m); defines the 640 m analysis footprint
 
     # Scene selection
     MAX_SCENES_PER_MONTH: int = 2

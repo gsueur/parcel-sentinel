@@ -55,7 +55,20 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
     from rasterio.windows import Window
 
     path = _tile_path(lat, lon)
-    size = settings.COG_WINDOW_SIZE  # 64
+    size = settings.COG_WINDOW_SIZE  # 64 — output pixel count (matches S2)
+
+    # Target footprint: same geographic extent as the S2 window (640 m).
+    # GLO-30 native pixel size at this latitude:
+    pixel_lat_m = _ARC_SEC_M
+    pixel_lon_m = _ARC_SEC_M * math.cos(math.radians(lat))
+    # Number of native DEM pixels that span the S2 footprint (640 m).
+    s2_footprint_m = size * settings.S2_PIXEL_SIZE_M  # 640 m
+    dem_native = max(4, round(s2_footprint_m / pixel_lat_m))  # ~21 at mid-latitudes
+
+    # Effective pixel size of the 64×64 output grid over the 640 m footprint.
+    # Used for all gradient/curvature calculations below.
+    eff_lat_m = s2_footprint_m / size   # ≈ 10 m
+    eff_lon_m = (dem_native * pixel_lon_m) / size
 
     try:
         with rasterio.Env(**_GDAL_ENV):
@@ -63,15 +76,15 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
                 # rasterio.index returns (row, col) for a (lon, lat) point
                 row_c, col_c = src.index(lon, lat)
 
-                col_off = max(0, col_c - size // 2)
-                row_off = max(0, row_c - size // 2)
-                col_end = min(src.width,  col_off + size)
-                row_end = min(src.height, row_off + size)
+                col_off = max(0, col_c - dem_native // 2)
+                row_off = max(0, row_c - dem_native // 2)
+                col_end = min(src.width,  col_off + dem_native)
+                row_end = min(src.height, row_off + dem_native)
 
                 window = Window(col_off, row_off, col_end - col_off, row_end - row_off)
                 data = src.read(
                     1, window=window,
-                    out_shape=(size, size),
+                    out_shape=(size, size),  # resample to 64×64 for gradient quality
                     resampling=rasterio.enums.Resampling.bilinear,
                 ).astype(np.float32)
 
@@ -91,12 +104,10 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
 
         # Slope from central differences.
         # np.gradient(data) returns [grad_row, grad_col] in units of elev/pixel.
-        # Convert to m/m: divide by pixel size in metres.
-        pixel_lat_m = _ARC_SEC_M
-        pixel_lon_m = _ARC_SEC_M * math.cos(math.radians(lat))
+        # Convert to m/m using the effective pixel size of the resampled 64×64 grid.
         grad_row, grad_col = np.gradient(np.nan_to_num(data, nan=elev_m))
-        dz_dy = grad_row / pixel_lat_m  # dimensionless (m/m) north-south
-        dz_dx = grad_col / pixel_lon_m  # dimensionless (m/m) east-west
+        dz_dy = grad_row / eff_lat_m  # dimensionless (m/m) north-south
+        dz_dx = grad_col / eff_lon_m  # dimensionless (m/m) east-west
         slope_deg = float(np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))).mean())
 
         # Aspect: circular mean downslope direction (0=N, clockwise)
@@ -110,8 +121,8 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
         tpi_m = float(data[cy, cx] - elev_m)
 
         # Curvature: mean Laplacian (negative = concave/water-collecting)
-        d2z_dy2 = np.gradient(dz_dy, axis=0) / pixel_lat_m
-        d2z_dx2 = np.gradient(dz_dx, axis=1) / pixel_lon_m
+        d2z_dy2 = np.gradient(dz_dy, axis=0) / eff_lat_m
+        d2z_dx2 = np.gradient(dz_dx, axis=1) / eff_lon_m
         curvature = float(np.nanmean(d2z_dy2 + d2z_dx2))
 
         # Heat Load Index (solar radiation proxy, 0–~0.8)
