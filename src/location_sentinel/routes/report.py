@@ -134,6 +134,8 @@ async def get_location_report(location_key: str):
         except Exception as exc:
             logger.warning("Could not look up tidal station for report: %s", exc)
 
+    elevation = store.get_elevation(location_key)
+
     # Tide level per SAR scene (only for tidal zone sites)
     scene_tide_levels: dict[str, float] = {}
     if nearest_tidal and sar_scene_months:
@@ -215,6 +217,7 @@ async def get_location_report(location_key: str):
         burn_months=burn_months or None,
         nearest_tidal=nearest_tidal,
         scene_tide_levels=scene_tide_levels or None,
+        elevation=elevation,
     )
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
@@ -252,6 +255,8 @@ async def get_location_report_json(location_key: str):
             nearest_tidal_json = store.get_nearest_tidal_station(lat, lon, settings.TIDAL_ZONE_RADIUS_KM)
         except Exception as exc:
             logger.warning("Could not look up tidal station for report.json: %s", exc)
+
+    elevation_json = store.get_elevation(location_key)
 
     # Tide level per SAR scene (only for tidal zone sites)
     scene_tide_levels_json: dict[str, float] = {}
@@ -298,6 +303,7 @@ async def get_location_report_json(location_key: str):
         "sar_scenes": sar_scenes,
         "tc_monthly": tc_monthly,
         "nearest_tidal_station": nearest_tidal_json,
+        "elevation": elevation_json,
         "map_links": {
             "report_url": f"/v1/location/{location_key}/report",
             "thumbnail_url": f"/v1/thumbnail/{location_key}.png",

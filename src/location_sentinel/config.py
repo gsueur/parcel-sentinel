@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     AWS_SENTINEL_BUCKET: str = "sentinel-cogs"
     AWS_SENTINEL_REGION: str = "us-west-2"
 
+    # Copernicus GLO-30 DEM (public S3, no-sign)
+    DEM_AWS_BUCKET: str = "copernicus-dem-30m"
+    DEM_AWS_REGION: str = "eu-central-1"
+
     # SAR / Sentinel-1 GRD
     SAR_STAC_COLLECTION: str = "sentinel-1-grd"
     SAR_AWS_BUCKET: str = "sentinel-s1-l1c"
@@ -101,7 +105,7 @@ class Settings(BaseSettings):
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last fetch
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.16.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.17.0"
     SCORE_VERSION: str = "risk-v1.12.0"
 
     # Storage

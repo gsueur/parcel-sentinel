@@ -30,7 +30,8 @@ Given a point or polygon geometry, this service:
 - Searches the Sentinel-2 L2A archive for satellite passes over that location (back 5 years by default)
 - Searches the Sentinel-1 GRD archive for SAR passes over the same period
 - Fetches TerraClimate monthly climate variables (temperature, precipitation, VPD, PDSI) from the University of Idaho THREDDS server
-- All three pipelines run concurrently; results are merged before scoring
+- Reads terrain elevation from the Copernicus GLO-30 DEM (30m, global, public S3)
+- All four pipelines run concurrently; results are merged before scoring
 - For each selected S2 scene: reads 64x64 native pixels (640m footprint) for 7 bands, masks bad pixels via SCL, computes six spectral indices
 - For each selected S1 scene: reads 64x64 pixels of VV backscatter, applies a DN threshold to detect water
 - Aggregates to monthly statistics and derives long-term features (optical, SAR, and climate)
@@ -52,34 +53,34 @@ POST /v1/locations (geometry + options)
   Input validation + stable location key
   key = sha256(customer_id | name | lat_5dp | lon_5dp)[:6]
         |
-        |-------------- asyncio.gather ----------------------------------|
-        v                        v                                       v
-  Sentinel-2 L2A pipeline  Sentinel-1 GRD pipeline          TerraClimate pipeline
-  STAC search              STAC search                       OPeNDAP point extraction
-  (Earth Search v1)        (Earth Search v1)                 (U. Idaho THREDDS)
-  Collection: s2-l2a       Collection: s1-grd                5 variables × N years
-  Bucket: sentinel-cogs    Bucket: sentinel-s1-l1c           tmax, tmin, ppt, vpd, PDSI
-        |                        |                                       |
-        v                        v                                       v
-  Scene selection          Scene selection                   DuckDB grid-cell cache
-  monthly best cloud       IW GRD, VV asset                 (1/24° ~4 km, shared)
-  Up to 2/month, max 120   Up to 2/month, max 120           Fetch missing via OPeNDAP
-        |                        |                                       |
-        v                        v                                       v
-  Async COG reads          Sync VV reads via                 Derive climate features:
-  7 bands, 64x64 px        rasterio WarpedVRT                tmax_mean, tmax_anomaly,
-  (async-geotiff/obstore)  64x64 px, UTM CRS                 tmax_trend, ppt_annual,
-        |                        |                             vpd_high_freq, pdsi_freq
-        v                        v                                       |
-  SCL masking (4,5,6,7,11) Water detection                             |
-  NDVI, NDWI, NDMI,        water_frac = pixels < 75 DN                |
-  NBR, NDSI, BSI           (excl. nodata DN=0)                        |
-        |                        |                                       |
-        v                        |                                       |
-  Monthly aggregation +    Snow suppression:                           |
-  long-term features       exclude months NDSI > 0.4                  |
-        |                        |                                       |
-        |<------- merge optical + SAR + TerraClimate features ----------|
+        |-------------- asyncio.gather -------------------------------------------------|
+        v                  v                        v                               v
+  Sentinel-2 L2A     Sentinel-1 GRD          TerraClimate pipeline        Copernicus GLO-30
+  STAC search        STAC search             OPeNDAP point extraction      DEM COG read
+  Earth Search v1    Earth Search v1         U. Idaho THREDDS              /vsis3/, no-sign
+  s2-l2a collection  s1-grd collection       5 vars × N years              1 arc-sec (~30m)
+  sentinel-cogs      sentinel-s1-l1c         tmax tmin ppt vpd PDSI        eu-central-1
+        |                  |                        |                               |
+        v                  v                        v                               v
+  Scene selection    Scene selection         DuckDB grid-cell cache        64x64 px window
+  monthly best cloud IW GRD, VV asset        (1/24° ~4 km, shared)         elevation_m
+  ≤2/month, max 120  ≤2/month, max 120       Fetch missing via OPeNDAP     elevation_range_m
+        |                  |                        |                         slope_deg
+        v                  v                        v                               |
+  Async COG reads    Sync VV reads via        Derive climate features:             |
+  7 bands, 64x64 px  rasterio WarpedVRT       tmax_mean, tmax_anomaly,            |
+  async-geotiff      64x64 px, UTM CRS        tmax_trend, ppt_annual,             |
+        |                  |                  vpd_high_freq, pdsi_freq             |
+        v                  v                        |                               |
+  SCL masking        Water detection                |                               |
+  NDVI NDWI NDMI     water_frac = px < 75 DN        |                               |
+  NBR NDSI BSI       (excl. nodata DN=0)            |                               |
+        |                  |                        |                               |
+        v                  |                        |                               |
+  Monthly aggregation + Snow suppression:           |                               |
+  long-term features   excl. months NDSI > 0.4     |                               |
+        |                  |                        |                               |
+        |<--------- merge optical + SAR + TerraClimate + DEM features ------------|
         |
         v
   Climate zone lookup (centroid → Köppen code)
@@ -158,6 +159,25 @@ For the chronic frequency metric two thresholds are evaluated per orbit and the 
 - **Adaptive (MAD-based):** per orbit, `threshold = max(median + SAR_FLOOD_MAD_K × MAD, SAR_MIN_ANOMALY_FRACTION)`. Anomalous scenes are only counted when they form a run of at least `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` (default 2) calendar-consecutive months, suppressing single-pass instrument noise (wind roughening, brief specular glint) while preserving multi-pass genuine flood events.
 
 `sar_water_freq_5y = max over orbits of max(absolute_freq, anomaly_freq)`
+
+---
+
+### Copernicus GLO-30 DEM
+
+**Product:** Copernicus Digital Elevation Model, 30m (1 arc-second) global
+**Source:** TanDEM-X radar acquisition; vertical accuracy ~1 m RMSE over flat terrain
+**Archive:** AWS S3 `s3://copernicus-dem-30m/` (eu-central-1), public, no authentication
+**Access pattern:** Single 64x64 pixel window read per location; result cached permanently in DuckDB
+
+One 1°x1° tile is opened per location. The tile path follows the convention:
+```
+Copernicus_DSM_COG_10_{N|S}{lat:02d}_00_{E|W}{lon:03d}_00_DEM/{tile}.tif
+```
+
+Three terrain features are derived from the 64x64 window (640m x 640m footprint):
+- `elevation_m` -- mean ellipsoidal elevation in metres
+- `elevation_range_m` -- max minus min (terrain relief proxy, useful for drainage and landslide assessment)
+- `slope_deg` -- mean slope angle in degrees, computed from numpy central-difference gradient scaled by arc-second pixel size in metres
 
 ---
 
@@ -395,6 +415,9 @@ Long-term features computed from the full date window (default 5 years):
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
 | `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%) |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
+| `elevation_m` | Mean terrain elevation of the 640m footprint (metres, WGS84 ellipsoidal) -- Copernicus GLO-30 |
+| `elevation_range_m` | Max minus min elevation within the footprint (terrain relief proxy) |
+| `slope_deg` | Mean slope angle in degrees across the footprint |
 
 ### TerraClimate-derived features
 
@@ -664,7 +687,7 @@ Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox)
 - Analysis period and processing/score versions in the header
 - Active episode badges (flood / fire / drought) in the header when any flag is set
-- Climate zone badge (Köppen code) and, for tidal zone sites, a tidal station badge (nearest NOAA station name and distance)
+- Climate zone badge (Köppen code), elevation badge (▲ elevation · slope · relief from GLO-30), and for tidal zone sites a tidal station badge (nearest NOAA station name and distance)
 - Per-index time series charts (Chart.js)
 - SAR water fraction chart with seasonal baseline and flood alert banner; burn-suppressed months annotated
 - SAR scene table: all scenes from the last 12 months, months as rows, orbits as columns; for tidal zone sites each scene additionally shows the MSL tide level at the Sentinel-1 acquisition time (interpolated from NOAA hourly predictions)
@@ -698,6 +721,7 @@ Returns the same data as the HTML report as structured JSON. Useful for programm
 | `sar_scenes` | Last 12 months of SAR scene metadata: `[{ scene_id, month_key, rel_orbit, water_frac, tide_level_m }, ...]` -- pixel arrays excluded; `tide_level_m` is MSL tide at acquisition time for tidal zone sites (null otherwise) |
 | `tc_monthly` | TerraClimate monthly values per variable |
 | `nearest_tidal_station` | Nearest NOAA tidal station within 30 km: `{ station_id, name, lat, lon, tide_type, state, distance_km }`, or null for inland sites |
+| `elevation` | Copernicus GLO-30 terrain features: `{ elevation_m, elevation_range_m, slope_deg }`, or null if tile unavailable |
 | `map_links` | `report_url` and `thumbnail_url` |
 
 Example: `GET /v1/location/a1b2c3/report.json`
@@ -848,7 +872,7 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.16.0` | Cache key tag for features |
+| `PROCESSING_VERSION` | `s2l2a-v1.17.0` | Cache key tag for features |
 | `SCORE_VERSION` | `risk-v1.12.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
@@ -923,6 +947,13 @@ SH months are NH months shifted by +6 calendar months. The latitude boundary and
 | `NBR_MIN_CONSECUTIVE` | `3` | Minimum calendar-consecutive anomaly months required for fire detection and SAR burn suppression |
 | `NDSI_SNOW_THRESHOLD` | `0.4` | NDSI above → snow covered |
 | `BSI_BARE_THRESHOLD` | `0.0` | BSI above → bare soil |
+
+### Copernicus GLO-30 DEM
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEM_AWS_BUCKET` | `copernicus-dem-30m` | Public S3 bucket for GLO-30 tiles |
+| `DEM_AWS_REGION` | `eu-central-1` | S3 bucket region |
 
 ### NOAA tidal station integration
 

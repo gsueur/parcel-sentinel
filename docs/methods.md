@@ -1,7 +1,7 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.16.0` / scoring `risk-v1.12.0`
-**Date:** 2026-03-02
+**Version:** processing `s2l2a-v1.17.0` / scoring `risk-v1.12.0`
+**Date:** 2026-03-04
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
@@ -19,10 +19,11 @@
 9. [TerraClimate gridded climate features](#9-terraclimate-gridded-climate-features)
 10. [Urban detection](#10-urban-detection)
 11. [Tidal zone classification (NOAA CO-OPS)](#11-tidal-zone-classification)
-12. [Risk scoring](#12-risk-scoring)
-13. [Quality metadata](#13-quality-metadata)
-14. [Known limitations and spectral confounds](#14-known-limitations-and-spectral-confounds)
-15. [Parameter reference](#15-parameter-reference)
+12. [Elevation features (Copernicus GLO-30)](#12-elevation-features)
+13. [Risk scoring](#13-risk-scoring)
+14. [Quality metadata](#14-quality-metadata)
+15. [Known limitations and spectral confounds](#15-known-limitations-and-spectral-confounds)
+16. [Parameter reference](#16-parameter-reference)
 
 ---
 
@@ -108,7 +109,18 @@ grid_lon = lon_idx / 24 − 179.979167
 
 ---
 
-### 1.4 NOAA CO-OPS (tidal stations and tide predictions)
+### 1.4 Copernicus GLO-30 DEM
+
+| Attribute | Value |
+|-----------|-------|
+| Product | Copernicus Digital Elevation Model (GLO-30), 1 arc-second resolution (~30 m) |
+| Source | TanDEM-X radar; vertical accuracy ~1 m RMSE over flat terrain, ~2-4 m in rugged terrain |
+| Archive | AWS S3 `s3://copernicus-dem-30m/` (eu-central-1), public, no authentication required |
+| Tile grid | 1°×1° tiles, naming `Copernicus_DSM_COG_10_{N|S}{lat:02d}_00_{E|W}{lon:03d}_00_DEM/...tif` |
+| Coverage | Global |
+| Cache | Elevation features stored permanently in `elevation_cache` table; one read per location |
+
+### 1.5 NOAA CO-OPS (tidal stations and tide predictions)
 
 | Attribute | Value |
 |-----------|-------|
@@ -679,7 +691,40 @@ This cross-reference allows visual validation that SAR-detected water fraction f
 
 ---
 
-## 12. Risk scoring
+## 12. Elevation features
+
+### 12.1 Data access
+
+A single 64×64 pixel window (640m × 640m footprint) is read from the Copernicus GLO-30 COG tile that contains the location centroid. The read uses rasterio with anonymous S3 access (`AWS_NO_SIGN_REQUEST=YES`) and bilinear resampling to the target window size. If fewer than 25% of pixels contain valid data (e.g. tile edge, ocean), the read is discarded and the `no_dem_data` quality flag is set.
+
+### 12.2 Derived features
+
+| Feature | Formula | Unit |
+|---------|---------|------|
+| `elevation_m` | `nanmean(window)` | metres (WGS84 ellipsoidal) |
+| `elevation_range_m` | `nanmax(window) − nanmin(window)` | metres |
+| `slope_deg` | `mean(degrees(arctan(sqrt(dz_dy² + dz_dx²))))` | degrees |
+
+**Slope computation:** The slope is derived from numpy central differences applied to the elevation window. Gradients in the row direction (north-south) are divided by the arc-second pixel size in metres (≈ 30.87 m), and gradients in the column direction (east-west) are divided by `30.87 × cos(lat)` to account for meridian convergence at higher latitudes. The result is the mean slope angle over the 640m footprint, equivalent to the area-average of the per-pixel first-order terrain gradient.
+
+### 12.3 Interpretation
+
+| `elevation_range_m` | Terrain character |
+|--------------------|--------------------|
+| < 10 m | Flat (coastal plain, delta, valley floor) |
+| 10-50 m | Rolling (low hills, gentle slopes) |
+| 50-200 m | Hilly (moderate topography) |
+| > 200 m | Rugged (steep terrain, mountain) |
+
+Higher `elevation_range_m` correlates with better drainage (lower flood risk) but greater landslide susceptibility. Flat low-elevation sites (<5 m, <10 m range) are more susceptible to tidal inundation and storm surge than their `sar_water_freq_5y` alone may indicate, especially outside the NOAA tidal station network.
+
+### 12.4 Report display
+
+The elevation badge appears in the HTML report header: `▲ {elevation_m:.0f} m · {slope_deg:.1f}° slope · ±{elevation_range_m:.0f} m relief`. In the JSON report the three values are nested under the top-level `elevation` key.
+
+---
+
+## 13. Risk scoring
 
 All scores are integers in [0, 100]. A uniform rounding and clamping function is applied to all final values: `score = clamp(round(raw), 0, 100)`.
 
@@ -828,7 +873,7 @@ Köppen classification is derived from the location centroid using a 1/12° grid
 
 ---
 
-## 13. Quality metadata
+## 14. Quality metadata
 
 Each computation returns a quality object:
 
@@ -849,10 +894,11 @@ Quality flags:
 | `no_sar_data` | No Sentinel-1 scenes found or all scenes failed to read |
 | `sar_burn_suppression` | At least one SAR month excluded due to co-located NBR burn signal |
 | `no_terraclimate_data` | TerraClimate fetch failed for all requested variables |
+| `no_dem_data` | GLO-30 tile read failed or < 25% valid pixels (ocean tile edge, missing coverage) |
 
 ---
 
-## 14. Known limitations and spectral confounds
+## 15. Known limitations and spectral confounds
 
 ### 13.1 NBR false positives on urban impervious surfaces
 
@@ -890,7 +936,7 @@ The fixed 640 m × 640 m footprint means that a point location in a mixed enviro
 
 ---
 
-## 15. Parameter reference
+## 16. Parameter reference
 
 All thresholds are configurable via environment variables. Defaults are listed below.
 
@@ -918,6 +964,13 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | 2 | Minimum calendar-consecutive anomalous months to count for the chronic MAD-based frequency |
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
 | `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent (does not affect acute anomaly) |
+
+### Elevation parameters (Copernicus GLO-30)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `DEM_AWS_BUCKET` | `copernicus-dem-30m` | S3 bucket for GLO-30 COG tiles |
+| `DEM_AWS_REGION` | `eu-central-1` | Bucket region for GDAL virtual filesystem routing |
 
 ### NOAA tidal zone parameters
 

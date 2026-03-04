@@ -300,6 +300,17 @@ class DuckDBStore:
             )
         """)
 
+        # Copernicus GLO-30 elevation cache (location-keyed, static -- never changes)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS elevation_cache (
+                location_key    VARCHAR PRIMARY KEY,
+                elevation_m     FLOAT,
+                elevation_range_m FLOAT,
+                slope_deg       FLOAT,
+                fetched_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         # Climate reference tables
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS climate_descriptions (
@@ -1232,6 +1243,42 @@ class DuckDBStore:
             deleted[table] = len(result)
         self._conn.commit()
         return deleted
+
+    # ------------------------------------------------------------------
+    # Copernicus GLO-30 elevation cache
+    # ------------------------------------------------------------------
+
+    def get_elevation(self, location_key: str) -> dict[str, float] | None:
+        """Return cached elevation features or None if not yet fetched."""
+        assert self._conn is not None
+        row = self._conn.execute(
+            "SELECT elevation_m, elevation_range_m, slope_deg "
+            "FROM elevation_cache WHERE location_key = ?",
+            [location_key],
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "elevation_m": row[0],
+            "elevation_range_m": row[1],
+            "slope_deg": row[2],
+        }
+
+    def store_elevation(self, location_key: str, data: dict[str, float]) -> None:
+        """Persist GLO-30 elevation features for a location."""
+        assert self._conn is not None
+        self._conn.execute(
+            """INSERT OR REPLACE INTO elevation_cache
+               (location_key, elevation_m, elevation_range_m, slope_deg)
+               VALUES (?, ?, ?, ?)""",
+            [
+                location_key,
+                data.get("elevation_m"),
+                data.get("elevation_range_m"),
+                data.get("slope_deg"),
+            ],
+        )
+        self._conn.commit()
 
 
 store = DuckDBStore()

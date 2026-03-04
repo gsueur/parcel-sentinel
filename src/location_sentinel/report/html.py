@@ -120,6 +120,13 @@ table.scenes img { display: block; width: 96px; height: 96px;
 /* No-data */
 .no-data { color: #94a3b8; font-style: italic; font-size: 0.85rem; }
 
+/* Elevation badge */
+.elev-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;
+  padding: 3px 10px; font-size: 0.82rem; color: #166534; cursor: default;
+}
+
 /* Tidal zone badge */
 .tidal-badge {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1309,6 +1316,7 @@ def build_report_html(
     date_end: str | None = None,
     nearest_tidal: dict | None = None,
     scene_tide_levels: dict[str, float] | None = None,
+    elevation: dict | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -1342,6 +1350,21 @@ def build_report_html(
         )
     else:
         climate_html = ""
+
+    # Elevation badge (Copernicus GLO-30)
+    if elevation and elevation.get("elevation_m") is not None:
+        elev_m = elevation["elevation_m"]
+        slope = elevation.get("slope_deg")
+        range_m = elevation.get("elevation_range_m")
+        slope_str = f" &middot; {slope:.1f}° slope" if slope is not None else ""
+        range_str = f" &middot; &plusmn;{range_m:.0f} m relief" if range_m is not None else ""
+        elevation_html = (
+            f'<span class="elev-badge" title="Copernicus GLO-30 DEM &mdash; mean elevation of 640 m window{slope_str}">'
+            f'&#9651; {elev_m:.0f} m{slope_str}{range_str}'
+            f'</span>'
+        )
+    else:
+        elevation_html = ""
 
     # Tidal zone badge
     if nearest_tidal:
@@ -1590,6 +1613,7 @@ def build_report_html(
   <div style="margin-top:6px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
     <span style="color:#64748b;font-size:0.9rem">&#x1F4CD; {coord_str}</span>
     {climate_html}
+    {elevation_html}
     {tidal_html}
     <small style="color:#94a3b8;font-size:0.75rem;font-family:monospace">{location_key}</small>
   </div>

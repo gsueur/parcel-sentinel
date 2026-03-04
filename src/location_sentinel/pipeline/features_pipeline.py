@@ -17,11 +17,12 @@ from ..compute.features import (
     get_persistent_burn_months,
 )
 from ..config import settings
-from ..geometry.normalize import geojson_to_shapely
+from ..geometry.normalize import geojson_to_shapely, geometry_hash
 from ..models.common import MetricName, QualityInfo
 from .timeseries import run_timeseries
 from .sar_pipeline import run_sar_features
 from .terraclimate_pipeline import run_terraclimate_features
+from .dem_pipeline import run_dem_features
 from ..compute.sar_features import compute_sar_flood_anomaly, compute_sar_water_frequency
 from ..storage.duckdb_store import store
 
@@ -44,13 +45,18 @@ async def run_features(
     if not ts_metrics:
         ts_metrics = [MetricName.ndvi]
 
-    # Look up climate zone before parallel tasks so growing season is correct
-    # for both canopy proxy (S2 path) and tmax_summer_mean (TerraClimate path).
-    geom_centroid = geojson_to_shapely(geom_geojson).centroid
+    # Pre-compute the location key so the DEM pipeline can check its cache
+    # before the key is returned by run_timeseries.  geometry_hash is
+    # deterministic, so run_timeseries will produce the same key.
+    geom_shape = geojson_to_shapely(geom_geojson)
+    if location_key is None:
+        location_key = geometry_hash(geom_shape)
+
+    geom_centroid = geom_shape.centroid
     climate_code: str | None = store.lookup_climate(geom_centroid.y, geom_centroid.x)
 
-    # Run S2 timeseries, SAR, and TerraClimate pipelines concurrently
-    (location_key, series, quality), sar_features, tc_features = await asyncio.gather(
+    # Run S2 timeseries, SAR, TerraClimate, and DEM pipelines concurrently
+    (location_key, series, quality), sar_features, tc_features, dem_features = await asyncio.gather(
         run_timeseries(
             geom_geojson=geom_geojson,
             date_start=date_start,
@@ -68,6 +74,10 @@ async def run_features(
             date_start=date_start,
             date_end=date_end,
             climate_code=climate_code,
+        ),
+        run_dem_features(
+            geom_geojson=geom_geojson,
+            location_key=location_key,
         ),
     )
 
@@ -196,6 +206,11 @@ async def run_features(
     else:
         features.update({k: v for k, v in tc_features.items() if k != "no_terraclimate_data"})
 
+    # Elevation features (Copernicus GLO-30)
+    features.update({k: v for k, v in dem_features.items() if v is not None})
+    if dem_features.get("elevation_m") is None:
+        quality.flags.append("no_dem_data")
+
     # Urban detection
     is_urban = detect_urban(features)
     features["is_urban"] = 1.0 if is_urban else 0.0
@@ -204,7 +219,7 @@ async def run_features(
 
     # Tidal zone detection (NOAA CO-OPS proximity)
     nearest_tidal = store.get_nearest_tidal_station(
-        geom_centroid.y, geom_centroid.x, settings.TIDAL_ZONE_RADIUS_KM
+        geom_centroid.y, geom_centroid.x, settings.TIDAL_ZONE_RADIUS_KM,
     )
     is_tidal_zone = nearest_tidal is not None
     features["is_tidal_zone"] = 1.0 if is_tidal_zone else 0.0
