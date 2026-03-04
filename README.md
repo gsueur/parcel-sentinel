@@ -759,14 +759,6 @@ Response: `image/png`, `Cache-Control: public, max-age=86400`
 
 ---
 
-### GET /v1/thumbnail/{location_key}_dem.png
-
-Returns a 256x256 PNG hillshaded terrain image derived from the GLO-30 DEM window. Rendered with NW sun angle, a terrain colour LUT, and bicubic upscaling. Embedded in the HTML report below the Mapbox thumbnail. Returns 404 if no DEM data is available for the location (`no_dem_data` flag set).
-
-Response: `image/png`, `Cache-Control: public, max-age=86400`
-
----
-
 ### GET /v1/locations
 
 Returns all stored locations ordered by last-updated timestamp.

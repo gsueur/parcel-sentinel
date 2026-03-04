@@ -743,7 +743,7 @@ Higher `elevation_range_m` correlates with better drainage (lower flood risk) bu
 
 The elevation badge appears in the HTML report header as `▲ {min} / {mean} / {max} m · {slope}° slope · ±{range} m relief`, showing the full elevation spread of the 640m analysis window. In the JSON report all nine terrain values are nested under the top-level `elevation` key (`elevation_min_m`, `elevation_m`, `elevation_max_m`, `elevation_range_m`, `slope_deg`, `aspect_deg`, `tpi_m`, `curvature`, `heat_load_index`). Older cached rows that predate v1.18.0 have `null` for `elevation_min_m` and `elevation_max_m`; rows that predate v1.19.0 have `null` for the four new terrain features. The badge falls back to mean-only display when min/max are null.
 
-A **DEM hillshade thumbnail** (`GET /v1/thumbnail/{key}_dem.png`) is served as a 256×256 PNG image rendered with a NW sun angle, a terrain colour LUT, and bicubic upscaling from the stored 64×64 elevation window. It is embedded in the HTML report directly below the Mapbox map thumbnail. The image is generated with pure numpy + scipy (no additional dependencies). Returns 404 if no DEM data is available.
+A **DEM hillshade image** (256×256 PNG) is rendered at report generation time from the stored 64×64 elevation window, base64-encoded, and embedded inline in the HTML report as a data URI. It uses a NW sun angle, a terrain colour LUT, and bicubic upscaling via scipy. No separate endpoint is exposed; the image is omitted silently if no DEM data is available for the location.
 
 ---
 

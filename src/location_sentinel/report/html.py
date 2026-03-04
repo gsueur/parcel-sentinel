@@ -1381,6 +1381,7 @@ def build_report_html(
     nearest_tidal: dict | None = None,
     scene_tide_levels: dict[str, float] | None = None,
     elevation: dict | None = None,
+    dem_png_b64: str | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
@@ -1456,16 +1457,17 @@ def build_report_html(
         thumb_html = '<div class="no-thumb">No geometry stored</div>'
 
     # DEM terrain relief card (separate, shown below overview grid)
-    dem_thumb_url = f"/v1/thumbnail/{location_key}_dem.png"
-    dem_card_html = (
-        f'<div class="card">'
-        f'<h2>&#9651; Terrain relief</h2>'
-        f'<img src="{dem_thumb_url}" alt="Terrain relief (GLO-30)"'
-        f' style="border-radius:6px;display:block;width:100%;max-width:512px"'
-        f' onerror="this.parentNode.style.display=\'none\'">'
-        f'<div style="font-size:0.72rem;color:#94a3b8;margin-top:6px">Hillshade from Copernicus GLO-30 DEM &mdash; 640 m window &mdash; NW sun</div>'
-        f'</div>'
-    )
+    if dem_png_b64:
+        dem_card_html = (
+            f'<div class="card">'
+            f'<h2>&#9651; Terrain relief</h2>'
+            f'<img src="data:image/png;base64,{dem_png_b64}" alt="Terrain relief (GLO-30)"'
+            f' style="border-radius:6px;display:block;width:100%;max-width:512px">'
+            f'<div style="font-size:0.72rem;color:#94a3b8;margin-top:6px">Hillshade from Copernicus GLO-30 DEM &mdash; 640 m window &mdash; NW sun</div>'
+            f'</div>'
+        )
+    else:
+        dem_card_html = ""
 
     # Urban flag and episode badges
     feat = features or {}

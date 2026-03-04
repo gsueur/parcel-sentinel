@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -199,6 +200,20 @@ async def get_location_report(location_key: str):
                         burn_months.add(nbr_recs[k]["month"])
                 i = j
 
+    dem_png_b64: str | None = None
+    arr_bytes = store.get_elevation_array(location_key)
+    if arr_bytes and elevation:
+        try:
+            from ..thumbnails.dem_render import render_dem_png
+            png = render_dem_png(
+                arr_bytes,
+                elevation.get("elevation_min_m") or 0.0,
+                elevation.get("elevation_max_m") or 100.0,
+            )
+            dem_png_b64 = base64.b64encode(png).decode()
+        except Exception as exc:
+            logger.warning("DEM render failed for %s: %s", location_key, exc)
+
     html = build_report_html(
         location_key=location_key,
         name=location_info["name"],
@@ -221,6 +236,7 @@ async def get_location_report(location_key: str):
         nearest_tidal=nearest_tidal,
         scene_tide_levels=scene_tide_levels or None,
         elevation=elevation,
+        dem_png_b64=dem_png_b64,
     )
 
     headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
