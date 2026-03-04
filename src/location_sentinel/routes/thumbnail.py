@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, HTTPException
@@ -40,6 +41,42 @@ async def get_thumbnail(location_key: str):
 
     return Response(
         content=png_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get("/thumbnail/{location_key}_dem.png")
+async def dem_thumbnail(location_key: str):
+    cache_key = f"dem_thumb:{location_key}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return Response(
+            content=cached,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    elevation = store.get_elevation(location_key)
+    if elevation is None:
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    arr_bytes = store.get_elevation_array(location_key)
+    if arr_bytes is None:
+        raise HTTPException(status_code=404, detail="DEM array not available — rerun pipeline")
+
+    from ..thumbnails.dem_render import render_dem_png
+    loop = asyncio.get_event_loop()
+    png = await loop.run_in_executor(
+        None,
+        render_dem_png,
+        arr_bytes,
+        elevation.get("elevation_min_m") or 0.0,
+        elevation.get("elevation_max_m") or 100.0,
+    )
+    cache.set(cache_key, png)
+    return Response(
+        content=png,
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=86400"},
     )

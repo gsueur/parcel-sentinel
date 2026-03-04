@@ -601,6 +601,39 @@ _FM: dict[str, dict] = {
              "above 30%: acute flood signal detected.",
         fmt="pct", signal="low_good", thr1=0.10, thr2=0.30,
     ),
+    # Terrain features (Copernicus GLO-30 DEM derived)
+    "aspect_deg": dict(
+        label="Slope aspect",
+        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        desc="Circular mean downslope direction of the 64&times;64 window (0&deg; = North, clockwise). "
+             "South-facing slopes (NH) receive more solar radiation, driving higher drought and heat stress. "
+             "North-facing slopes (NH) stay cooler and wetter.",
+        fmt="aspect", signal="context", thr1=0.0, thr2=360.0,
+    ),
+    "tpi_m": dict(
+        label="Topographic Position Index",
+        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        desc="Center-pixel elevation minus the mean of the 64&times;64 window (metres). "
+             "Positive = ridgetop / hilltop; near-zero = planar; negative = valley floor / depression. "
+             "Valley floors concentrate runoff and amplify flood risk.",
+        fmt="tpi", signal="context", thr1=-5.0, thr2=5.0,
+    ),
+    "curvature": dict(
+        label="Terrain curvature",
+        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        desc="Mean Laplacian curvature of the elevation surface (m&minus;&sup1;). "
+             "Negative = concave (bowl-shaped, collects water); near-zero = planar; "
+             "positive = convex (sheds water). Contributes to flood risk scoring.",
+        fmt="curv", signal="context", thr1=-0.0001, thr2=0.0001,
+    ),
+    "heat_load_index": dict(
+        label="Heat load index (HLI)",
+        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        desc="Solar radiation proxy combining aspect and slope (0 = N-facing flat, ~0.8 = S-facing steep). "
+             "Computed as (1&minus;cos(aspect&minus;180&deg;))/2 &times; sin(slope) for Northern Hemisphere. "
+             "High HLI amplifies drought and heat stress scores.",
+        fmt="float3", signal="low_good", thr1=0.1, thr2=0.4,
+    ),
 }
 
 _GROUP_ORDER = [
@@ -613,9 +646,34 @@ _GROUP_ORDER = [
     "Canopy & Context",
     "SAR Flood",
     "Climate (TerraClimate)",
+    "Terrain (GLO-30)",
     "Quality",
-    "Other",
 ]
+
+
+def _compass_label(deg: float) -> str:
+    dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    return dirs[int((deg + 22.5) / 45) % 8]
+
+
+def _tpi_label(tpi: float) -> str:
+    if tpi > 10:
+        return "ridgetop"
+    if tpi > 2:
+        return "hilltop"
+    if tpi < -10:
+        return "depression"
+    if tpi < -2:
+        return "valley floor"
+    return "planar"
+
+
+def _curv_label(curv: float) -> str:
+    if curv < -0.0001:
+        return "concave"
+    if curv > 0.0001:
+        return "convex"
+    return "planar"
 
 
 def _fmt_feat_value(v: float, fmt: str) -> str:
@@ -635,6 +693,12 @@ def _fmt_feat_value(v: float, fmt: str) -> str:
         return f"{v:.2f} kPa"
     if fmt == "pdsi":
         return f"{v:+.2f}"
+    if fmt == "aspect":
+        return f"{v:.0f}° ({_compass_label(v)})"
+    if fmt == "tpi":
+        return f"{v:+.1f} m ({_tpi_label(v)})"
+    if fmt == "curv":
+        return f"{v:.2e} m⁻¹ ({_curv_label(v)})"
     return f"{v:+.3f}"  # float3
 
 
@@ -680,8 +744,9 @@ def _features_html(features: dict, is_urban: bool = False) -> str:
         if not isinstance(v, (int, float)):
             continue
         meta = _FM.get(k)
-        group = meta["group"] if meta else "Other"
-        grouped.setdefault(group, []).append((k, float(v)))
+        if meta is None:
+            continue
+        grouped.setdefault(meta["group"], []).append((k, float(v)))
 
     parts = ['<div class="feat-groups">']
     for group_name in _GROUP_ORDER:
@@ -1384,12 +1449,22 @@ def build_report_html(
     else:
         tidal_html = ""
 
-    # Thumbnail
+    # Thumbnail (Mapbox + DEM stacked)
     thumb_url = f"/v1/thumbnail/{location_key}.png"
+    dem_thumb_url = f"/v1/thumbnail/{location_key}_dem.png"
+    dem_thumb_html = (
+        f'<img src="{dem_thumb_url}" alt="Terrain relief (GLO-30)"'
+        f' style="margin-top:8px;border-radius:6px;display:block;max-width:256px;width:100%"'
+        f' onerror="this.style.display=\'none\'">'
+        f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">&#9651; Terrain relief &mdash; Copernicus GLO-30</div>'
+    )
     if geometry_geojson:
-        thumb_html = f'<img src="{thumb_url}" alt="Location map" onerror="this.parentNode.innerHTML=\'<div class=&quot;no-thumb&quot;>Thumbnail unavailable</div>\'">'
+        thumb_html = (
+            f'<img src="{thumb_url}" alt="Location map" onerror="this.parentNode.innerHTML=\'<div class=&quot;no-thumb&quot;>Thumbnail unavailable</div>\'">'
+            f'{dem_thumb_html}'
+        )
     else:
-        thumb_html = '<div class="no-thumb">No geometry stored</div>'
+        thumb_html = f'<div class="no-thumb">No geometry stored</div>{dem_thumb_html}'
 
     # Urban flag and episode badges
     feat = features or {}

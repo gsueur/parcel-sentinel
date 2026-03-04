@@ -99,9 +99,34 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
         dz_dx = grad_col / pixel_lon_m  # dimensionless (m/m) east-west
         slope_deg = float(np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))).mean())
 
+        # Aspect: circular mean downslope direction (0=N, clockwise)
+        aspect_pixel = (np.degrees(np.arctan2(-dz_dx, dz_dy)) + 360) % 360
+        sin_a = np.nanmean(np.sin(np.radians(aspect_pixel)))
+        cos_a = np.nanmean(np.cos(np.radians(aspect_pixel)))
+        aspect_deg = float((np.degrees(np.arctan2(sin_a, cos_a)) + 360) % 360)
+
+        # TPI: center pixel vs window mean (positive = ridge, negative = valley)
+        cy, cx = size // 2, size // 2
+        tpi_m = float(data[cy, cx] - elev_m)
+
+        # Curvature: mean Laplacian (negative = concave/water-collecting)
+        d2z_dy2 = np.gradient(dz_dy, axis=0) / pixel_lat_m
+        d2z_dx2 = np.gradient(dz_dx, axis=1) / pixel_lon_m
+        curvature = float(np.nanmean(d2z_dy2 + d2z_dx2))
+
+        # Heat Load Index (solar radiation proxy, 0–~0.8)
+        equatorial_dir = 180.0 if lat >= 0 else 0.0
+        heat_load_index = float(
+            (1.0 - np.cos(np.radians(aspect_deg - equatorial_dir))) / 2.0
+            * np.sin(np.radians(slope_deg))
+        )
+
+        # Raw array bytes for DEM PNG (stored in DB, filtered from features dict)
+        elevation_array = data.astype(np.float32).tobytes()
+
         logger.info(
-            "DEM read OK path=%.80s elev=%.1f m range=%.1f m slope=%.2f°",
-            path, elev_m, elev_range_m, slope_deg,
+            "DEM read OK path=%.80s elev=%.1f m range=%.1f m slope=%.2f° aspect=%.0f° tpi=%.1f m",
+            path, elev_m, elev_range_m, slope_deg, aspect_deg, tpi_m,
         )
         return {
             "elevation_m":       round(elev_m, 1),
@@ -109,6 +134,11 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
             "elevation_max_m":   round(elev_max_m, 1),
             "elevation_range_m": round(elev_range_m, 1),
             "slope_deg":         round(slope_deg, 2),
+            "aspect_deg":        round(aspect_deg, 1),
+            "tpi_m":             round(tpi_m, 2),
+            "curvature":         curvature,
+            "heat_load_index":   round(heat_load_index, 4),
+            "elevation_array":   elevation_array,
         }
 
     except Exception as exc:

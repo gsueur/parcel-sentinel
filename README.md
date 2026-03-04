@@ -192,7 +192,7 @@ Five terrain features are derived from the 64x64 window (640m x 640m footprint):
 **Metadata API:** `https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=waterlevels`
 **Predictions API:** `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter` (hourly, MSL datum, GMT)
 
-On startup the service fetches the full station list (tidal stations only) and caches it in DuckDB. A site is classified as a **tidal zone** when the nearest tidal station is within `TIDAL_ZONE_RADIUS_KM` (default 30 km). For tidal zone sites, the HTML and JSON reports cross-reference each Sentinel-1 SAR scene acquisition time (parsed from the scene ID filename) with the predicted MSL tide level at the nearest station, linearly interpolated to the exact acquisition minute. Tide predictions are cached permanently in DuckDB (they are deterministic and never change for past dates).
+On startup the service fetches the full station list (tidal stations only) and caches it in DuckDB. A site is classified as a **tidal zone** when the nearest tidal station is within `TIDAL_ZONE_RADIUS_KM` (default 30 km) **and** `elevation_m ≤ TIDAL_ZONE_MAX_ELEV_M` (default 10 m). The elevation gate prevents hillside or upland locations from being classified as tidal even when a NOAA station is geographically nearby. For tidal zone sites, the HTML and JSON reports cross-reference each Sentinel-1 SAR scene acquisition time (parsed from the scene ID filename) with the predicted MSL tide level at the nearest station, linearly interpolated to the exact acquisition minute. Tide predictions are cached permanently in DuckDB (they are deterministic and never change for past dates).
 
 The station list is refreshed every `NOAA_STATION_REFRESH_DAYS` days (default 30). If NOAA is unreachable at startup, existing cached stations are used and the service starts normally.
 
@@ -424,6 +424,10 @@ Long-term features computed from the full date window (default 5 years):
 | `elevation_max_m` | Maximum elevation within the footprint |
 | `elevation_range_m` | Max minus min elevation within the footprint (terrain relief proxy) |
 | `slope_deg` | Mean slope angle in degrees across the footprint |
+| `aspect_deg` | Circular mean downslope direction in degrees (0=N, 90=E, 180=S, 270=W), clockwise |
+| `tpi_m` | Topographic Position Index: center pixel elevation minus window mean (positive=ridge, negative=valley) |
+| `curvature` | Mean Laplacian of the elevation surface (m⁻¹); negative = concave/water-collecting terrain |
+| `heat_load_index` | Solar radiation proxy [0-~0.8]; maximum for south-facing steep slopes in the Northern Hemisphere |
 
 ### TerraClimate-derived features
 
@@ -508,6 +512,18 @@ heat_mitigation_score = canopy_proxy_200m / 0.8 * 100
 ```
 
 Higher canopy = more shade = lower heat risk. This score is **inverted** in the composite (high mitigation = lower composite contribution).
+
+### Terrain scoring modifiers
+
+Three terrain-derived modifiers adjust component scores when GLO-30 DEM data is available:
+
+**HLI drought and heat amplifier:** When `heat_load_index > TERRAIN_HLI_THRESHOLD` (0.05), both `drought_score` and `heat_stress_score` are amplified by up to `TERRAIN_HLI_AMP_MAX` (+25%). South-facing steep slopes in the Northern Hemisphere receive maximum insolation, accelerating soil moisture loss and heat accumulation.
+
+**TPI flood boost:** When `tpi_m < TERRAIN_TPI_FLOOD_THRESHOLD` (−5.0 m), `flood_risk_score` is boosted by up to `TERRAIN_TPI_FLOOD_MAX_BOOST` (20 pts). Valley floors collect runoff from surrounding slopes and are systematically more flood-prone than the surrounding landscape.
+
+**Curvature flood boost:** When `curvature < TERRAIN_CURVATURE_THRESHOLD` (−0.0001 m⁻¹), `flood_risk_score` receives an additional boost of up to `TERRAIN_CURVATURE_MAX_BOOST` (10 pts). Concave terrain (bowls, hollows) concentrates water flow and increases ponding likelihood.
+
+---
 
 ### Flood risk score
 
@@ -612,8 +628,8 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.18.0",
-  "score_version": "risk-v1.13.0",
+  "processing_version": "s2l2a-v1.19.0",
+  "score_version": "risk-v1.14.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -738,6 +754,14 @@ Example: `GET /v1/location/a1b2c3/report.json`
 ### GET /v1/thumbnail/{location_key}.png
 
 Returns a 300x200 PNG map thumbnail on a Mapbox basemap.
+
+Response: `image/png`, `Cache-Control: public, max-age=86400`
+
+---
+
+### GET /v1/thumbnail/{location_key}_dem.png
+
+Returns a 256x256 PNG hillshaded terrain image derived from the GLO-30 DEM window. Rendered with NW sun angle, a terrain colour LUT, and bicubic upscaling. Embedded in the HTML report below the Mapbox thumbnail. Returns 404 if no DEM data is available for the location (`no_dem_data` flag set).
 
 Response: `image/png`, `Cache-Control: public, max-age=86400`
 
@@ -879,8 +903,8 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.18.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.13.0` | Cache key tag for scores |
+| `PROCESSING_VERSION` | `s2l2a-v1.19.0` | Cache key tag for features |
+| `SCORE_VERSION` | `risk-v1.14.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2

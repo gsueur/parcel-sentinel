@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.18.0` / scoring `risk-v1.13.0`
+**Version:** processing `s2l2a-v1.19.0` / scoring `risk-v1.14.0`
 **Date:** 2026-03-04
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -663,9 +663,16 @@ On startup the service downloads the NOAA CO-OPS water-level station list and st
 distance_km = 6371 × 2 × arcsin(√(sin²(Δlat/2) + cos(lat1)×cos(lat2)×sin²(Δlon/2)))
 ```
 
-A location is classified as **tidal zone** (`is_tidal_zone = 1.0`) when `distance_km ≤ TIDAL_ZONE_RADIUS_KM` (default 30 km). The distance to the nearest station is stored as `nearest_tidal_station_km`.
+A location is classified as **tidal zone** (`is_tidal_zone = 1.0`) when both conditions are met:
+
+1. `distance_km ≤ TIDAL_ZONE_RADIUS_KM` (default 30 km)
+2. `elevation_m ≤ TIDAL_ZONE_MAX_ELEV_M` (default 10 m)
+
+The distance to the nearest station is stored as `nearest_tidal_station_km`.
 
 The 30 km radius is calibrated to reliably capture tidal flats, coastal marshes, estuaries, and barrier island environments without over-reaching into purely inland areas. US coastal geography means that a 30 km inland buffer from any tidal station still encompasses most tidal influence zones.
+
+The elevation gate (10 m MSL) addresses a physical impossibility: tidal dynamics cannot reach locations elevated well above mean sea level even when a NOAA station is geographically nearby. Without this gate, hillside and upland locations (e.g. a site at 140 m elevation near a coastal station) would be incorrectly classified as tidal, suppressing `active_drought` for locations where drought is a genuine risk. The 10 m threshold aligns with the upper bound of typical storm surge inundation for US Atlantic and Gulf Coast environments, above which tidal influence is negligible.
 
 ### 11.2 Effect on feature computation
 
@@ -706,8 +713,20 @@ A single 64×64 pixel window (640m × 640m footprint) is read from the Copernicu
 | `elevation_max_m` | `nanmax(window)` | metres |
 | `elevation_range_m` | `elevation_max_m − elevation_min_m` | metres |
 | `slope_deg` | `mean(degrees(arctan(sqrt(dz_dy² + dz_dx²))))` | degrees |
+| `aspect_deg` | `degrees(arctan2(−dz_dx, dz_dy))` circular mean, 0=N clockwise | degrees |
+| `tpi_m` | `center_pixel_elevation − nanmean(window)` | metres |
+| `curvature` | `mean(d²z/dy² + d²z/dx²)` | m⁻¹ |
+| `heat_load_index` | `(1 − cos(aspect_rad − equatorial_dir)) / 2 × sin(slope_rad)` | dimensionless [0--~0.8] |
 
 **Slope computation:** The slope is derived from numpy central differences applied to the elevation window. Gradients in the row direction (north-south) are divided by the arc-second pixel size in metres (≈ 30.87 m), and gradients in the column direction (east-west) are divided by `30.87 × cos(lat)` to account for meridian convergence at higher latitudes. The result is the mean slope angle over the 640m footprint, equivalent to the area-average of the per-pixel first-order terrain gradient.
+
+**Aspect computation:** Aspect is derived from the same numpy central-difference gradients as slope. The circular mean of per-pixel aspect values is taken to correctly handle the 0°/360° wrap-around (e.g. a footprint that is mostly NNW-facing is not averaged to 180°). All arithmetic uses unit vectors on the unit circle before converting back to degrees.
+
+**TPI (Topographic Position Index):** The center pixel of the 64×64 window is compared to the nanmean of the entire window. Positive values indicate the center is elevated relative to its surroundings (ridge, hill crest). Negative values indicate a depression (valley floor, hollow, bowl). A value near zero indicates a planar or mid-slope position.
+
+**Curvature:** The mean Laplacian (`d²z/dx² + d²z/dy²`) measures the concavity or convexity of the terrain surface. Negative values indicate concave terrain (converging flow, water-collecting); positive values indicate convex terrain (diverging flow, fast drainage). Pixel-size scaling is applied before averaging.
+
+**Heat load index (HLI):** A solar radiation proxy that integrates both aspect and slope. `equatorial_dir` is 180° (south) in the Northern Hemisphere and 0° (north) in the Southern Hemisphere, representing the direction of maximum insolation. A flat site (slope = 0) has HLI = 0 regardless of aspect. A south-facing 45° slope in the NH reaches the theoretical maximum (~0.71). HLI is computed zero extra S3 reads: it reuses the gradient arrays already produced for slope and aspect.
 
 ### 12.3 Interpretation
 
@@ -722,7 +741,9 @@ Higher `elevation_range_m` correlates with better drainage (lower flood risk) bu
 
 ### 12.4 Report display
 
-The elevation badge appears in the HTML report header as `▲ {min} / {mean} / {max} m · {slope}° slope · ±{range} m relief`, showing the full elevation spread of the 640m analysis window. In the JSON report all five values are nested under the top-level `elevation` key (`elevation_min_m`, `elevation_m`, `elevation_max_m`, `elevation_range_m`, `slope_deg`). Older cached rows that predate v1.18.0 have `null` for `elevation_min_m` and `elevation_max_m`; the badge falls back to mean-only display in that case.
+The elevation badge appears in the HTML report header as `▲ {min} / {mean} / {max} m · {slope}° slope · ±{range} m relief`, showing the full elevation spread of the 640m analysis window. In the JSON report all nine terrain values are nested under the top-level `elevation` key (`elevation_min_m`, `elevation_m`, `elevation_max_m`, `elevation_range_m`, `slope_deg`, `aspect_deg`, `tpi_m`, `curvature`, `heat_load_index`). Older cached rows that predate v1.18.0 have `null` for `elevation_min_m` and `elevation_max_m`; rows that predate v1.19.0 have `null` for the four new terrain features. The badge falls back to mean-only display when min/max are null.
+
+A **DEM hillshade thumbnail** (`GET /v1/thumbnail/{key}_dem.png`) is served as a 256×256 PNG image rendered with a NW sun angle, a terrain colour LUT, and bicubic upscaling from the stored 64×64 elevation window. It is embedded in the HTML report directly below the Mapbox map thumbnail. The image is generated with pure numpy + scipy (no additional dependencies). Returns 404 if no DEM data is available.
 
 ---
 
@@ -757,6 +778,15 @@ drought_score = min(100, drought_score × terrain_amp)
 ```
 
 At 25°: +15% amplification. At 35°+: capped at +20%. Only applied when DEM data is available.
+
+**HLI drought amplifier (non-urban only):** South-facing steep slopes receive more direct solar radiation, which accelerates evapotranspiration and soil desiccation independently of broader climate trends. When `heat_load_index > TERRAIN_HLI_THRESHOLD` (0.05), the drought score is further multiplied:
+
+```
+hli_amp = 1.0 + min(TERRAIN_HLI_AMP_MAX, heat_load_index × TERRAIN_HLI_FACTOR)
+drought_score = min(100, drought_score × hli_amp)
+```
+
+`TERRAIN_HLI_FACTOR = 0.5`, `TERRAIN_HLI_AMP_MAX = 0.25`. At HLI = 0.5 (moderately south-facing + steep): +25% amplification (capped). Only applied when DEM data is available.
 
 Forced to 0 for urban locations.
 
@@ -827,6 +857,25 @@ The terrain flash component models fast runoff concentration: it requires **both
 
 The maximum of all three components ensures that a significant flood event or terrain susceptibility signal is not diluted. Not suppressed for urban locations.
 
+**TPI flood boost:** Valley floors systematically accumulate runoff from surrounding terrain. When `tpi_m < TERRAIN_TPI_FLOOD_THRESHOLD` (−5.0 m), a boost is added after the max-of-components step:
+
+```
+tpi_boost = min(TERRAIN_TPI_FLOOD_MAX_BOOST, abs(tpi_m − TERRAIN_TPI_FLOOD_THRESHOLD))
+flood_risk_score = min(100, flood_risk_score + tpi_boost)
+```
+
+`TERRAIN_TPI_FLOOD_MAX_BOOST = 20.0` pts. At TPI = −25 m: +20 pts (cap reached). Only applied when DEM data is available.
+
+**Curvature flood boost:** Concave terrain concentrates overland flow and promotes ponding. When `curvature < TERRAIN_CURVATURE_THRESHOLD` (−0.0001 m⁻¹), an additional boost is applied:
+
+```
+curvature_boost = min(TERRAIN_CURVATURE_MAX_BOOST,
+                      abs(curvature − TERRAIN_CURVATURE_THRESHOLD) × TERRAIN_CURVATURE_SCALE)
+flood_risk_score = min(100, flood_risk_score + curvature_boost)
+```
+
+`TERRAIN_CURVATURE_MAX_BOOST = 10.0` pts, `TERRAIN_CURVATURE_SCALE = 50000.0`. Only applied when DEM data is available. Applied after the TPI boost.
+
 **NDWI optical cross-validation veto (chronic component only):**
 
 When Sentinel-2 optical data shows that surface water is essentially absent from the site's history (`ndwi_wetness_persistence_5y < 0.05`) but the SAR chronic frequency is elevated, the two sensors contradict each other. The most common causes are:
@@ -852,6 +901,15 @@ Weighted combination of three TerraClimate components, renormalized when compone
 | VPD high frequency | `vpd_high_freq_5y × 100` | 0.30 |
 
 Trend mapping: 0.05 °C/yr maps to 100; 0 °C/yr maps to 0; negative trends are clamped to 0.
+
+**HLI heat stress amplifier (non-urban only):** The same HLI amplifier applied to drought score is also applied to heat stress score. South-facing steep terrain receives elevated direct solar radiation, amplifying surface heat accumulation independently of the regional climate signal captured by TerraClimate:
+
+```
+hli_amp = 1.0 + min(TERRAIN_HLI_AMP_MAX, heat_load_index × TERRAIN_HLI_FACTOR)
+heat_stress_score = min(100, heat_stress_score × hli_amp)
+```
+
+Only applied when DEM data is available.
 
 Default (no TerraClimate data, `no_terraclimate_data` flag): 50.
 
@@ -1031,12 +1089,21 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `TERRAIN_FLASH_SLOPE_MAX` | 20.0° | Terrain flash flood: slope mapped to 1.0 |
 | `TERRAIN_DROUGHT_SLOPE_MIN` | 10.0° | Terrain drought amplifier: slope threshold for activation |
 | `TERRAIN_DROUGHT_AMP_MAX` | 0.20 | Terrain drought amplifier: maximum multiplier (+20%) |
+| `TERRAIN_HLI_THRESHOLD` | 0.05 | HLI above which the HLI amplifier activates for drought and heat stress |
+| `TERRAIN_HLI_AMP_MAX` | 0.25 | Maximum HLI multiplier (+25%) for drought and heat stress scores |
+| `TERRAIN_HLI_FACTOR` | 0.5 | Scaling factor: `hli_amp = 1.0 + min(HLI_AMP_MAX, HLI × HLI_FACTOR)` |
+| `TERRAIN_TPI_FLOOD_THRESHOLD` | −5.0 m | TPI below which the valley floor flood boost activates |
+| `TERRAIN_TPI_FLOOD_MAX_BOOST` | 20.0 pts | Maximum flood score boost from TPI (valley floor) |
+| `TERRAIN_CURVATURE_THRESHOLD` | −0.0001 m⁻¹ | Curvature below which the concave terrain flood boost activates |
+| `TERRAIN_CURVATURE_MAX_BOOST` | 10.0 pts | Maximum flood score boost from curvature (concave terrain) |
+| `TERRAIN_CURVATURE_SCALE` | 50000.0 | Linear scaling factor mapping curvature magnitude to boost points |
 
 ### NOAA tidal zone parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `TIDAL_ZONE_RADIUS_KM` | 30.0 km | Maximum distance to nearest NOAA tidal station for tidal zone classification |
+| `TIDAL_ZONE_MAX_ELEV_M` | 10.0 m | Maximum elevation (MSL) for tidal zone classification; sites above this are never classified as tidal |
 | `NOAA_STATION_REFRESH_DAYS` | 30 days | Age after which the cached station list is refreshed on next server startup |
 
 ### Urban detection thresholds
@@ -1079,4 +1146,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `b46a60c` (master), processing version `s2l2a-v1.18.0`, score version `risk-v1.13.0`.*
+*Document generated from source code at commit `a12e777` (master), processing version `s2l2a-v1.19.0`, score version `risk-v1.14.0`.*

@@ -135,6 +135,9 @@ async def get_location_report(location_key: str):
             logger.warning("Could not look up tidal station for report: %s", exc)
 
     elevation = store.get_elevation(location_key)
+    _elev_m = elevation.get("elevation_m") if elevation else None
+    if _elev_m is not None and _elev_m > settings.TIDAL_ZONE_MAX_ELEV_M:
+        nearest_tidal = None
 
     # Tide level per SAR scene (only for tidal zone sites)
     scene_tide_levels: dict[str, float] = {}
@@ -257,6 +260,9 @@ async def get_location_report_json(location_key: str):
             logger.warning("Could not look up tidal station for report.json: %s", exc)
 
     elevation_json = store.get_elevation(location_key)
+    _elev_m_json = elevation_json.get("elevation_m") if elevation_json else None
+    if _elev_m_json is not None and _elev_m_json > settings.TIDAL_ZONE_MAX_ELEV_M:
+        nearest_tidal_json = None
 
     # Tide level per SAR scene (only for tidal zone sites)
     scene_tide_levels_json: dict[str, float] = {}

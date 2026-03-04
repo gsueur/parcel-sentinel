@@ -217,9 +217,16 @@ async def run_features(
     if is_urban:
         quality.flags.append("urban_location")
 
-    # Tidal zone detection (NOAA CO-OPS proximity)
-    nearest_tidal = store.get_nearest_tidal_station(
-        geom_centroid.y, geom_centroid.x, settings.TIDAL_ZONE_RADIUS_KM,
+    # Tidal zone detection (NOAA CO-OPS proximity + elevation gate)
+    # Elevation gate: tidal influence is physically impossible above a few metres MSL.
+    # Sites like Pacific Palisades (142 m) are near a station but clearly not tidal.
+    _elev_m = dem_features.get("elevation_m")
+    _above_tidal_elev = _elev_m is not None and _elev_m > settings.TIDAL_ZONE_MAX_ELEV_M
+    nearest_tidal = (
+        None if _above_tidal_elev
+        else store.get_nearest_tidal_station(
+            geom_centroid.y, geom_centroid.x, settings.TIDAL_ZONE_RADIUS_KM,
+        )
     )
     is_tidal_zone = nearest_tidal is not None
     features["is_tidal_zone"] = 1.0 if is_tidal_zone else 0.0

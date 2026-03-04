@@ -102,11 +102,12 @@ class Settings(BaseSettings):
 
     # NOAA CO-OPS tidal station proximity
     TIDAL_ZONE_RADIUS_KM: float = 30.0      # Max distance to nearest tidal station to classify as tidal zone
-    NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last fetch
+    TIDAL_ZONE_MAX_ELEV_M: float = 10.0     # Elevation gate: above this, tidal influence is impossible
+    NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last update
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.18.0"
-    SCORE_VERSION: str = "risk-v1.13.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.19.0"
+    SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage
     DUCKDB_PATH: str = "location_sentinel.duckdb"
@@ -149,6 +150,20 @@ class Settings(BaseSettings):
     TERRAIN_FLASH_SLOPE_MAX: float = 20.0         # slope_deg mapped to 1.0 for flash factor
     TERRAIN_DROUGHT_SLOPE_MIN: float = 10.0       # slope_deg threshold for drought amplifier
     TERRAIN_DROUGHT_AMP_MAX: float = 0.20         # max drought amplification (+20%)
+
+    # Terrain HLI thresholds (heat load index amplifier for drought + heat stress)
+    TERRAIN_HLI_THRESHOLD: float = 0.05      # minimum HLI to activate amplifier
+    TERRAIN_HLI_AMP_MAX: float = 0.25        # max amplification (+25%)
+    TERRAIN_HLI_FACTOR: float = 0.5          # HLI × factor = raw amplification fraction
+
+    # Terrain TPI flood boost (valley floor detection)
+    TERRAIN_TPI_FLOOD_THRESHOLD: float = -5.0    # m; depressions deeper than this get boost
+    TERRAIN_TPI_FLOOD_MAX_BOOST: float = 20.0    # max +20 pts
+
+    # Terrain curvature flood boost (concave terrain)
+    TERRAIN_CURVATURE_THRESHOLD: float = -0.0001  # m⁻¹; concavity threshold
+    TERRAIN_CURVATURE_MAX_BOOST: float = 10.0     # max +10 pts
+    TERRAIN_CURVATURE_SCALE: float = 50000.0      # curvature × scale = raw boost (before cap)
 
     # Growing season (latitude threshold for zone split)
     GROWING_SEASON_LAT_THRESHOLD: float = 33.0

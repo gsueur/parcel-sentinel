@@ -316,6 +316,13 @@ class DuckDBStore:
         self._conn.execute(
             "ALTER TABLE elevation_cache ADD COLUMN IF NOT EXISTS elevation_max_m FLOAT"
         )
+        for col in (
+            "aspect_deg FLOAT", "tpi_m FLOAT", "curvature FLOAT",
+            "heat_load_index FLOAT", "elevation_array BLOB",
+        ):
+            self._conn.execute(
+                f"ALTER TABLE elevation_cache ADD COLUMN IF NOT EXISTS {col}"
+            )
 
         # Climate reference tables
         self._conn.execute("""
@@ -1258,7 +1265,8 @@ class DuckDBStore:
         """Return cached elevation features or None if not yet fetched."""
         assert self._conn is not None
         row = self._conn.execute(
-            "SELECT elevation_m, elevation_range_m, slope_deg, elevation_min_m, elevation_max_m "
+            "SELECT elevation_m, elevation_range_m, slope_deg, elevation_min_m, elevation_max_m,"
+            " aspect_deg, tpi_m, curvature, heat_load_index "
             "FROM elevation_cache WHERE location_key = ?",
             [location_key],
         ).fetchone()
@@ -1270,16 +1278,30 @@ class DuckDBStore:
             "slope_deg":         row[2],
             "elevation_min_m":   row[3],
             "elevation_max_m":   row[4],
+            "aspect_deg":        row[5],
+            "tpi_m":             row[6],
+            "curvature":         row[7],
+            "heat_load_index":   row[8],
         }
 
-    def store_elevation(self, location_key: str, data: dict[str, float]) -> None:
+    def get_elevation_array(self, location_key: str) -> bytes | None:
+        """Return the raw 64×64 float32 elevation array bytes, or None if not stored."""
+        assert self._conn is not None
+        row = self._conn.execute(
+            "SELECT elevation_array FROM elevation_cache WHERE location_key = ?",
+            [location_key],
+        ).fetchone()
+        return row[0] if row else None
+
+    def store_elevation(self, location_key: str, data: dict) -> None:
         """Persist GLO-30 elevation features for a location."""
         assert self._conn is not None
         self._conn.execute(
             """INSERT OR REPLACE INTO elevation_cache
                (location_key, elevation_m, elevation_range_m, slope_deg,
-                elevation_min_m, elevation_max_m)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+                elevation_min_m, elevation_max_m,
+                aspect_deg, tpi_m, curvature, heat_load_index, elevation_array)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 location_key,
                 data.get("elevation_m"),
@@ -1287,6 +1309,11 @@ class DuckDBStore:
                 data.get("slope_deg"),
                 data.get("elevation_min_m"),
                 data.get("elevation_max_m"),
+                data.get("aspect_deg"),
+                data.get("tpi_m"),
+                data.get("curvature"),
+                data.get("heat_load_index"),
+                data.get("elevation_array"),
             ],
         )
         self._conn.commit()

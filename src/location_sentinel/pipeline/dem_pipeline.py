@@ -42,11 +42,19 @@ async def run_dem_features(
 
         if result is None:
             logger.warning("DEM unavailable for location %s (%.4f, %.4f)", location_key, lat, lon)
-            return {"elevation_m": None, "elevation_range_m": None, "slope_deg": None}
+            return {
+                "elevation_m": None, "elevation_min_m": None, "elevation_max_m": None,
+                "elevation_range_m": None, "slope_deg": None,
+                "aspect_deg": None, "tpi_m": None, "curvature": None, "heat_load_index": None,
+            }
 
         store.store_elevation(location_key, result)
-        return result
+        return {k: v for k, v in result.items() if k != "elevation_array"}
 
     except Exception as exc:
         logger.warning("DEM pipeline failed for %s: %s", location_key, exc)
-        return {"elevation_m": None, "elevation_range_m": None, "slope_deg": None}
+        return {
+            "elevation_m": None, "elevation_min_m": None, "elevation_max_m": None,
+            "elevation_range_m": None, "slope_deg": None,
+            "aspect_deg": None, "tpi_m": None, "curvature": None, "heat_load_index": None,
+        }

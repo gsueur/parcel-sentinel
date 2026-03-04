@@ -135,6 +135,9 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
 
     slope_deg = features.get("slope_deg")
 
+    hli = features.get("heat_load_index")
+    hli_amp = 1.0
+
     if is_urban:
         drought_score = 0.0
     elif drought_components:
@@ -147,6 +150,10 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
                 (slope_deg - settings.TERRAIN_DROUGHT_SLOPE_MIN) / 100.0,
             )
             drought_score = min(100.0, drought_score * terrain_amp)
+        # HLI amplifier: south-facing slopes (NH) get more solar radiation → drier
+        if hli is not None and hli > settings.TERRAIN_HLI_THRESHOLD:
+            hli_amp = 1.0 + min(settings.TERRAIN_HLI_AMP_MAX, hli * settings.TERRAIN_HLI_FACTOR)
+            drought_score = min(100.0, drought_score * hli_amp)
     else:
         drought_score = 50.0
 
@@ -223,6 +230,24 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     # SAR observations dominate; terrain is a 50%-weighted potential signal
     flood_risk_score = max(chronic_score, acute_score, terrain_flash_score * 0.5)
 
+    # TPI boost: valley floors / depressions concentrate runoff
+    tpi_m_val = features.get("tpi_m")
+    if tpi_m_val is not None and tpi_m_val < settings.TERRAIN_TPI_FLOOD_THRESHOLD:
+        tpi_boost = min(
+            settings.TERRAIN_TPI_FLOOD_MAX_BOOST,
+            (-tpi_m_val - abs(settings.TERRAIN_TPI_FLOOD_THRESHOLD)) / 2.0,
+        )
+        flood_risk_score = min(100.0, flood_risk_score + tpi_boost)
+
+    # Curvature boost: concave terrain collects water
+    curvature_val = features.get("curvature")
+    if curvature_val is not None and curvature_val < settings.TERRAIN_CURVATURE_THRESHOLD:
+        curv_boost = min(
+            settings.TERRAIN_CURVATURE_MAX_BOOST,
+            -curvature_val * settings.TERRAIN_CURVATURE_SCALE,
+        )
+        flood_risk_score = min(100.0, flood_risk_score + curv_boost)
+
     if flood_risk_score > 10:
         driver = "sar_flood_anomaly" if sar_flood_anomaly * 100 >= sar_water_freq * 100 else "sar_water_freq_5y"
         factors.append({
@@ -272,6 +297,10 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             heat_stress_score = 50.0
     else:
         heat_stress_score = 50.0
+
+    # HLI heat stress amplifier: south-facing slopes (NH) experience higher solar load
+    if hli_amp > 1.0:
+        heat_stress_score = min(100.0, heat_stress_score * hli_amp)
 
     # --- Landslide risk score (0-100, standalone -- not in composite) ---
     # Slope is the primary driver (shear stress); relief is secondary (slope length).
