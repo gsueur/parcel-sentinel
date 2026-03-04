@@ -26,7 +26,7 @@ async def run_dem_features(
     """
     try:
         cached = store.get_elevation(location_key)
-        if cached is not None:
+        if cached is not None and store.get_elevation_array(location_key) is not None:
             logger.info("DEM cache hit for %s", location_key)
             return cached
 
