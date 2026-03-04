@@ -647,7 +647,6 @@ _GROUP_ORDER = [
     "SAR Flood",
     "Climate (TerraClimate)",
     "Terrain (GLO-30)",
-    "Quality",
 ]
 
 
