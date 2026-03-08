@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
 from .routes import customers, features, health, jobs, locations, report, score, thumbnail, timeseries
@@ -32,6 +34,52 @@ async def lifespan(app: FastAPI):
     store.close()
 
 
+_404_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>404 — Location Sentinel</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+       background: #f1f5f9; color: #1e293b; font-size: 14px;
+       min-height: 100vh; display: flex; flex-direction: column; }
+.header { padding: 20px 24px 16px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+.header h1 { font-size: 1.1rem; font-weight: 700; color: #0f172a; }
+.header small { color: #94a3b8; font-size: 0.78rem; font-family: monospace; }
+.container { max-width: 480px; margin: 100px auto; padding: 24px; text-align: center; }
+.code { font-size: 5rem; font-weight: 800; color: #e2e8f0; line-height: 1;
+        font-family: monospace; letter-spacing: -4px; }
+.label { font-size: 1.1rem; font-weight: 600; color: #0f172a; margin: 16px 0 8px; }
+.desc { color: #64748b; font-size: 0.9rem; line-height: 1.6; }
+footer { margin-top: auto; padding: 16px 24px; border-top: 1px solid #e2e8f0;
+         background: #fff; text-align: center; color: #94a3b8; font-size: 0.75rem; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Location Sentinel Analytics API</h1>
+  <small>Climate risk indicators from satellite data</small>
+</div>
+<div class="container">
+  <div class="code">404</div>
+  <div class="label">Nothing here.</div>
+  <div class="desc">
+    This endpoint does not exist or is not publicly accessible.<br>
+    If you received this URL from someone, reach out to them directly.
+  </div>
+</div>
+<footer>Location Sentinel &mdash; Geomermaids</footer>
+</body>
+</html>"""
+
+
+def _is_browser(request: Request) -> bool:
+    ua = request.headers.get("user-agent", "")
+    return any(token in ua for token in ("Mozilla", "Chrome", "Safari", "Opera", "Edg"))
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Location Sentinel Analytics API",
@@ -41,6 +89,12 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        if exc.status_code == 404 and _is_browser(request):
+            return HTMLResponse(content=_404_HTML, status_code=404)
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
     app.add_middleware(
         CORSMiddleware,
