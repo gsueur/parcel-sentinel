@@ -111,7 +111,8 @@ class Settings(BaseSettings):
     SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage
-    DUCKDB_PATH: str = "location_sentinel.duckdb"
+    POSTGRES_DSN: str = "postgresql://postgres:postgres@localhost:5432/remotesensing"
+    DUCKDB_PATH: str = "data/location_sentinel.duckdb"  # kept for migration script
 
     # Timeouts
     REQUEST_TIMEOUT_SECONDS: int = 60

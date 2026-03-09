@@ -338,22 +338,4 @@ async def get_location_report_json(location_key: str):
 
 def _get_any_features(location_key: str) -> dict | None:
     """Retrieve the most recent features row regardless of date window."""
-    if store._conn is None:
-        return None
-    result = store._conn.execute(
-        """
-        SELECT features_json, quality_json, date_start, date_end FROM location_features
-        WHERE location_key = ?
-        ORDER BY updated_at DESC LIMIT 1
-        """,
-        [location_key],
-    ).fetchone()
-    if result is None:
-        return None
-    import json
-    return {
-        "features": json.loads(result[0]),
-        "quality": json.loads(result[1]),
-        "date_start": str(result[2]) if result[2] else None,
-        "date_end": str(result[3]) if result[3] else None,
-    }
+    return store.get_latest_features(location_key)

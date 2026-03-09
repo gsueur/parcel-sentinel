@@ -12,3 +12,9 @@ wheels/
 # DuckDB database files
 *.duckdb
 *.duckdb.wal
+
+claude.md
+pyproject.toml
+uv.lock
+project.pages
+
