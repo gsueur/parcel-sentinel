@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = {"env_prefix": "", "case_sensitive": True}
+    model_config = {"env_prefix": "", "case_sensitive": True, "env_file": ".env", "env_file_encoding": "utf-8"}
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -107,12 +107,22 @@ class Settings(BaseSettings):
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last update
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.19.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.20.0"
     SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage
     POSTGRES_DSN: str = "postgresql://postgres:postgres@localhost:5432/remotesensing"
     DUCKDB_PATH: str = "data/location_sentinel.duckdb"  # kept for migration script
+
+    # Auth
+    SECRET_KEY: str = ""                 # required in production -- set via env var
+    JWT_EXPIRE_DAYS: int = 90
+
+    # Email (Resend)
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM_DOMAIN: str = "geomermaids.com"
+    FRONTEND_URL: str = ""               # e.g. https://climate-dashboard.geomermaids.com -- redirect after verification
+    API_BASE_URL: str = ""               # e.g. https://climate.geomermaids.com -- used to build verify link in emails
 
     # Timeouts
     REQUEST_TIMEOUT_SECONDS: int = 60
@@ -185,6 +195,7 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: list[str] = [
         "http://localhost",
+        "http://localhost:3000",
         "http://localhost:8000",
         "https://climate-dashboard.geomermaids.com",
         "https://location-sentinel.pages.dev",

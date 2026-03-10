@@ -181,9 +181,15 @@ async def run_features(
             compute_sar_water_frequency(non_snow_non_burn) if non_snow_non_burn else None
         )
 
-        # -- Flood anomaly (burn-suppressed, no snow suppression) --
+        # -- Flood anomaly (no snow or burn suppression) --
+        # Fire events increase SAR backscatter (char, rubble) -- they never mimic
+        # the low-backscatter signature of water. Burn suppression here removes
+        # historical months from the per-orbit baseline, which can drop it below
+        # min_baseline_count and force the orbit-agnostic fallback. That fallback
+        # mixes orbits with different incidence angles, creating a low mixed baseline
+        # that makes a structurally dark orbit look anomalously wet.
         flood_anomaly = compute_sar_flood_anomaly(
-            [(mk, f, orbit) for mk, f, orbit in sar_scene_fracs if mk not in burn_months],
+            sar_scene_fracs,
             date_end,
         )
         if flood_anomaly is not None:
@@ -193,7 +199,11 @@ async def run_features(
     if sar_features.get("sar_water_freq_5y") is None:
         quality.flags.append("no_sar_data")
 
-    # Persist SAR VV arrays for report visualization
+    # Persist SAR VV arrays for report visualization.
+    # Clear previous scenes for this version first so re-runs don't accumulate
+    # duplicate rows when the STAC search returns different scene IDs.
+    if sar_scene_arrays:
+        store.delete_sar_scenes(location_key, settings.PROCESSING_VERSION)
     for month_key, scene_id, vv_dn, water_frac, rel_orbit in sar_scene_arrays:
         store.store_sar_scene(
             location_key, scene_id, month_key,

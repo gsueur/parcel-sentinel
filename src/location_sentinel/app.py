@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
-from .routes import customers, features, health, jobs, locations, report, score, thumbnail, timeseries
+from .routes import auth, features, health, jobs, locations, report, score, thumbnail, timeseries
 from .stac.noaa_tides_client import fetch_tidal_stations
 from .storage.duckdb_store import store
 
@@ -104,6 +104,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router, prefix="/v1")
+    app.include_router(auth.router, prefix="/v1")
     app.include_router(timeseries.router, prefix="/v1", include_in_schema=False)
     app.include_router(features.router, prefix="/v1", include_in_schema=False)
     app.include_router(score.router, prefix="/v1", include_in_schema=False)
@@ -111,6 +112,5 @@ def create_app() -> FastAPI:
     app.include_router(report.router, prefix="/v1", include_in_schema=False)
     app.include_router(jobs.router, prefix="/v1", include_in_schema=False)
     app.include_router(locations.router, prefix="/v1")
-    app.include_router(customers.router, prefix="/v1")
 
     return app

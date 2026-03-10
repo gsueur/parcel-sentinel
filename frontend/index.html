@@ -23,19 +23,26 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh;
     }
+    .hidden { display: none !important; }
+
+    /* ── HEADER ── */
     .header {
-      padding: 14px 24px; border-bottom: 1px solid var(--border);
+      padding: 12px 24px; border-bottom: 1px solid var(--border);
       background: var(--surface);
       display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
     }
-    .header-left { display: flex; align-items: baseline; gap: 12px; }
-    .header h1 { font-size: 1.15rem; font-weight: 600; color: #0f172a; }
-    .customer-badge {
-      font-size: 0.78rem; color: var(--muted); background: var(--bg);
-      border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px;
+    .header-logo { font-size: 1.05rem; font-weight: 700; color: #0f172a; }
+    .header-logo span { color: var(--accent); }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .user-chip {
+      font-size: 0.78rem; color: var(--muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 3px 10px;
+      max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .header-right { display: flex; align-items: center; gap: 16px; }
-    #loc-count { color: var(--muted); font-size: 0.8rem; }
+
+    /* ── BUTTONS ── */
     .btn {
       padding: 7px 16px; border-radius: 6px; font-size: 0.85rem; font-weight: 500;
       cursor: pointer; border: none; transition: opacity 0.15s; white-space: nowrap;
@@ -44,7 +51,37 @@
     .btn:disabled { opacity: 0.45; cursor: default; }
     .btn-primary { background: var(--accent); color: #fff; }
     .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      font-size: 0.8rem; cursor: pointer; padding: 5px 12px;
+      border-radius: 6px; transition: color 0.12s, border-color 0.12s;
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text); }
+
+    /* ── TABS ── */
+    .tabs {
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex; padding: 0 24px;
+    }
+    .tab {
+      padding: 10px 16px; font-size: 0.85rem; font-weight: 500; color: var(--muted);
+      cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+      background: none; border-top: none; border-left: none; border-right: none;
+      transition: color 0.12s, border-color 0.12s;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab:hover:not(.active) { color: var(--text); }
+    #tab-mine { /* hidden until logged in */ }
+
+    /* ── DASHBOARD ── */
     .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .section-title { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    #loc-count { color: var(--muted); font-size: 0.8rem; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
     .card {
       background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
@@ -66,7 +103,6 @@
     .card-body { padding: 11px 14px; }
     .card-name { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
     .card-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
-    .card-customer { font-size: 0.72rem; color: var(--faint); margin-top: 2px; }
     .card-key { font-size: 0.65rem; color: var(--faint); margin-top: 4px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .card-computing { font-size: 0.75rem; color: var(--accent); margin-top: 3px; }
     .card-failed { font-size: 0.75rem; color: var(--danger); margin-top: 3px; }
@@ -74,15 +110,28 @@
       display: inline-block; margin-top: 5px;
       font-size: 0.65rem; font-weight: 600; letter-spacing: 0.02em;
       background: #fef3c7; color: #92400e;
-      border: 1px solid #fcd34d; border-radius: 3px;
-      padding: 1px 6px; vertical-align: middle;
+      border: 1px solid #fcd34d; border-radius: 3px; padding: 1px 6px; vertical-align: middle;
+    }
+    .badge-public {
+      display: inline-block; margin-left: 5px;
+      font-size: 0.65rem; font-weight: 500;
+      background: #eff6ff; color: #1d4ed8;
+      border: 1px solid #bfdbfe; border-radius: 3px; padding: 1px 6px; vertical-align: middle;
+    }
+    .badge-private {
+      display: inline-block; margin-left: 5px;
+      font-size: 0.65rem; font-weight: 500;
+      background: #f8fafc; color: var(--faint);
+      border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; vertical-align: middle;
     }
     .card-scores { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
     .card-episodes { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
-    .ep-badge { display: inline-flex; align-items: center; gap: 3px;
-      font-size: 0.67rem; font-weight: 600; border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
-    .ep-badge.flood  { background: #f0f9ff; color: #0369a1; border: 1px solid #7dd3fc; }
-    .ep-badge.fire   { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+    .ep-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.67rem; font-weight: 600; border-radius: 4px; padding: 2px 7px; white-space: nowrap;
+    }
+    .ep-badge.flood   { background: #f0f9ff; color: #0369a1; border: 1px solid #7dd3fc; }
+    .ep-badge.fire    { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
     .ep-badge.drought { background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; }
     .score-pill {
       display: inline-flex; align-items: center;
@@ -119,7 +168,8 @@
     }
     .card-confirm-msg { font-size: 0.74rem; color: var(--text); }
     .card-confirm-btns { display: flex; gap: 5px; }
-    /* Modal */
+
+    /* ── MODALS (shared overlay) ── */
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(15,23,42,0.5);
       z-index: 200; display: none; align-items: center; justify-content: center;
@@ -130,6 +180,11 @@
       width: 92vw; max-width: 920px; max-height: 92vh;
       display: flex; flex-direction: column; overflow: hidden;
     }
+    .modal-sm {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      width: 92vw; max-width: 400px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
     .modal-header {
       padding: 14px 18px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
@@ -138,20 +193,24 @@
     .close-btn { background: none; border: none; color: var(--faint); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1; }
     .close-btn:hover { color: var(--text); }
     .modal-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+    /* ── ADD LOCATION MODAL ── */
     .form-section {
-      width: 270px; flex-shrink: 0; padding: 18px;
+      width: 240px; flex-shrink: 0; padding: 18px;
       overflow-y: auto; border-right: 1px solid var(--border);
       display: flex; flex-direction: column; gap: 13px;
     }
     .field { display: flex; flex-direction: column; gap: 4px; }
+    .field-row { display: flex; align-items: center; gap: 8px; }
     label { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
-    input[type="text"], input[type="date"], select {
+    input[type="text"], input[type="email"], input[type="password"], input[type="date"] {
       background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
-      color: var(--text); padding: 6px 10px; font-size: 0.83rem;
+      color: var(--text); padding: 7px 10px; font-size: 0.83rem;
       outline: none; width: 100%; font-family: inherit;
     }
-    input:focus, select:focus { border-color: var(--accent); }
+    input:focus { border-color: var(--accent); }
     input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
+    input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; width: 15px; height: 15px; flex-shrink: 0; }
     .map-section { flex: 1; position: relative; min-width: 0; }
     #map { width: 100%; height: 100%; min-height: 380px; }
     .leaflet-container { cursor: crosshair !important; }
@@ -163,30 +222,145 @@
     }
     .status-box { font-size: 0.78rem; padding: 7px 10px; border-radius: 5px; line-height: 1.4; }
     .status-box.error { background: rgba(220,38,38,0.08); color: #b91c1c; border: 1px solid rgba(220,38,38,0.2); }
-    .status-box.info { background: rgba(29,78,216,0.08); color: #1d4ed8; border: 1px solid rgba(29,78,216,0.2); }
-    .hidden { display: none !important; }
+    .status-box.info  { background: rgba(29,78,216,0.08);  color: #1d4ed8; border: 1px solid rgba(29,78,216,0.2); }
+    .status-box.success { background: rgba(22,163,74,0.08); color: #15803d; border: 1px solid rgba(22,163,74,0.2); }
+
+    /* ── AUTH MODAL ── */
+    .auth-modal-body { padding: 24px; display: flex; flex-direction: column; gap: 0; }
+    .auth-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+    .auth-tab {
+      flex: 1; padding: 8px; text-align: center; font-size: 0.85rem; font-weight: 500;
+      color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none;
+      transition: color 0.12s, border-color 0.12s;
+    }
+    .auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .auth-form { display: flex; flex-direction: column; gap: 12px; }
+    .auth-form input {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); padding: 9px 12px; font-size: 0.88rem;
+      outline: none; width: 100%; font-family: inherit;
+    }
+    .auth-form input:focus { border-color: var(--accent); }
+    .auth-form .btn { width: 100%; padding: 9px; font-size: 0.9rem; }
+    .auth-status { font-size: 0.8rem; padding: 8px 12px; border-radius: 5px; line-height: 1.5; }
+    .auth-status.error   { background: rgba(220,38,38,0.08); color: #b91c1c; border: 1px solid rgba(220,38,38,0.2); }
+    .auth-status.success { background: rgba(22,163,74,0.08);  color: #15803d; border: 1px solid rgba(22,163,74,0.2); }
+
+    /* ── VERIFIED OVERLAY ── */
+    .verified-overlay {
+      position: fixed; inset: 0; background: rgba(15,23,42,0.5);
+      z-index: 300; display: flex; align-items: center; justify-content: center;
+    }
+    .verified-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+      max-width: 340px; width: 92vw; padding: 36px 28px; text-align: center;
+    }
+    .verified-icon { font-size: 2.2rem; margin-bottom: 14px; }
+    .verified-card h2 { font-size: 1.05rem; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
+    .verified-card p { font-size: 0.83rem; color: var(--muted); line-height: 1.6; margin-bottom: 20px; }
+
+    /* ── SIGN-IN PROMPT (empty My Locations) ── */
+    .cta-box {
+      text-align: center; padding: 48px 24px;
+      color: var(--muted);
+    }
+    .cta-box p { margin-bottom: 16px; font-size: 0.88rem; }
   </style>
 </head>
 <body>
 
+<!-- ── VERIFIED OVERLAY ────────────────────────────────────────────────────── -->
+<div id="verified-overlay" class="verified-overlay hidden">
+  <div class="verified-card">
+    <div class="verified-icon">&#x2705;</div>
+    <h2>Email verified</h2>
+    <p>Your account is now active. Sign in to start adding locations.</p>
+    <button class="btn btn-primary" onclick="closeVerified()">Sign in</button>
+  </div>
+</div>
+
+<!-- ── AUTH MODAL ─────────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="auth-overlay">
+  <div class="modal-sm">
+    <div class="modal-header">
+      <h2 id="auth-modal-title">Sign in</h2>
+      <button class="close-btn" onclick="closeAuthModal()">&#x2715;</button>
+    </div>
+    <div class="auth-modal-body">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Sign in</button>
+        <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Create account</button>
+      </div>
+
+      <div id="form-login" class="auth-form">
+        <input type="email" id="login-email" placeholder="Email" autocomplete="email">
+        <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+        <button class="btn btn-primary" onclick="doLogin()">Sign in</button>
+        <div id="login-status" class="auth-status hidden"></div>
+      </div>
+
+      <div id="form-register" class="auth-form hidden">
+        <input type="text" id="reg-name" placeholder="Your name (optional)" autocomplete="name">
+        <input type="email" id="reg-email" placeholder="Email" autocomplete="email">
+        <input type="password" id="reg-password" placeholder="Password (min 8 chars)" autocomplete="new-password">
+        <button class="btn btn-primary" onclick="doRegister()">Create account</button>
+        <div id="reg-status" class="auth-status hidden"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
 <div class="header">
-  <div class="header-left">
-    <h1>Location Sentinel</h1>
-    <span id="customer-badge" class="customer-badge hidden"></span>
-  </div>
+  <div class="header-logo">Location <span>Sentinel</span></div>
   <div class="header-right">
-    <span id="loc-count"></span>
-    <button class="btn btn-primary" id="add-btn">+ Add Location</button>
+    <!-- Unauthenticated -->
+    <div id="anon-actions">
+      <button class="btn-ghost" onclick="openAuthModal('login')" style="margin-right:6px">Sign in</button>
+      <button class="btn btn-primary" onclick="openAuthModal('register')">Sign up</button>
+    </div>
+    <!-- Authenticated -->
+    <div id="auth-actions" class="hidden" style="display:flex;align-items:center;gap:10px">
+      <span id="user-chip" class="user-chip"></span>
+      <button class="btn btn-primary" id="add-btn">+ Add Location</button>
+      <button class="btn-ghost" onclick="doLogout()">Sign out</button>
+    </div>
   </div>
 </div>
 
+<!-- ── TABS ────────────────────────────────────────────────────────────────── -->
+<div class="tabs">
+  <button class="tab active" id="tab-public" onclick="switchMainTab('public')">Public Locations</button>
+  <button class="tab hidden" id="tab-mine" onclick="switchMainTab('mine')">My Locations</button>
+</div>
+
+<!-- ── MAIN CONTENT ────────────────────────────────────────────────────────── -->
 <div class="container">
-  <div id="grid" class="grid">
-    <p class="state-msg">Loading...</p>
+
+  <!-- Public tab -->
+  <div id="panel-public">
+    <div class="section-header">
+      <span class="section-title" id="public-count"></span>
+    </div>
+    <div id="public-grid" class="grid">
+      <p class="state-msg">Loading&hellip;</p>
+    </div>
   </div>
+
+  <!-- My Locations tab -->
+  <div id="panel-mine" class="hidden">
+    <div class="section-header">
+      <span class="section-title" id="mine-count"></span>
+    </div>
+    <div id="mine-grid" class="grid">
+      <p class="state-msg">Loading&hellip;</p>
+    </div>
+  </div>
+
 </div>
 
-<!-- Add Location Modal -->
+<!-- ── ADD LOCATION MODAL ──────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
     <div class="modal-header">
@@ -201,19 +375,6 @@
           <input type="text" id="loc-name" placeholder="e.g. Riverside Plot A">
         </div>
 
-        <div class="field" id="customer-field">
-          <label for="customer-select">Customer (optional)</label>
-          <select id="customer-select">
-            <option value="">No customer</option>
-            <option value="__new__">+ New customer...</option>
-          </select>
-        </div>
-
-        <div class="field hidden" id="new-customer-field">
-          <label for="new-customer-name">Customer name</label>
-          <input type="text" id="new-customer-name" placeholder="Customer name">
-        </div>
-
         <div class="field">
           <label>Lookback: <strong id="lookback-val">5 years</strong></label>
           <input type="range" id="lookback" min="1" max="10" value="5">
@@ -222,6 +383,13 @@
         <div class="field">
           <label for="date-end">Date end</label>
           <input type="date" id="date-end">
+        </div>
+
+        <div class="field">
+          <div class="field-row">
+            <input type="checkbox" id="is-public">
+            <label for="is-public" style="cursor:pointer">Public &mdash; show on homepage</label>
+          </div>
         </div>
 
         <div id="geom-status" class="status-box info hidden"></div>
@@ -241,85 +409,186 @@
 </div>
 
 <script>
-// ── CONFIG ────────────────────────────────────────────────────────────────────────
+// ── CONFIG ─────────────────────────────────────────────────────────────────────
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:8000'
   : 'https://climate.geomermaids.com';
-// ─────────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 
-// ── ICONS ─────────────────────────────────────────────────────────────────────────
-const SVG_LINK = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+// ── ICONS ──────────────────────────────────────────────────────────────────────
+const SVG_LINK    = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
 const SVG_REFRESH = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
-const SVG_TRASH = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
-// ─────────────────────────────────────────────────────────────────────────────────
+const SVG_TRASH   = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>`;
+// ──────────────────────────────────────────────────────────────────────────────
 
-// Fix default marker icon paths when Leaflet is loaded from CDN
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+// ── AUTH STATE ─────────────────────────────────────────────────────────────────
+const LS_TOKEN = 'ls_token';
+const LS_USER  = 'ls_user';
 
-let map = null, marker = null, drawnGeometry = null;
+function getToken() { return localStorage.getItem(LS_TOKEN); }
+function getUser()  {
+  try { return JSON.parse(localStorage.getItem(LS_USER)); } catch { return null; }
+}
+function saveAuth(token, user) {
+  localStorage.setItem(LS_TOKEN, token);
+  localStorage.setItem(LS_USER, JSON.stringify(user));
+}
+function clearAuth() {
+  localStorage.removeItem(LS_TOKEN);
+  localStorage.removeItem(LS_USER);
+}
+
+async function authFetch(url, opts = {}) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(url, { ...opts, headers });
+  if (res.status === 401) {
+    clearAuth();
+    updateHeaderState();
+    openAuthModal('login');
+    throw new Error('Session expired. Please sign in again.');
+  }
+  return res;
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ── HEADER STATE ───────────────────────────────────────────────────────────────
+function updateHeaderState() {
+  const user = getUser();
+  const anonEl   = document.getElementById('anon-actions');
+  const authEl   = document.getElementById('auth-actions');
+  const tabMine  = document.getElementById('tab-mine');
+
+  if (user) {
+    anonEl.classList.add('hidden');
+    authEl.classList.remove('hidden');
+    authEl.style.display = 'flex';
+    tabMine.classList.remove('hidden');
+    document.getElementById('user-chip').textContent = user.email || user.name || user.user_id;
+  } else {
+    anonEl.classList.remove('hidden');
+    authEl.classList.add('hidden');
+    tabMine.classList.add('hidden');
+    // If currently on mine tab, switch to public
+    if (activeTab === 'mine') switchMainTab('public');
+  }
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ── MAIN TABS ──────────────────────────────────────────────────────────────────
+let activeTab = 'public';
 let serverVersions = { processing: null, score: null };
-const filterCustomerId = new URLSearchParams(window.location.search).get('customer_id');
 
-// ── LOCATIONS ─────────────────────────────────────────────────────────────────────
+function switchMainTab(tab) {
+  activeTab = tab;
+  document.getElementById('tab-public').classList.toggle('active', tab === 'public');
+  document.getElementById('tab-mine').classList.toggle('active', tab === 'mine');
+  document.getElementById('panel-public').classList.toggle('hidden', tab !== 'public');
+  document.getElementById('panel-mine').classList.toggle('hidden', tab !== 'mine');
 
-async function loadLocations() {
+  if (tab === 'mine' && getUser()) loadMyLocations();
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ── ROUTING ────────────────────────────────────────────────────────────────────
+function route() {
+  if (window.location.pathname === '/verified') {
+    document.getElementById('verified-overlay').classList.remove('hidden');
+  }
+  updateHeaderState();
+  loadPublicLocations();
+}
+
+function closeVerified() {
+  document.getElementById('verified-overlay').classList.add('hidden');
+  history.replaceState(null, '', '/');
+  openAuthModal('login');
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ── LOAD LOCATIONS ─────────────────────────────────────────────────────────────
+async function loadPublicLocations() {
   try {
-    let locations, count;
-    if (filterCustomerId) {
-      const res = await fetch(`${API_URL}/v1/customers/${filterCustomerId}/locations`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      locations = data.locations;
-      count = data.count;
-      serverVersions = data.server_versions || { processing: null, score: null };
-      showCustomerBadge(data.customer.name);
-    } else {
-      const res = await fetch(`${API_URL}/v1/locations`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      locations = data.locations;
-      count = data.count;
-      serverVersions = data.server_versions || { processing: null, score: null };
-    }
-    // Preserve any pending cards already in the grid
-    const pending = [...document.querySelectorAll('.card-pending')];
-    renderGrid(locations);
-    pending.forEach(c => {
-      if (!document.getElementById(c.id)) document.getElementById('grid').prepend(c);
-    });
-    document.getElementById('loc-count').textContent = `${count} location${count !== 1 ? 's' : ''}`;
+    const res = await fetch(`${API_URL}/v1/locations/public`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    serverVersions = data.server_versions || serverVersions;
+    const count = data.count;
+    document.getElementById('public-count').textContent =
+      `${count} public location${count !== 1 ? 's' : ''}`;
+    renderGrid('public-grid', data.locations, false);
   } catch (e) {
-    document.getElementById('grid').innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
+    document.getElementById('public-grid').innerHTML =
+      `<p class="state-msg">Failed to load: ${e.message}</p>`;
   }
 }
 
-function renderGrid(locations) {
-  const grid = document.getElementById('grid');
+async function loadMyLocations() {
+  const mineGrid = document.getElementById('mine-grid');
+  if (!getUser()) {
+    mineGrid.innerHTML = `
+      <div class="cta-box" style="grid-column:1/-1">
+        <p>Sign in to see and manage your locations.</p>
+        <button class="btn btn-primary" onclick="openAuthModal('login')">Sign in</button>
+      </div>`;
+    return;
+  }
+  try {
+    const res = await authFetch(`${API_URL}/v1/locations`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    serverVersions = data.server_versions || serverVersions;
+    const count = data.count;
+    document.getElementById('mine-count').textContent =
+      `${count} location${count !== 1 ? 's' : ''}`;
+
+    const pending = [...document.querySelectorAll('.card-pending')];
+    renderGrid('mine-grid', data.locations, true);
+    pending.forEach(c => {
+      if (!document.getElementById(c.id)) document.getElementById('mine-grid').prepend(c);
+    });
+  } catch (e) {
+    mineGrid.innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
+  }
+}
+
+// After a job completes, refresh whichever grid is showing mine
+async function refreshAfterJob() {
+  await loadMyLocations();
+  // Also refresh public in case the new location is public
+  await loadPublicLocations();
+}
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ── RENDER GRID ────────────────────────────────────────────────────────────────
+function renderGrid(gridId, locations, showActions) {
+  const grid = document.getElementById(gridId);
   if (!locations.length) {
-    grid.innerHTML = '<p class="state-msg">No locations yet. Add one to get started.</p>';
+    grid.innerHTML = showActions
+      ? '<p class="state-msg">No locations yet. Add one to get started.</p>'
+      : '<p class="state-msg">No public locations yet.</p>';
     return;
   }
   grid.innerHTML = locations.map(loc => {
-    const name = loc.name || 'Unnamed';
-    const coords = loc.centroid
+    const name    = loc.name || 'Unnamed';
+    const coords  = loc.centroid
       ? `${loc.centroid[1] >= 0 ? '+' : ''}${loc.centroid[1].toFixed(4)},\u2009${loc.centroid[0] >= 0 ? '+' : ''}${loc.centroid[0].toFixed(4)}`
       : '';
     const updated = loc.updated_at ? loc.updated_at.slice(0, 10) : '';
-    const meta = [coords, updated].filter(Boolean).join(' &middot; ');
-    const customer = loc.customer_name ? `<div class="card-customer">${loc.customer_name}</div>` : '';
-    const keyShort = loc.location_key.slice(0, 24) + '&hellip;';
-    const key = loc.location_key;
+    const meta    = [coords, updated].filter(Boolean).join(' &middot; ');
+    const key     = loc.location_key;
     const isStale = serverVersions.processing && (
       loc.processing_version !== serverVersions.processing ||
       loc.score_version !== serverVersions.score
     );
     const staleBadge = isStale
-      ? `<span class="badge-stale" title="Stored: processing=${loc.processing_version || 'none'}, score=${loc.score_version || 'none'}&#10;Current: processing=${serverVersions.processing}, score=${serverVersions.score}">Update available</span>`
+      ? `<span class="badge-stale">Update available</span>`
+      : '';
+    const visiBadge = showActions
+      ? (loc.is_public
+          ? `<span class="badge-public">Public</span>`
+          : `<span class="badge-private">Private</span>`)
       : '';
     let scorePill = '';
     if (loc.composite_score != null) {
@@ -337,125 +606,144 @@ function renderGrid(locations) {
       ? `<div class="card-scores">${scorePill}${qualityPill}</div>`
       : '';
     const EP_META = {
-      active_flood:   { cls: 'flood',   icon: '💧', label: 'Flood' },
-      active_fire:    { cls: 'fire',    icon: '🔥', label: 'Fire' },
-      active_drought: { cls: 'drought', icon: '🌵', label: 'Drought' },
+      active_flood:   { cls: 'flood',   icon: '&#x1F4A7;', label: 'Flood' },
+      active_fire:    { cls: 'fire',    icon: '&#x1F525;', label: 'Fire' },
+      active_drought: { cls: 'drought', icon: '&#x1F335;', label: 'Drought' },
     };
     const eps = loc.active_episodes || [];
     const episodeBadges = eps.length
       ? `<div class="card-episodes">${eps.map(ep => {
-          const m = EP_META[ep] || { cls: 'flood', icon: '⚠', label: ep };
-          return `<span class="ep-badge ${m.cls}" title="Active episode">${m.icon}&nbsp;${m.label}</span>`;
+          const m = EP_META[ep] || { cls: 'flood', icon: '&#x26A0;', label: ep };
+          return `<span class="ep-badge ${m.cls}">${m.icon}&nbsp;${m.label}</span>`;
         }).join('')}</div>`
       : '';
+    const cardActions = showActions ? `
+      <div class="card-actions">
+        <a href="${API_URL}${loc.report_url}" target="_blank" rel="noopener"
+           class="action-btn" title="Open report">${SVG_LINK}</a>
+        <button class="action-btn" title="Regenerate"
+                data-key="${key}" onclick="regenerateCard(this)">${SVG_REFRESH}</button>
+        <button class="action-btn action-btn-danger" title="Delete"
+                data-key="${key}" onclick="showDeleteConfirm(this)">${SVG_TRASH}</button>
+      </div>` : '';
+
     return `
       <div class="card">
         <a class="card-link" href="${API_URL}${loc.report_url}" target="_blank" rel="noopener">
           <img class="card-thumb" src="${API_URL}${loc.thumbnail_url}"
                alt="" onerror="this.outerHTML='<div class=card-thumb-placeholder></div>'">
           <div class="card-body">
-            <div class="card-name">${name}</div>
+            <div class="card-name">${name}${visiBadge}</div>
             <div class="card-meta">${meta}</div>
-            ${customer}
             ${scoresRow}
             ${episodeBadges}
             ${staleBadge}
           </div>
         </a>
-        <div class="card-actions">
-          <a href="${API_URL}${loc.report_url}" target="_blank" rel="noopener"
-             class="action-btn" title="Open report">${SVG_LINK}</a>
-          <button class="action-btn" title="Regenerate"
-                  data-key="${key}" onclick="regenerateCard(this)">${SVG_REFRESH}</button>
-          <button class="action-btn action-btn-danger" title="Delete"
-                  data-key="${key}" onclick="showDeleteConfirm(this)">${SVG_TRASH}</button>
-        </div>
+        ${cardActions}
       </div>`;
   }).join('');
 }
+// ──────────────────────────────────────────────────────────────────────────────
 
-function showCustomerBadge(name) {
-  const el = document.getElementById('customer-badge');
-  el.textContent = name;
+// ── AUTH MODAL ─────────────────────────────────────────────────────────────────
+function openAuthModal(tab = 'login') {
+  document.getElementById('auth-overlay').classList.add('open');
+  switchAuthTab(tab);
+}
+function closeAuthModal() {
+  document.getElementById('auth-overlay').classList.remove('open');
+}
+
+function switchAuthTab(tab) {
+  document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+  document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+  document.getElementById('form-login').classList.toggle('hidden', tab !== 'login');
+  document.getElementById('form-register').classList.toggle('hidden', tab !== 'register');
+  document.getElementById('login-status').classList.add('hidden');
+  document.getElementById('reg-status').classList.add('hidden');
+}
+
+function setAuthStatus(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = `auth-status ${type}`;
+  el.textContent = msg;
   el.classList.remove('hidden');
 }
 
-// ── PENDING CARD ──────────────────────────────────────────────────────────────────
-
-function addPendingCard(jobId, name) {
-  const card = document.createElement('div');
-  card.className = 'card card-pending';
-  card.id = `job-${jobId}`;
-  card.innerHTML = `
-    <div class="card-thumb-computing"><div class="spinner"></div></div>
-    <div class="card-body">
-      <div class="card-name">${name}</div>
-      <div class="card-computing" id="job-status-${jobId}">Computing\u2026</div>
-    </div>`;
-  const grid = document.getElementById('grid');
-  const empty = grid.querySelector('.state-msg');
-  if (empty) empty.remove();
-  grid.prepend(card);
-}
-
-function startBackgroundPoll(jobId) {
-  let elapsed = 0;
-  const interval = setInterval(async () => {
-    elapsed += 3;
-    const statusEl = document.getElementById(`job-status-${jobId}`);
-    try {
-      const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const job = await res.json();
-
-      if (job.status === 'ready') {
-        clearInterval(interval);
-        const doneCard = document.getElementById(`job-${jobId}`);
-        if (doneCard) doneCard.remove();
-        await loadLocations(); // re-renders grid with the completed location
-      } else if (job.status === 'failed') {
-        clearInterval(interval);
-        const card = document.getElementById(`job-${jobId}`);
-        if (card) {
-          card.querySelector('.card-thumb-computing').outerHTML =
-            '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
-        }
-        if (statusEl) {
-          statusEl.className = 'card-failed';
-          statusEl.textContent = `Failed: ${job.error}`;
-        }
-      } else {
-        if (statusEl) statusEl.textContent = `Computing\u2026 ${elapsed}s`;
-      }
-    } catch (e) {
-      clearInterval(interval);
-      if (statusEl) { statusEl.className = 'card-failed'; statusEl.textContent = `Error: ${e.message}`; }
-    }
-  }, 3000);
-}
-
-// ── CUSTOMERS ─────────────────────────────────────────────────────────────────────
-
-async function loadCustomers() {
+async function doLogin() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { setAuthStatus('login-status', 'error', 'Enter your email and password.'); return; }
   try {
-    const res = await fetch(`${API_URL}/v1/customers`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!data.customers.length) return;
-    const select = document.getElementById('customer-select');
-    const newOpt = select.lastElementChild;
-    data.customers.forEach(c => {
-      const opt = document.createElement('option');
-      opt.value = c.customer_id;
-      opt.textContent = c.name;
-      select.insertBefore(opt, newOpt);
+    const res = await fetch(`${API_URL}/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     });
-    // Pre-select after populating (filterCustomerId handled here too)
-    if (filterCustomerId) select.value = filterCustomerId;
-  } catch (_) {}
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    saveAuth(data.token, { user_id: data.user_id, email, role: data.role });
+    closeAuthModal();
+    updateHeaderState();
+    switchMainTab('mine');
+  } catch (e) {
+    setAuthStatus('login-status', 'error', e.message);
+  }
 }
 
-// ── MODAL ─────────────────────────────────────────────────────────────────────────
+async function doRegister() {
+  const name     = document.getElementById('reg-name').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  if (!email || !password) { setAuthStatus('reg-status', 'error', 'Email and password are required.'); return; }
+  if (password.length < 8) { setAuthStatus('reg-status', 'error', 'Password must be at least 8 characters.'); return; }
+  try {
+    const res = await fetch(`${API_URL}/v1/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name: name || undefined }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    setAuthStatus('reg-status', 'success', 'Account created! Check your email to verify before signing in.');
+  } catch (e) {
+    setAuthStatus('reg-status', 'error', e.message);
+  }
+}
+
+function doLogout() {
+  clearAuth();
+  updateHeaderState();
+  switchMainTab('public');
+}
+
+// Close auth modal on overlay click
+document.getElementById('auth-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('auth-overlay')) closeAuthModal();
+});
+
+// Enter key on auth forms
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (document.getElementById('auth-overlay').classList.contains('open')) {
+    if (!document.getElementById('form-login').classList.contains('hidden')) doLogin();
+    else doRegister();
+  }
+});
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Fix default marker icon paths when Leaflet is loaded from CDN
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
+
+let map = null, marker = null, drawnGeometry = null;
+
+// ── ADD LOCATION MODAL ─────────────────────────────────────────────────────────
 
 document.getElementById('add-btn').addEventListener('click', openModal);
 document.getElementById('close-btn').addEventListener('click', closeModal);
@@ -464,31 +752,17 @@ document.getElementById('modal-overlay').addEventListener('click', e => {
 });
 
 function openModal() {
-  // Hide customer selector when locked to a customer
-  if (filterCustomerId) {
-    document.getElementById('customer-field').classList.add('hidden');
-    document.getElementById('new-customer-field').classList.add('hidden');
-  } else {
-    const select = document.getElementById('customer-select');
-    while (select.options.length > 2) select.remove(1);
-    loadCustomers();
-  }
-
   document.getElementById('modal-overlay').classList.add('open');
-
   if (!map) {
     requestAnimationFrame(() => requestAnimationFrame(initMap));
   } else {
     map.invalidateSize();
   }
 }
-
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
   resetForm();
 }
-
-// ── MAP ───────────────────────────────────────────────────────────────────────────
 
 function initMap() {
   map = L.map('map').setView([39.5, -98.5], 4);
@@ -519,82 +793,46 @@ function setGeometry(latlng) {
   updateSubmit();
 }
 
-// ── CUSTOMER SELECT ───────────────────────────────────────────────────────────────
-
-document.getElementById('customer-select').addEventListener('change', function () {
-  document.getElementById('new-customer-field').classList.toggle('hidden', this.value !== '__new__');
-});
-
-// ── LOOKBACK ──────────────────────────────────────────────────────────────────────
-
 document.getElementById('lookback').addEventListener('input', function () {
   document.getElementById('lookback-val').textContent = `${this.value} year${this.value > 1 ? 's' : ''}`;
 });
 
-// ── DATE DEFAULT ──────────────────────────────────────────────────────────────────
-
 document.getElementById('date-end').value = new Date().toISOString().slice(0, 10);
-
-// ── SUBMIT STATE ──────────────────────────────────────────────────────────────────
 
 function updateSubmit() {
   const ready = drawnGeometry !== null && document.getElementById('loc-name').value.trim().length > 0;
   document.getElementById('submit-btn').disabled = !ready;
 }
-
 document.getElementById('loc-name').addEventListener('input', updateSubmit);
 
-// ── SUBMIT ────────────────────────────────────────────────────────────────────────
-
 document.getElementById('submit-btn').addEventListener('click', async () => {
-  const name = document.getElementById('loc-name').value.trim();
-  const lookback = parseInt(document.getElementById('lookback').value);
-  const dateEnd = document.getElementById('date-end').value;
+  const name      = document.getElementById('loc-name').value.trim();
+  const lookback  = parseInt(document.getElementById('lookback').value);
+  const dateEnd   = document.getElementById('date-end').value;
+  const isPublic  = document.getElementById('is-public').checked;
   const submitBtn = document.getElementById('submit-btn');
 
   if (!name || !drawnGeometry) return;
-
-  // When locked to a customer, use filterCustomerId directly
-  let customerId = filterCustomerId || null;
-  if (!filterCustomerId) {
-    const customerVal = document.getElementById('customer-select').value;
-    customerId = (customerVal === '' || customerVal === '__new__') ? null : customerVal;
-
-    if (customerVal === '__new__') {
-      const newName = document.getElementById('new-customer-name').value.trim();
-      if (!newName) { setFormStatus('error', 'Enter a customer name.'); return; }
-      try {
-        const r = await fetch(`${API_URL}/v1/customers`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: newName }),
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        customerId = (await r.json()).customer_id;
-      } catch (e) {
-        setFormStatus('error', `Could not create customer: ${e.message}`);
-        return;
-      }
-    }
-  }
 
   submitBtn.disabled = true;
   submitBtn.textContent = 'Submitting\u2026';
 
   try {
-    const res = await fetch(`${API_URL}/v1/locations`, {
+    const res = await authFetch(`${API_URL}/v1/locations`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ geometry: drawnGeometry, name, customer_id: customerId, date_end: dateEnd, lookback_years: lookback }),
+      body: JSON.stringify({
+        geometry: drawnGeometry, name, date_end: dateEnd,
+        lookback_years: lookback, is_public: isPublic,
+      }),
     });
-
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
-
     const { job_id } = await res.json();
     closeModal();
+    // Switch to My Locations so user sees the pending card
+    switchMainTab('mine');
     addPendingCard(job_id, name);
     startBackgroundPoll(job_id);
   } catch (e) {
@@ -604,7 +842,58 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
   }
 });
 
-// ── HELPERS ───────────────────────────────────────────────────────────────────────
+// ── PENDING CARD ───────────────────────────────────────────────────────────────
+
+function addPendingCard(jobId, name) {
+  const card = document.createElement('div');
+  card.className = 'card card-pending';
+  card.id = `job-${jobId}`;
+  card.innerHTML = `
+    <div class="card-thumb-computing"><div class="spinner"></div></div>
+    <div class="card-body">
+      <div class="card-name">${name}</div>
+      <div class="card-computing" id="job-status-${jobId}">Computing\u2026</div>
+    </div>`;
+  const grid = document.getElementById('mine-grid');
+  const empty = grid.querySelector('.state-msg, .cta-box');
+  if (empty) empty.remove();
+  grid.prepend(card);
+}
+
+function startBackgroundPoll(jobId) {
+  let elapsed = 0;
+  const interval = setInterval(async () => {
+    elapsed += 3;
+    const statusEl = document.getElementById(`job-status-${jobId}`);
+    try {
+      const res = await authFetch(`${API_URL}/v1/jobs/${jobId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const job = await res.json();
+
+      if (job.status === 'ready') {
+        clearInterval(interval);
+        const doneCard = document.getElementById(`job-${jobId}`);
+        if (doneCard) doneCard.remove();
+        await refreshAfterJob();
+      } else if (job.status === 'failed') {
+        clearInterval(interval);
+        const card = document.getElementById(`job-${jobId}`);
+        if (card) {
+          card.querySelector('.card-thumb-computing').outerHTML =
+            '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
+        }
+        if (statusEl) { statusEl.className = 'card-failed'; statusEl.textContent = `Failed: ${job.error}`; }
+      } else {
+        if (statusEl) statusEl.textContent = `Computing\u2026 ${elapsed}s`;
+      }
+    } catch (e) {
+      clearInterval(interval);
+      if (statusEl) { statusEl.className = 'card-failed'; statusEl.textContent = `Error: ${e.message}`; }
+    }
+  }, 3000);
+}
+
+// ── HELPERS ────────────────────────────────────────────────────────────────────
 
 function setFormStatus(type, msg) {
   const el = document.getElementById('form-status');
@@ -615,14 +904,10 @@ function setFormStatus(type, msg) {
 
 function resetForm() {
   document.getElementById('loc-name').value = '';
-  if (!filterCustomerId) {
-    document.getElementById('customer-select').value = '';
-    document.getElementById('new-customer-field').classList.add('hidden');
-    document.getElementById('new-customer-name').value = '';
-  }
   document.getElementById('lookback').value = '5';
   document.getElementById('lookback-val').textContent = '5 years';
   document.getElementById('date-end').value = new Date().toISOString().slice(0, 10);
+  document.getElementById('is-public').checked = false;
   document.getElementById('geom-status').classList.add('hidden');
   document.getElementById('form-status').classList.add('hidden');
   document.getElementById('submit-btn').disabled = true;
@@ -632,33 +917,26 @@ function resetForm() {
   if (marker) { marker.remove(); marker = null; }
 }
 
-// ── CARD ACTIONS ──────────────────────────────────────────────────────────────────
+// ── CARD ACTIONS ───────────────────────────────────────────────────────────────
 
 async function regenerateCard(btn) {
-  const key = btn.dataset.key;
-  const card = btn.closest('.card');
+  const key       = btn.dataset.key;
+  const card      = btn.closest('.card');
   const actionsEl = card.querySelector('.card-actions');
 
   card.querySelectorAll('.action-btn').forEach(b => b.setAttribute('disabled', ''));
-
   const thumb = card.querySelector('.card-thumb, .card-thumb-placeholder');
   if (thumb) thumb.outerHTML = '<div class="card-thumb-computing"><div class="spinner"></div></div>';
-
   actionsEl.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:0.73rem;color:var(--accent)"><div class="spinner" style="width:13px;height:13px;border-width:2px"></div>Regenerating\u2026</div>`;
 
   let jobId;
   try {
-    const res = await fetch(`${API_URL}/v1/location/${key}/regenerate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
+    const res = await authFetch(`${API_URL}/v1/location/${key}/regenerate`, { method: 'POST' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
-    const data = await res.json();
-    jobId = data.job_id;
+    jobId = (await res.json()).job_id;
   } catch (e) {
     const computing = card.querySelector('.card-thumb-computing');
     if (computing) computing.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
@@ -666,18 +944,17 @@ async function regenerateCard(btn) {
     return;
   }
 
-  // Poll until done
   let elapsed = 0;
   const interval = setInterval(async () => {
     elapsed += 3;
     try {
-      const res = await fetch(`${API_URL}/v1/jobs/${jobId}`);
+      const res = await authFetch(`${API_URL}/v1/jobs/${jobId}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const job = await res.json();
 
       if (job.status === 'ready') {
         clearInterval(interval);
-        await loadLocations();
+        await refreshAfterJob();
       } else if (job.status === 'failed') {
         clearInterval(interval);
         const computing = card.querySelector('.card-thumb-computing');
@@ -696,8 +973,8 @@ async function regenerateCard(btn) {
 }
 
 function showDeleteConfirm(btn) {
-  const key = btn.dataset.key;
-  const card = btn.closest('.card');
+  const key       = btn.dataset.key;
+  const card      = btn.closest('.card');
   const actionsEl = card.querySelector('.card-actions');
   actionsEl.outerHTML = `
     <div class="card-confirm">
@@ -706,7 +983,7 @@ function showDeleteConfirm(btn) {
         <button class="btn btn-primary" style="padding:4px 10px;font-size:0.74rem;background:var(--danger);border:none"
                 data-key="${key}" onclick="deleteLocation(this)">Delete</button>
         <button class="btn btn-secondary" style="padding:4px 10px;font-size:0.74rem"
-                onclick="loadLocations()">Cancel</button>
+                onclick="loadMyLocations()">Cancel</button>
       </div>
     </div>`;
 }
@@ -716,9 +993,9 @@ async function deleteLocation(btn) {
   btn.disabled = true;
   btn.textContent = 'Deleting\u2026';
   try {
-    const res = await fetch(`${API_URL}/v1/location/${key}`, { method: 'DELETE' });
+    const res = await authFetch(`${API_URL}/v1/location/${key}`, { method: 'DELETE' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    await loadLocations();
+    await refreshAfterJob();
   } catch (e) {
     btn.disabled = false;
     btn.textContent = 'Delete';
@@ -727,8 +1004,8 @@ async function deleteLocation(btn) {
   }
 }
 
-// ── INIT ──────────────────────────────────────────────────────────────────────────
-loadLocations();
+// ── INIT ───────────────────────────────────────────────────────────────────────
+route();
 </script>
 </body>
 </html>

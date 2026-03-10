@@ -6,8 +6,9 @@ import logging
 import math
 import os
 import secrets
+import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import psycopg2
@@ -160,6 +161,31 @@ class PostgresStore:
                 )
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id VARCHAR(6) PRIMARY KEY,
+                    email VARCHAR UNIQUE NOT NULL,
+                    password_hash VARCHAR NOT NULL,
+                    name VARCHAR,
+                    role VARCHAR NOT NULL DEFAULT 'user',
+                    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                    token VARCHAR PRIMARY KEY,
+                    user_id VARCHAR(6) REFERENCES users(user_id) ON DELETE CASCADE,
+                    expires_at TIMESTAMP NOT NULL,
+                    used_at TIMESTAMP
+                )
+            """)
+            # Drop the FK from location_geometries.customer_id → customers so that
+            # user_ids (from the users table) can be stored there going forward.
+            cur.execute("""
+                ALTER TABLE location_geometries
+                    DROP CONSTRAINT IF EXISTS location_geometries_customer_id_fkey
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS location_geometries (
                     location_key VARCHAR PRIMARY KEY,
                     geojson_text TEXT,
@@ -168,6 +194,17 @@ class PostgresStore:
                     climate_code VARCHAR,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+            # Add is_public column if it doesn't exist yet; use DEFAULT TRUE so all
+            # pre-existing rows are immediately visible on the public landing page.
+            cur.execute("""
+                ALTER TABLE location_geometries
+                    ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT TRUE
+            """)
+            # After migration, new rows default to FALSE (private) unless explicitly set.
+            cur.execute("""
+                ALTER TABLE location_geometries
+                    ALTER COLUMN is_public SET DEFAULT FALSE
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS scene_bands (
@@ -559,6 +596,7 @@ class PostgresStore:
         geojson: dict,
         name: str | None = None,
         customer_id: str | None = None,
+        is_public: bool | None = None,
     ) -> None:
         if self._pool is None:
             return
@@ -566,7 +604,7 @@ class PostgresStore:
         with self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT name, customer_id, climate_code FROM location_geometries WHERE location_key = %s",
+                "SELECT name, customer_id, climate_code, is_public FROM location_geometries WHERE location_key = %s",
                 [location_key],
             )
             existing = cur.fetchone()
@@ -576,12 +614,18 @@ class PostgresStore:
                 if customer_id is None:
                     customer_id = existing[1]
                 existing_code = existing[2]
+                if is_public is None:
+                    is_public = existing[3]
             else:
                 existing_code = None
+                if is_public is None:
+                    is_public = False
 
             if customer_id is not None:
                 cur.execute(
-                    "SELECT 1 FROM customers WHERE customer_id = %s", [customer_id]
+                    "SELECT 1 FROM users WHERE user_id = %s"
+                    " UNION SELECT 1 FROM customers WHERE customer_id = %s",
+                    [customer_id, customer_id],
                 )
                 if not cur.fetchone():
                     customer_id = None
@@ -597,17 +641,18 @@ class PostgresStore:
             cur.execute(
                 """
                 INSERT INTO location_geometries
-                    (location_key, geojson_text, name, customer_id, climate_code, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (location_key, geojson_text, name, customer_id, climate_code, updated_at, is_public)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (location_key)
                 DO UPDATE SET
                     geojson_text = EXCLUDED.geojson_text,
                     name         = EXCLUDED.name,
                     customer_id  = EXCLUDED.customer_id,
                     climate_code = EXCLUDED.climate_code,
-                    updated_at   = EXCLUDED.updated_at
+                    updated_at   = EXCLUDED.updated_at,
+                    is_public    = EXCLUDED.is_public
                 """,
-                [location_key, json.dumps(geojson), name, customer_id, climate_code, now],
+                [location_key, json.dumps(geojson), name, customer_id, climate_code, now, is_public],
             )
 
     def get_geometry(self, location_key: str) -> dict | None:
@@ -682,7 +727,7 @@ class PostgresStore:
                 SELECT pg.location_key, pg.geojson_text, pg.name, pg.customer_id,
                        c.name AS customer_name, pg.updated_at,
                        lf.processing_version, ls.score_version,
-                       lf.features_json, ls.scores_json
+                       lf.features_json, ls.scores_json, pg.is_public
                 FROM location_geometries pg
                 LEFT JOIN customers c ON pg.customer_id = c.customer_id
                 LEFT JOIN latest_features lf ON lf.location_key = pg.location_key
@@ -697,7 +742,7 @@ class PostgresStore:
         result = []
         for (location_key, geojson_text, name, customer_id, customer_name,
              updated_at, processing_version, score_version,
-             features_json_str, scores_json_str) in rows:
+             features_json_str, scores_json_str, is_public) in rows:
             try:
                 geojson = json.loads(geojson_text)
                 centroid = shape(geojson).centroid
@@ -733,6 +778,7 @@ class PostgresStore:
                 "quality_score":   quality_score,
                 "composite_score": composite_score,
                 "active_episodes": active_episodes,
+                "is_public":       bool(is_public),
                 "report_url":      f"/v1/location/{location_key}/report",
                 "thumbnail_url":   f"/v1/thumbnail/{location_key}.png",
             })
@@ -742,6 +788,11 @@ class PostgresStore:
         if self._pool is None:
             return []
         return self._locations_query()
+
+    def get_public_locations(self) -> list[dict]:
+        if self._pool is None:
+            return []
+        return self._locations_query("WHERE pg.is_public = TRUE")
 
     def get_customer_locations(self, customer_id: str) -> list[dict]:
         if self._pool is None:
@@ -826,6 +877,121 @@ class PostgresStore:
             }
             for row in rows
         ]
+
+    # ------------------------------------------------------------------
+    # Users
+    # ------------------------------------------------------------------
+
+    def create_user(self, email: str, password_hash: str, name: str | None = None) -> dict:
+        if self._pool is None:
+            raise RuntimeError("DB not connected")
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            for _ in range(5):
+                user_id = secrets.token_hex(3)
+                cur.execute("SELECT 1 FROM users WHERE user_id = %s", [user_id])
+                if cur.fetchone() is None:
+                    break
+            cur.execute(
+                "INSERT INTO users (user_id, email, password_hash, name) VALUES (%s, %s, %s, %s)",
+                [user_id, email, password_hash, name],
+            )
+        return {"user_id": user_id, "email": email, "name": name, "role": "user"}
+
+    def get_user_by_email(self, email: str) -> dict | None:
+        if self._pool is None:
+            return None
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id, email, password_hash, name, role, is_verified, created_at"
+                " FROM users WHERE email = %s",
+                [email],
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "user_id": row[0], "email": row[1], "password_hash": row[2],
+            "name": row[3], "role": row[4], "is_verified": row[5],
+            "created_at": row[6].isoformat() if hasattr(row[6], "isoformat") else str(row[6]),
+        }
+
+    def get_user_by_id(self, user_id: str) -> dict | None:
+        if self._pool is None:
+            return None
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id, email, name, role, is_verified, created_at"
+                " FROM users WHERE user_id = %s",
+                [user_id],
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "user_id": row[0], "email": row[1], "name": row[2],
+            "role": row[3], "is_verified": row[4],
+            "created_at": row[5].isoformat() if hasattr(row[5], "isoformat") else str(row[5]),
+        }
+
+    def create_verification_token(self, user_id: str) -> str:
+        if self._pool is None:
+            raise RuntimeError("DB not connected")
+        token = str(uuid.uuid4())
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO email_verification_tokens (token, user_id, expires_at)"
+                " VALUES (%s, %s, %s)",
+                [token, user_id, expires_at],
+            )
+        return token
+
+    def consume_verification_token(self, token: str) -> str | None:
+        """Return user_id if the token is valid, unused, and unexpired; else None."""
+        if self._pool is None:
+            return None
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT user_id, expires_at, used_at FROM email_verification_tokens WHERE token = %s",
+                [token],
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            user_id, expires_at, used_at = row
+            if used_at is not None:
+                return None
+            exp = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp:
+                return None
+            cur.execute(
+                "UPDATE email_verification_tokens SET used_at = %s WHERE token = %s",
+                [datetime.now(timezone.utc), token],
+            )
+        return user_id
+
+    def mark_user_verified(self, user_id: str) -> None:
+        if self._pool is None:
+            return
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("UPDATE users SET is_verified = TRUE WHERE user_id = %s", [user_id])
+
+    def location_owned_by(self, location_key: str, user_id: str) -> bool:
+        if self._pool is None:
+            return False
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT 1 FROM location_geometries WHERE location_key = %s AND customer_id = %s",
+                [location_key, user_id],
+            )
+            return cur.fetchone() is not None
 
     # ------------------------------------------------------------------
     # Scene band cache (S2 optical)

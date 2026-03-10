@@ -5,10 +5,11 @@ import datetime
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from ..auth.dependencies import UserClaims, current_user, require_admin
 from ..config import settings
 from ..geometry.validate import GeometryValidationError
 from ..jobs import job_store
@@ -54,7 +55,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
 
 @router.post("/locations", status_code=202)
-async def create_location(req: LocationRequest):
+async def create_location(
+    req: LocationRequest,
+    user: UserClaims = Depends(current_user),
+):
     """Submit a location for async computation. Returns a job_id to poll via GET /v1/jobs/{job_id}."""
     try:
         geom = geojson_to_shapely(req.geometry.model_dump())
@@ -67,7 +71,7 @@ async def create_location(req: LocationRequest):
     stable_key = make_location_key(
         name=req.name,
         centroid=(centroid.x, centroid.y),
-        customer_id=req.customer_id,
+        customer_id=user.user_id,
     )
 
     existing = job_store.find_active(stable_key)
@@ -75,11 +79,11 @@ async def create_location(req: LocationRequest):
         return {"job_id": existing.job_id, "status": existing.status}
 
     job = job_store.create(stable_key)
-    asyncio.create_task(_run_location_job(job.job_id, req, stable_key))
+    asyncio.create_task(_run_location_job(job.job_id, req, stable_key, user.user_id, req.is_public))
     return {"job_id": job.job_id, "status": "pending"}
 
 
-async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str) -> None:
+async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str, user_id: str, is_public: bool = False) -> None:
     trace_id = uuid.uuid4().hex[:12]
     de = req.date_end.isoformat()
 
@@ -126,7 +130,7 @@ async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str) 
         return
 
     geom_dict = req.geometry.model_dump()
-    store.save_geometry(location_key, geom_dict, name=req.name, customer_id=req.customer_id)
+    store.save_geometry(location_key, geom_dict, name=req.name, customer_id=user_id, is_public=is_public)
     store.save_scores(location_key, settings.SCORE_VERSION, req.lookback_years, {
         "drought_score": score_result.drought_score,
         "wetness_score": score_result.wetness_score,
@@ -172,7 +176,11 @@ class _RegenerateRequest(BaseModel):
 
 
 @router.post("/location/{location_key}/regenerate", status_code=202)
-async def regenerate_location(location_key: str, req: _RegenerateRequest = _RegenerateRequest()):
+async def regenerate_location(
+    location_key: str,
+    req: _RegenerateRequest = _RegenerateRequest(),
+    user: UserClaims = Depends(current_user),
+):
     """Submit regeneration as an async job. Returns job_id to poll via GET /v1/jobs/{job_id}.
 
     The location_key is preserved exactly -- no re-derivation from geometry.
@@ -181,6 +189,9 @@ async def regenerate_location(location_key: str, req: _RegenerateRequest = _Rege
     location_info = store.get_location_info(location_key)
     if location_info is None:
         raise HTTPException(status_code=404, detail=f"Location {location_key!r} not found")
+
+    if not user.is_admin and not store.location_owned_by(location_key, user.user_id):
+        raise HTTPException(status_code=403, detail="Not authorized to regenerate this location")
 
     existing = job_store.find_active(location_key)
     if existing:
@@ -237,26 +248,63 @@ async def _run_regenerate_job(
 
 
 @router.delete("/location/{location_key}")
-async def delete_location(location_key: str):
-    """Delete all stored data for a location (features, scores, timeseries, scene bands, geometry).
-
-    Returns a summary of rows deleted per table.
-    Idempotent: deleting an unknown key returns zeros without error.
-    """
+async def delete_location(
+    location_key: str,
+    user: UserClaims = Depends(current_user),
+):
+    """Delete all stored data for a location. Admin can delete any; users can only delete their own."""
+    if not user.is_admin and not store.location_owned_by(location_key, user.user_id):
+        raise HTTPException(status_code=403, detail="Not authorized to delete this location")
     deleted = store.delete_location(location_key)
-    cache.clear()  # evict any cached responses for this key
+    cache.clear()
     return {"location_key": location_key, "deleted": deleted}
 
 
+@router.delete("/locations")
+async def delete_all_locations(_: UserClaims = Depends(require_admin)):
+    """Delete all locations across all users. Admin only."""
+    locations = store.get_all_locations()
+    total: dict[str, int] = {}
+    for loc in locations:
+        deleted = store.delete_location(loc["location_key"])
+        for table, n in deleted.items():
+            total[table] = total.get(table, 0) + n
+    cache.clear()
+    return {"deleted_count": len(locations), "deleted": total}
+
+
+
+@router.get("/locations/public")
+async def list_public_locations(
+    format: str = Query(default="json", pattern="^(json|html)$"),
+):
+    """List all public locations. No authentication required."""
+    locations = store.get_public_locations()
+
+    if format == "html":
+        return HTMLResponse(content=_build_html(locations))
+
+    return JSONResponse(content={
+        "count": len(locations),
+        "server_versions": {
+            "processing": settings.PROCESSING_VERSION,
+            "score": settings.SCORE_VERSION,
+        },
+        "locations": locations,
+    })
+
 
 @router.get("/locations")
-async def list_locations(format: str = Query(default="json", pattern="^(json|html)$")):
-    """List all stored locations.
-
-    Returns JSON by default. Pass ?format=html for a browsable index page
-    with thumbnail previews and links to individual reports.
-    """
-    locations = store.get_all_locations()
+async def list_locations(
+    format: str = Query(default="json", pattern="^(json|html)$"),
+    user: UserClaims = Depends(current_user),
+):
+    """List locations for the authenticated user. Admins see all locations."""
+    locations = (
+        store.get_all_locations()
+        if user.is_admin
+        else store.get_customer_locations(user.user_id)
+    )
 
     if format == "html":
         return HTMLResponse(content=_build_html(locations))

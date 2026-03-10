@@ -81,10 +81,10 @@ class LocationRequest(BaseModel):
     """Unified request: create or refresh a location with scores, features, and timeseries."""
     geometry: GeoJSONGeometry
     name: str | None = None
-    customer_id: str | None = None
     date_end: datetime.date = Field(default_factory=datetime.date.today)
     lookback_years: int = Field(default=5, ge=1, le=10)
     force_recompute: bool = False
+    is_public: bool = False
 
     @model_validator(mode="after")
     def _validate_dates(self):
