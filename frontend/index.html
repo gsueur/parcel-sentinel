@@ -266,6 +266,94 @@
       color: var(--muted);
     }
     .cta-box p { margin-bottom: 16px; font-size: 0.88rem; }
+
+    /* ── HEADER (redesigned) ── */
+    .header-brand {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; flex-shrink: 0;
+    }
+    .header-logo-img { height: 28px; width: auto; display: block; }
+    .header-divider {
+      width: 1px; height: 20px; background: var(--border); flex-shrink: 0;
+    }
+    .header-product { font-size: 0.95rem; font-weight: 700; color: #0f172a; white-space: nowrap; }
+    .header-product span { color: var(--accent); }
+    .header-nav { display: flex; align-items: center; gap: 6px; }
+
+    /* ── HERO ── */
+    .hero {
+      background: #0f172a;
+      padding: 72px 24px 80px;
+      text-align: center;
+    }
+    .hero-inner { max-width: 720px; margin: 0 auto; }
+    .hero-eyebrow {
+      display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em;
+      text-transform: uppercase; color: #60a5fa; margin-bottom: 20px;
+    }
+    .hero h1 {
+      font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 700; color: #f8fafc;
+      line-height: 1.2; margin-bottom: 18px;
+    }
+    .hero-sub {
+      font-size: 1rem; color: #94a3b8; line-height: 1.7;
+      max-width: 600px; margin: 0 auto 32px;
+    }
+    .hero-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+    .hero-actions .btn {
+      padding: 10px 24px; font-size: 0.9rem;
+    }
+    .btn-hero-primary { background: var(--accent); color: #fff; }
+    .btn-hero-secondary {
+      background: transparent; color: #cbd5e1;
+      border: 1px solid #334155;
+    }
+    .btn-hero-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.06); opacity: 1; }
+
+    /* ── FEATURES ── */
+    .features {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 40px 24px;
+    }
+    .features-inner { max-width: 1100px; margin: 0 auto; }
+    .features-title {
+      font-size: 0.72rem; font-weight: 600; color: var(--faint);
+      text-transform: uppercase; letter-spacing: 0.1em;
+      text-align: center; margin-bottom: 28px;
+    }
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;
+    }
+    .feature-card {
+      border: 1px solid var(--border); border-radius: 8px; padding: 20px 22px;
+      background: var(--bg);
+    }
+    .feature-icon { font-size: 1.4rem; margin-bottom: 10px; }
+    .feature-card h3 { font-size: 0.88rem; font-weight: 600; color: #0f172a; margin-bottom: 6px; }
+    .feature-card p { font-size: 0.8rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── LOCATIONS SECTION WRAPPER ── */
+    .locations-section { padding-top: 8px; }
+    .locations-section-header {
+      max-width: 1100px; margin: 0 auto;
+      padding: 24px 24px 0;
+      display: flex; align-items: baseline; justify-content: space-between;
+    }
+    .locations-section-title {
+      font-size: 1rem; font-weight: 600; color: #0f172a;
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      margin-top: 64px; padding: 24px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    .footer-logo { height: 20px; width: auto; opacity: 0.6; }
+    .footer-text { font-size: 0.78rem; color: var(--faint); }
+    .footer-text a { color: var(--faint); text-decoration: none; }
+    .footer-text a:hover { color: var(--muted); }
   </style>
 </head>
 <body>
@@ -313,9 +401,15 @@
 
 <!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
 <div class="header">
-  <div class="header-logo">Location <span>Sentinel</span></div>
+  <a class="header-brand" href="/">
+    <img src="geomermaid_logo.png" class="header-logo-img" alt="Geomermaids">
+    <div class="header-divider"></div>
+    <span class="header-product">Location <span>Sentinel</span></span>
+  </a>
   <div class="header-right">
-    <a href="/methods.html" class="btn-ghost" style="text-decoration:none">Methods</a>
+    <nav class="header-nav">
+      <a href="/methods.html" class="btn-ghost" style="text-decoration:none">Methods</a>
+    </nav>
     <!-- Unauthenticated -->
     <div id="anon-actions">
       <button class="btn-ghost" onclick="openAuthModal('login')" style="margin-right:6px">Sign in</button>
@@ -330,13 +424,57 @@
   </div>
 </div>
 
-<!-- ── TABS ────────────────────────────────────────────────────────────────── -->
+<!-- ── HERO ─────────────────────────────────────────────────────────────────── -->
+<section class="hero" id="hero">
+  <div class="hero-inner">
+    <span class="hero-eyebrow">By Geomermaids</span>
+    <h1>Climate risk intelligence for any location on Earth.</h1>
+    <p class="hero-sub">
+      Location Sentinel fuses Sentinel-2 optical imagery, Sentinel-1 SAR radar, and 30 years of
+      TerraClimate reanalysis data to assess flood exposure, fire history, drought stress, and heat
+      risk at any coordinate. One analysis. One report. Zero fieldwork.
+    </p>
+    <div class="hero-actions">
+      <button class="btn btn-hero-primary" onclick="openAuthModal('register')">Get started free</button>
+      <a href="#locations" class="btn btn-hero-secondary" style="text-decoration:none">Explore locations</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES ──────────────────────────────────────────────────────────────── -->
+<section class="features" id="features">
+  <div class="features-inner">
+    <p class="features-title">What we analyze</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F6F0;</div>
+        <h3>Sentinel-2 optical (10 m)</h3>
+        <p>Monthly composites processed to NDVI, NDWI, NBR, NDMI, and BSI. Drought stress trends, canopy cover, fire episode detection, and urban classification -- all from 5 years of cloud-free imagery.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F4E1;</div>
+        <h3>Sentinel-1 SAR flood detection</h3>
+        <p>C-band radar sees through clouds and at night. Water fraction per scene, chronic inundation frequency, and anomaly-based acute flood event detection -- orbit-stratified and snow-suppressed.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">&#x1F321;</div>
+        <h3>TerraClimate reanalysis (4 km)</h3>
+        <p>30 years of gridded monthly data: maximum temperature trends, precipitation anomalies, vapor pressure deficit, and PDSI drought index. Long-term climate context, not just recent imagery.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── LOCATIONS ─────────────────────────────────────────────────────────────── -->
+<div class="locations-section" id="locations">
+
+<!-- ── TABS ── -->
 <div class="tabs">
-  <button class="tab active" id="tab-public" onclick="switchMainTab('public')">Public Locations</button>
+  <button class="tab active" id="tab-public" onclick="switchMainTab('public')">Explore locations</button>
   <button class="tab hidden" id="tab-mine" onclick="switchMainTab('mine')">My Locations</button>
 </div>
 
-<!-- ── MAIN CONTENT ────────────────────────────────────────────────────────── -->
+<!-- ── MAIN CONTENT ── -->
 <div class="container">
 
   <!-- Public tab -->
@@ -360,6 +498,17 @@
   </div>
 
 </div>
+
+</div><!-- /locations-section -->
+
+<!-- ── FOOTER ────────────────────────────────────────────────────────────────── -->
+<footer class="footer">
+  <img src="geomermaid_logo.png" class="footer-logo" alt="Geomermaids">
+  <span class="footer-text">
+    &copy; 2026 <a href="https://geomermaids.com" target="_blank" rel="noopener">Geomermaids</a>
+    &middot; <a href="/methods.html">Scientific methods</a>
+  </span>
+</footer>
 
 <!-- ── ADD LOCATION MODAL ──────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="modal-overlay">
@@ -460,6 +609,8 @@ function updateHeaderState() {
   const anonEl   = document.getElementById('anon-actions');
   const authEl   = document.getElementById('auth-actions');
   const tabMine  = document.getElementById('tab-mine');
+  const hero     = document.getElementById('hero');
+  const features = document.getElementById('features');
 
   if (user) {
     anonEl.classList.add('hidden');
@@ -467,10 +618,14 @@ function updateHeaderState() {
     authEl.style.display = 'flex';
     tabMine.classList.remove('hidden');
     document.getElementById('user-chip').textContent = user.email || user.name || user.user_id;
+    if (hero) hero.classList.add('hidden');
+    if (features) features.classList.add('hidden');
   } else {
     anonEl.classList.remove('hidden');
     authEl.classList.add('hidden');
     tabMine.classList.add('hidden');
+    if (hero) hero.classList.remove('hidden');
+    if (features) features.classList.remove('hidden');
     // If currently on mine tab, switch to public
     if (activeTab === 'mine') switchMainTab('public');
   }
