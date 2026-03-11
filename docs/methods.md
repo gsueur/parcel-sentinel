@@ -1,7 +1,7 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.19.0` / scoring `risk-v1.14.0`
-**Date:** 2026-03-04
+**Version:** processing `s2l2a-v1.22.0` / scoring `risk-v1.14.0`
+**Date:** 2026-03-11
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
@@ -164,6 +164,8 @@ All reads use the scene's native UTM CRS. The WGS84 centroid is reprojected to U
 3. Within each month, sort by `eo:cloud_cover` (scene-level catalog metadata, ascending).
 4. Keep up to `MAX_SCENES_PER_MONTH = 2` items per month.
 5. Apply a hard cap of `MAX_TOTAL_SCENES = 120` across the full window (lowest-cloud months have priority).
+
+The STAC search fetch budget (`STAC_MAX_ITEMS = 2000`) is deliberately decoupled from the processing cap. MPC returns items newest-first by default. If the fetch budget were set close to `MAX_TOTAL_SCENES`, dense-overpass areas (6-8 tiles per month) would exhaust the budget before reaching older months, silently truncating the analysis window to 2-3 years. The 2000-item budget provides comfortable headroom for 5 years at any global overpass density.
 
 Default analysis window: `date_end − lookback_years` to `date_end`. Default `lookback_years = 5`.
 
@@ -427,10 +429,12 @@ active_fire = 1.0  iff  any burn_month mk satisfies:
 For each of the last 3 observed NDVI months before date_end
     (excluding snow months and persistently wet sites -- see suppression guards below):
     anomaly = True  iff  NDVI[y,m] < climatology[m] − NDVI_ANOMALY_THRESHOLD (0.1)
-active_drought = 1.0  iff  any of these months is anomalous
+active_drought = 1.0  iff  at least 2 of these months are anomalous
 ```
 
-Uses the same seasonal climatology as `ndvi_anomaly_freq_5y` -- the mean NDVI for each calendar month across the full analysis window. A single anomalous month in the last 3 observed months is sufficient to set the flag. This is more sensitive than the long-term frequency threshold, intentionally so: drought onset typically manifests in 1-2 months before becoming persistent.
+The seasonal climatology is the **median** NDVI for each calendar month across the full analysis window (computed with `_median()`). Using the median rather than the mean makes the baseline robust to exceptional wet or dry years: a single anomalous year does not inflate (or deflate) the reference climatology for that month.
+
+At least **2 of the 3** recent months must be anomalously low to set the flag (raised from any 1/3). A single anomalous month can arise from cloud contamination or partial sensor dropout that passed the SCL quality mask. Requiring 2 consecutive-or-concurrent anomalous months suppresses these one-off false positives while still detecting rapid drought onset.
 
 **Suppression guards:** NDVI is a vegetation health proxy and is only meaningful as a drought indicator on vegetated land. Two land cover conditions produce near-zero or negative NDVI that is spectrally indistinguishable from drought stress but has a different physical cause:
 
@@ -715,7 +719,7 @@ A single 64×64 pixel window (640m × 640m footprint) is read from the Copernicu
 | `slope_deg` | `mean(degrees(arctan(sqrt(dz_dy² + dz_dx²))))` | degrees |
 | `aspect_deg` | `degrees(arctan2(−dz_dx, dz_dy))` circular mean, 0=N clockwise | degrees |
 | `tpi_m` | `center_pixel_elevation − nanmean(window)` | metres |
-| `curvature` | `mean(d²z/dy² + d²z/dx²)` | m⁻¹ |
+| `curvature` | `nanmean(Laplacian over 5×5 center kernel)` | m⁻¹ |
 | `heat_load_index` | `(1 − cos(aspect_rad − equatorial_dir)) / 2 × sin(slope_rad)` | dimensionless [0--~0.8] |
 
 **Slope computation:** The slope is derived from numpy central differences applied to the elevation window. Gradients in the row direction (north-south) are divided by the arc-second pixel size in metres (≈ 30.87 m), and gradients in the column direction (east-west) are divided by `30.87 × cos(lat)` to account for meridian convergence at higher latitudes. The result is the mean slope angle over the 640m footprint, equivalent to the area-average of the per-pixel first-order terrain gradient.
@@ -724,7 +728,7 @@ A single 64×64 pixel window (640m × 640m footprint) is read from the Copernicu
 
 **TPI (Topographic Position Index):** The center pixel of the 64×64 window is compared to the nanmean of the entire window. Positive values indicate the center is elevated relative to its surroundings (ridge, hill crest). Negative values indicate a depression (valley floor, hollow, bowl). A value near zero indicates a planar or mid-slope position.
 
-**Curvature:** The mean Laplacian (`d²z/dx² + d²z/dy²`) measures the concavity or convexity of the terrain surface. Negative values indicate concave terrain (converging flow, water-collecting); positive values indicate convex terrain (diverging flow, fast drainage). Pixel-size scaling is applied before averaging.
+**Curvature:** The Laplacian (`d²z/dx² + d²z/dy²`) measures the local concavity or convexity of the terrain surface. **Positive values indicate concave terrain** (converging flow, water-collecting -- valley floors, bowls); **negative values indicate convex terrain** (diverging flow, fast drainage -- ridges, domes). The curvature is estimated as the nanmean of the Laplacian over a 5×5-pixel kernel (~50 m × 50 m) centered on the analysis point, rather than the mean over the full 640m window. The center-point kernel is preferred because a narrow valley floor exhibits strong local concavity that is diluted when averaged with the surrounding valley walls and ridges at the full-window scale. Pixel-size scaling (metres per pixel) is applied to both gradient passes so the result has correct units (m⁻¹).
 
 **Heat load index (HLI):** A solar radiation proxy that integrates both aspect and slope. `equatorial_dir` is 180° (south) in the Northern Hemisphere and 0° (north) in the Southern Hemisphere, representing the direction of maximum insolation. A flat site (slope = 0) has HLI = 0 regardless of aspect. A south-facing 45° slope in the NH reaches the theoretical maximum (~0.71). HLI is computed zero extra S3 reads: it reuses the gradient arrays already produced for slope and aspect.
 
@@ -866,11 +870,11 @@ flood_risk_score = min(100, flood_risk_score + tpi_boost)
 
 `TERRAIN_TPI_FLOOD_MAX_BOOST = 20.0` pts. At TPI = −25 m: +20 pts (cap reached). Only applied when DEM data is available.
 
-**Curvature flood boost:** Concave terrain concentrates overland flow and promotes ponding. When `curvature < TERRAIN_CURVATURE_THRESHOLD` (−0.0001 m⁻¹), an additional boost is applied:
+**Curvature flood boost:** Concave terrain concentrates overland flow and promotes ponding. When `curvature > TERRAIN_CURVATURE_THRESHOLD` (+0.0001 m⁻¹, i.e. the terrain is concave at the site center), an additional boost is applied:
 
 ```
 curvature_boost = min(TERRAIN_CURVATURE_MAX_BOOST,
-                      abs(curvature − TERRAIN_CURVATURE_THRESHOLD) × TERRAIN_CURVATURE_SCALE)
+                      curvature × TERRAIN_CURVATURE_SCALE)
 flood_risk_score = min(100, flood_risk_score + curvature_boost)
 ```
 
@@ -1138,7 +1142,8 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `MAX_SCENES_PER_MONTH` | 2 | S2 scenes per calendar month |
-| `MAX_TOTAL_SCENES` | 120 | Hard cap on total S2 scenes |
+| `MAX_TOTAL_SCENES` | 120 | Hard cap on total S2 scenes processed |
+| `STAC_MAX_ITEMS` | 2000 | STAC fetch budget (decoupled from processing cap to prevent oldest months being dropped in dense-overpass areas) |
 | `SAR_MAX_SCENES_PER_MONTH` | 2 | S1 scenes per calendar month |
 | `SAR_MAX_TOTAL_SCENES` | 120 | Hard cap on total S1 scenes |
 | `MIN_VALID_PIXEL_FRACTION` | 0.05 | Minimum fraction to accept a scene (5% of 4,096 pixels = 205 px) |

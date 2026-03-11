@@ -232,6 +232,8 @@ Grid cell coordinates are snapped to the nearest 1/24° center before querying. 
 4. Keep up to `MAX_SCENES_PER_MONTH` (default 2) per month
 5. Hard cap at `MAX_TOTAL_SCENES` (default 120) across the full date range
 
+The STAC fetch uses a separate `STAC_MAX_ITEMS = 2000` budget, deliberately decoupled from `MAX_TOTAL_SCENES`. MPC returns items newest-first; a low fetch budget in dense-overpass areas (6-8 tiles/month) would exhaust the budget before reaching older years, silently truncating the analysis window to 2-3 years. The 2000-item budget provides headroom for 5 years at any global overpass density.
+
 ### Step 2: Per-pixel SCL masking
 
 After reading the SCL band, each pixel is evaluated against the valid class list. Invalid pixels are excluded from all index computations.
@@ -417,7 +419,7 @@ Long-term features computed from the full date window (default 5 years):
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
 | `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` (acute SAR water anomaly in last ~2 months) |
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
-| `active_drought` | 1.0 if any of the last 3 observed NDVI months is below its seasonal climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%) |
+| `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%); median baseline (not mean) makes the climatology robust to exceptional wet or dry years |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
 | `elevation_m` | Mean terrain elevation of the 640m footprint (metres, WGS84 ellipsoidal) -- Copernicus GLO-30 |
 | `elevation_min_m` | Minimum elevation within the footprint |
@@ -426,7 +428,7 @@ Long-term features computed from the full date window (default 5 years):
 | `slope_deg` | Mean slope angle in degrees across the footprint |
 | `aspect_deg` | Circular mean downslope direction in degrees (0=N, 90=E, 180=S, 270=W), clockwise |
 | `tpi_m` | Topographic Position Index: center pixel elevation minus window mean (positive=ridge, negative=valley) |
-| `curvature` | Mean Laplacian of the elevation surface (m⁻¹); negative = concave/water-collecting terrain |
+| `curvature` | Laplacian of the elevation surface (m⁻¹) estimated from a 5×5-pixel kernel (~50 m) at the site center; **positive = concave** (valley/bowl, water-collecting); **negative = convex** (ridge/dome, fast drainage) |
 | `heat_load_index` | Solar radiation proxy [0-~0.8]; maximum for south-facing steep slopes in the Northern Hemisphere |
 
 ### TerraClimate-derived features
@@ -521,7 +523,7 @@ Three terrain-derived modifiers adjust component scores when GLO-30 DEM data is 
 
 **TPI flood boost:** When `tpi_m < TERRAIN_TPI_FLOOD_THRESHOLD` (−5.0 m), `flood_risk_score` is boosted by up to `TERRAIN_TPI_FLOOD_MAX_BOOST` (20 pts). Valley floors collect runoff from surrounding slopes and are systematically more flood-prone than the surrounding landscape.
 
-**Curvature flood boost:** When `curvature < TERRAIN_CURVATURE_THRESHOLD` (−0.0001 m⁻¹), `flood_risk_score` receives an additional boost of up to `TERRAIN_CURVATURE_MAX_BOOST` (10 pts). Concave terrain (bowls, hollows) concentrates water flow and increases ponding likelihood.
+**Curvature flood boost:** When `curvature > TERRAIN_CURVATURE_THRESHOLD` (+0.0001 m⁻¹, i.e. the site is concave), `flood_risk_score` receives an additional boost of up to `TERRAIN_CURVATURE_MAX_BOOST` (10 pts). Concave terrain (valley floors, bowls) concentrates overland flow and increases ponding likelihood.
 
 ---
 
@@ -908,7 +910,8 @@ All settings are environment variables. Defaults work out of the box.
 | `AWS_SENTINEL_BUCKET` | `sentinel-cogs` | Public S3 bucket for S2 COGs |
 | `AWS_SENTINEL_REGION` | `us-west-2` | S2 bucket region |
 | `MAX_SCENES_PER_MONTH` | `2` | Max S2 scenes per month |
-| `MAX_TOTAL_SCENES` | `120` | Hard cap on total S2 scenes |
+| `MAX_TOTAL_SCENES` | `120` | Hard cap on total S2 scenes processed |
+| `STAC_MAX_ITEMS` | `2000` | STAC fetch budget (decoupled from processing cap; prevents oldest months being dropped by MPC newest-first sort) |
 | `MAX_CONCURRENT_COG_READS` | `32` | Max parallel S3 connections |
 | `COG_WINDOW_SIZE` | `64` | Native pixel count (10m bands: 64x64 = 640m footprint) |
 | `MIN_VALID_PIXEL_FRACTION` | `0.05` | Minimum valid pixel fraction to accept a scene |
