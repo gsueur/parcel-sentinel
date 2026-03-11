@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last update
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.20.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.21.0"
     SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage

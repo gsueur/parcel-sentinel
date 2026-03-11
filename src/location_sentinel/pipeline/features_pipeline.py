@@ -285,11 +285,21 @@ async def run_features(
             _by_cal: dict[int, list[float]] = {}
             for r in _valid_ndvi:
                 _by_cal.setdefault(int(r.month[5:7]), []).append(r.mean)
-            _clim = {mo: sum(v) / len(v) for mo, v in _by_cal.items()}
-            _recent_drought = any(
-                r.mean < _clim.get(int(r.month[5:7]), r.mean) - settings.NDVI_ANOMALY_THRESHOLD
-                for r in _recent
+            # Use median (not mean) so exceptional wet/dry years don't inflate the
+            # seasonal baseline and cause false drought flags in normal years.
+            def _median(vs: list[float]) -> float:
+                s = sorted(vs)
+                m = len(s) // 2
+                return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2
+            _clim = {mo: _median(v) for mo, v in _by_cal.items()}
+            # Require at least 2 of the recent months to be anomalously low.
+            # A single month below threshold can be cloud contamination or normal
+            # phenological variation; 2 consecutive anomalies indicate real stress.
+            _drought_count = sum(
+                1 for r in _recent
+                if r.mean < _clim.get(int(r.month[5:7]), r.mean) - settings.NDVI_ANOMALY_THRESHOLD
             )
+            _recent_drought = _drought_count >= 2
     features["active_drought"] = 1.0 if _recent_drought else 0.0
 
     return location_key, features, quality, series
