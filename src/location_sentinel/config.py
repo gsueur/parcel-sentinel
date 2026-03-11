@@ -112,7 +112,6 @@ class Settings(BaseSettings):
 
     # Storage
     POSTGRES_DSN: str = "postgresql://postgres:postgres@localhost:5432/remotesensing"
-    DUCKDB_PATH: str = "data/location_sentinel.duckdb"  # kept for migration script
 
     # Auth
     SECRET_KEY: str = ""                 # required in production -- set via env var
@@ -207,7 +206,7 @@ class Settings(BaseSettings):
     THUMBNAIL_CACHE_TTL: int = 86400  # 1 day
     GEOJSON_IO_MAX_URL_LENGTH: int = 8000
     MAPBOX_TOKEN: str = "pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bTE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q"
-    MAPBOX_STYLE: str = "mapbox/streets-v11"
+    MAPBOX_STYLE: str = "mapbox/satellite-v9"
     THUMBNAIL_CONTEXT_BUFFER_M: float = 400.0  # extra buffer around analysis geometry (~1000m viewport for point inputs)
 
 
