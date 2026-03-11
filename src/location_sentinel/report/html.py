@@ -621,9 +621,9 @@ _FM: dict[str, dict] = {
     "curvature": dict(
         label="Terrain curvature",
         group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
-        desc="Mean Laplacian curvature of the elevation surface (m&minus;&sup1;). "
-             "Negative = concave (bowl-shaped, collects water); near-zero = planar; "
-             "positive = convex (sheds water). Contributes to flood risk scoring.",
+        desc="Laplacian curvature of the elevation surface at the site center (m&minus;&sup1;). "
+             "Positive = concave (valley/bowl, collects water); near-zero = planar; "
+             "negative = convex (ridge/dome, sheds water). Contributes to flood risk scoring.",
         fmt="curv", signal="context", thr1=-0.0001, thr2=0.0001,
     ),
     "heat_load_index": dict(

@@ -120,10 +120,18 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
         cy, cx = size // 2, size // 2
         tpi_m = float(data[cy, cx] - elev_m)
 
-        # Curvature: mean Laplacian (negative = concave/water-collecting)
+        # Curvature: Laplacian at the center point using a 5×5 kernel.
+        # Sign convention: positive = concave (valley/bowl, collects water);
+        # negative = convex (ridge/dome, sheds water).
+        # A center-point estimate is used rather than the window mean because
+        # the mean dilutes the local signal in narrow valleys: the intense
+        # concavity at the valley floor gets averaged with the surrounding slopes.
         d2z_dy2 = np.gradient(dz_dy, axis=0) / eff_lat_m
         d2z_dx2 = np.gradient(dz_dx, axis=1) / eff_lon_m
-        curvature = float(np.nanmean(d2z_dy2 + d2z_dx2))
+        laplacian = d2z_dy2 + d2z_dx2
+        cy, cx = size // 2, size // 2
+        r = 2  # 5×5 neighbourhood ≈ 50 m × 50 m
+        curvature = float(np.nanmean(laplacian[cy - r:cy + r + 1, cx - r:cx + r + 1]))
 
         # Heat Load Index (solar radiation proxy, 0–~0.8)
         equatorial_dir = 180.0 if lat >= 0 else 0.0

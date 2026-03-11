@@ -239,12 +239,12 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         )
         flood_risk_score = min(100.0, flood_risk_score + tpi_boost)
 
-    # Curvature boost: concave terrain collects water
+    # Curvature boost: concave terrain (positive Laplacian) collects water
     curvature_val = features.get("curvature")
-    if curvature_val is not None and curvature_val < settings.TERRAIN_CURVATURE_THRESHOLD:
+    if curvature_val is not None and curvature_val > settings.TERRAIN_CURVATURE_THRESHOLD:
         curv_boost = min(
             settings.TERRAIN_CURVATURE_MAX_BOOST,
-            -curvature_val * settings.TERRAIN_CURVATURE_SCALE,
+            curvature_val * settings.TERRAIN_CURVATURE_SCALE,
         )
         flood_risk_score = min(100.0, flood_risk_score + curv_boost)
 

@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last update
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.21.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.22.0"
     SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage
@@ -177,7 +177,8 @@ class Settings(BaseSettings):
     TERRAIN_TPI_FLOOD_MAX_BOOST: float = 20.0    # max +20 pts
 
     # Terrain curvature flood boost (concave terrain)
-    TERRAIN_CURVATURE_THRESHOLD: float = -0.0001  # m⁻¹; concavity threshold
+    # Sign convention: positive = concave (valley), negative = convex (ridge)
+    TERRAIN_CURVATURE_THRESHOLD: float = 0.0001   # m⁻¹; concavity threshold (positive)
     TERRAIN_CURVATURE_MAX_BOOST: float = 10.0     # max +10 pts
     TERRAIN_CURVATURE_SCALE: float = 50000.0      # curvature × scale = raw boost (before cap)
 
