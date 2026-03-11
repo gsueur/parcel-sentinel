@@ -23,7 +23,7 @@ async def get_thumbnail(location_key: str):
         return Response(
             content=cached_png,
             media_type="image/png",
-            headers={"Cache-Control": "public, max-age=86400"},
+            headers={"Cache-Control": "no-cache"},
         )
 
     geojson = store.get_geometry(location_key)
