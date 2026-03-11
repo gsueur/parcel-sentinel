@@ -718,6 +718,7 @@ async function refreshAfterJob() {
 // ── RENDER GRID ────────────────────────────────────────────────────────────────
 function renderGrid(gridId, locations, showActions) {
   const grid = document.getElementById(gridId);
+  locations = [...locations].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (!locations.length) {
     grid.innerHTML = showActions
       ? '<p class="state-msg">No locations yet. Add one to get started.</p>'
