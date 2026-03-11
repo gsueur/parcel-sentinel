@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Scientific Methods — Location Sentinel</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --muted: #64748b;
+      --faint: #94a3b8;
+      --accent: #1d4ed8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      padding: 12px 24px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-logo { font-size: 1.05rem; font-weight: 700; color: #0f172a; text-decoration: none; }
+    .header-logo span { color: var(--accent); }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .btn-ghost {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      font-size: 0.8rem; cursor: pointer; padding: 5px 12px;
+      border-radius: 6px; transition: color 0.12s, border-color 0.12s;
+      text-decoration: none; display: inline-block;
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text); }
+
+    /* ── LAYOUT ── */
+    .page {
+      max-width: 900px; margin: 0 auto; padding: 32px 24px 64px;
+      display: grid; grid-template-columns: 220px 1fr; gap: 40px; align-items: start;
+    }
+
+    /* ── SIDEBAR TOC ── */
+    .toc {
+      position: sticky; top: 64px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px;
+      max-height: calc(100vh - 80px); overflow-y: auto;
+    }
+    .toc-title {
+      font-size: 0.72rem; font-weight: 600; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px;
+    }
+    .toc a {
+      display: block; font-size: 0.8rem; color: var(--muted);
+      text-decoration: none; padding: 3px 0;
+      border-left: 2px solid transparent; padding-left: 8px;
+      transition: color 0.1s, border-color 0.1s;
+    }
+    .toc a:hover, .toc a.active { color: var(--accent); border-left-color: var(--accent); }
+    .toc a.toc-h3 { padding-left: 18px; font-size: 0.76rem; }
+
+    /* ── CONTENT ── */
+    .content {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 32px 40px;
+      min-height: 400px;
+    }
+    .content h1 {
+      font-size: 1.5rem; font-weight: 700; color: #0f172a;
+      margin-bottom: 8px; line-height: 1.3;
+    }
+    .content h2 {
+      font-size: 1.1rem; font-weight: 600; color: #0f172a;
+      margin-top: 36px; margin-bottom: 12px;
+      padding-top: 24px; border-top: 1px solid var(--border);
+      scroll-margin-top: 72px;
+    }
+    .content h2:first-of-type { margin-top: 24px; }
+    .content h3 {
+      font-size: 0.95rem; font-weight: 600; color: var(--text);
+      margin-top: 20px; margin-bottom: 8px;
+      scroll-margin-top: 72px;
+    }
+    .content h4 {
+      font-size: 0.88rem; font-weight: 600; color: var(--muted);
+      margin-top: 16px; margin-bottom: 6px;
+    }
+    .content p { line-height: 1.65; margin-bottom: 12px; color: var(--text); }
+    .content ul, .content ol {
+      margin: 8px 0 12px 20px; line-height: 1.65;
+    }
+    .content li { margin-bottom: 4px; }
+    .content code {
+      background: #f1f5f9; border: 1px solid var(--border);
+      border-radius: 3px; padding: 1px 5px;
+      font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82em;
+      color: #0f172a;
+    }
+    .content pre {
+      background: #0f172a; border-radius: 6px; padding: 16px 20px;
+      overflow-x: auto; margin: 14px 0;
+    }
+    .content pre code {
+      background: none; border: none; padding: 0; color: #e2e8f0;
+      font-size: 0.83em; line-height: 1.6;
+    }
+    .content table {
+      width: 100%; border-collapse: collapse; margin: 14px 0;
+      font-size: 0.83rem;
+    }
+    .content th {
+      background: var(--bg); text-align: left;
+      padding: 7px 12px; border: 1px solid var(--border);
+      font-weight: 600; color: var(--muted); font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .content td { padding: 7px 12px; border: 1px solid var(--border); }
+    .content tr:nth-child(even) td { background: #fafafa; }
+    .content strong { font-weight: 600; }
+    .content em { font-style: italic; color: var(--muted); }
+    .content hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+    .content blockquote {
+      border-left: 3px solid var(--accent); padding: 8px 16px;
+      margin: 14px 0; background: #eff6ff; border-radius: 0 4px 4px 0;
+    }
+    .content blockquote p { color: var(--muted); margin-bottom: 0; }
+    .content a { color: var(--accent); text-decoration: none; }
+    .content a:hover { text-decoration: underline; }
+
+    /* meta line below h1 */
+    .content .meta {
+      font-size: 0.8rem; color: var(--muted); margin-bottom: 24px;
+      padding-bottom: 20px; border-bottom: 1px solid var(--border);
+    }
+
+    /* loading / error */
+    .loading { color: var(--muted); font-size: 0.9rem; padding: 40px 0; text-align: center; }
+    .error { color: #dc2626; font-size: 0.85rem; padding: 20px 0; }
+
+    @media (max-width: 720px) {
+      .page { grid-template-columns: 1fr; gap: 20px; }
+      .toc { position: static; max-height: none; }
+      .content { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<div class="header">
+  <a class="header-logo" href="/">Location <span>Sentinel</span></a>
+  <div class="header-right">
+    <a class="btn-ghost" href="/">← Back to app</a>
+  </div>
+</div>
+
+<!-- ── PAGE ── -->
+<div class="page">
+
+  <!-- Sidebar TOC (populated by JS) -->
+  <nav class="toc" id="toc">
+    <div class="toc-title">Contents</div>
+    <div id="toc-links"><span style="color:var(--muted);font-size:0.8rem">Loading...</span></div>
+  </nav>
+
+  <!-- Main content -->
+  <article class="content" id="content">
+    <div class="loading">Loading...</div>
+  </article>
+
+</div>
+
+<script>
+  marked.setOptions({ gfm: true, breaks: false });
+
+  async function load() {
+    const el = document.getElementById('content');
+    try {
+      const res = await fetch('methods.md');
+      if (!res.ok) throw new Error(res.statusText);
+      const md = await res.text();
+      el.innerHTML = marked.parse(md);
+      buildToc();
+      highlightOnScroll();
+    } catch (e) {
+      el.innerHTML = `<div class="error">Failed to load methods.md: ${e.message}</div>`;
+    }
+  }
+
+  function buildToc() {
+    const headings = document.querySelectorAll('#content h2, #content h3');
+    const tocLinks = document.getElementById('toc-links');
+    tocLinks.innerHTML = '';
+    headings.forEach(h => {
+      // ensure id exists
+      if (!h.id) {
+        h.id = h.textContent.toLowerCase()
+          .replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+      }
+      const a = document.createElement('a');
+      a.href = '#' + h.id;
+      a.textContent = h.textContent.replace(/^[\d.]+\s*/, '');  // strip leading "1. "
+      if (h.tagName === 'H3') a.classList.add('toc-h3');
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      tocLinks.appendChild(a);
+    });
+  }
+
+  function highlightOnScroll() {
+    const links = document.querySelectorAll('.toc a');
+    if (!links.length) return;
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          links.forEach(l => l.classList.remove('active'));
+          const active = document.querySelector(`.toc a[href="#${entry.target.id}"]`);
+          if (active) {
+            active.classList.add('active');
+            active.scrollIntoView({ block: 'nearest' });
+          }
+        }
+      });
+    }, { rootMargin: '-10% 0px -80% 0px' });
+    document.querySelectorAll('#content h2, #content h3').forEach(h => observer.observe(h));
+  }
+
+  load();
+</script>
+</body>
+</html>
