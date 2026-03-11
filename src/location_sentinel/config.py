@@ -79,6 +79,16 @@ class Settings(BaseSettings):
     SAR_NDWI_CORROBORATION_THRESHOLD: float = 0.05  # < 5% optical water months → no corroboration
     SAR_NDWI_VETO_FACTOR: float = 0.25              # multiply flood score by this when unconfirmed
 
+    # active_flood corroboration: acute SAR anomaly alone is not sufficient to flag
+    # active_flood -- high-altitude meltwater and coastal specular returns produce
+    # similar anomalies without genuine flooding. Require at least one of:
+    #   - NDWI persistence > MIN_NDWI (optical water history)
+    #   - chronic SAR water freq > MIN_CHRONIC (site is historically wet)
+    #   - anomaly > STRONG_ANOMALY (major event: override corroboration check)
+    SAR_ACTIVE_FLOOD_MIN_NDWI: float = 0.08      # ≥ ~1 month/year optical water
+    SAR_ACTIVE_FLOOD_MIN_CHRONIC: float = 0.10   # ≥ 10% SAR scenes historically wet
+    SAR_ACTIVE_FLOOD_STRONG_ANOMALY: float = 0.35  # very strong anomaly → flag regardless
+
     # Standardized window size for all raster reads
     COG_WINDOW_SIZE: int = 64
     S2_PIXEL_SIZE_M: float = 10.0  # Sentinel-2 native pixel size (m); defines the 640 m analysis footprint
@@ -115,7 +125,7 @@ class Settings(BaseSettings):
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last update
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.23.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.24.0"
     SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage

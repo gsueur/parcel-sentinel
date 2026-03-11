@@ -247,8 +247,19 @@ async def run_features(
     # Active episode flags (drives UI badges on report header and dashboard cards)
     _end_abs = int(date_end[:4]) * 12 + int(date_end[5:7])
 
-    # active_flood: SAR acute anomaly > 10% in recent scenes (sar_flood_anomaly covers last 2 months)
-    features["active_flood"] = 1.0 if (features.get("sar_flood_anomaly") or 0.0) > 0.10 else 0.0
+    # active_flood: SAR acute anomaly > 10%, with corroboration to avoid false positives
+    # from high-altitude meltwater and coastal specular returns.
+    # Corroboration passes when any of the following is true:
+    #   1. NDWI history shows surface water in ≥ 8% of months (optical evidence)
+    #   2. Chronic SAR water freq ≥ 10% (this site is historically flood-prone)
+    #   3. Anomaly is very strong (> 35%) — major event, override corroboration
+    _sar_anom = (features.get("sar_flood_anomaly") or 0.0)
+    _flood_corroborated = (
+        (features.get("ndwi_wetness_persistence_5y") or 0.0) > settings.SAR_ACTIVE_FLOOD_MIN_NDWI
+        or (features.get("sar_water_freq_5y") or 0.0) > settings.SAR_ACTIVE_FLOOD_MIN_CHRONIC
+        or _sar_anom > settings.SAR_ACTIVE_FLOOD_STRONG_ANOMALY
+    )
+    features["active_flood"] = 1.0 if (_sar_anom > 0.10 and _flood_corroborated) else 0.0
 
     # active_fire: any consecutive-confirmed burn month within 3 months of date_end
     features["active_fire"] = 1.0 if burn_months and any(
