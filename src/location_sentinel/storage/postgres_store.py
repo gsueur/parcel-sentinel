@@ -206,6 +206,12 @@ class PostgresStore:
                 ALTER TABLE location_geometries
                     ALTER COLUMN is_public SET DEFAULT FALSE
             """)
+            # created_at: set on first INSERT only, never overwritten on regeneration.
+            # Used for the per-user daily new-location rate limit.
+            cur.execute("""
+                ALTER TABLE location_geometries
+                    ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS scene_bands (
                     location_key VARCHAR NOT NULL,
@@ -641,8 +647,8 @@ class PostgresStore:
             cur.execute(
                 """
                 INSERT INTO location_geometries
-                    (location_key, geojson_text, name, customer_id, climate_code, updated_at, is_public)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (location_key, geojson_text, name, customer_id, climate_code, updated_at, is_public, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (location_key)
                 DO UPDATE SET
                     geojson_text = EXCLUDED.geojson_text,
@@ -652,7 +658,7 @@ class PostgresStore:
                     updated_at   = EXCLUDED.updated_at,
                     is_public    = EXCLUDED.is_public
                 """,
-                [location_key, json.dumps(geojson), name, customer_id, climate_code, now, is_public],
+                [location_key, json.dumps(geojson), name, customer_id, climate_code, now, is_public, now],
             )
 
     def get_geometry(self, location_key: str) -> dict | None:
@@ -798,6 +804,24 @@ class PostgresStore:
         if self._pool is None:
             return []
         return self._locations_query("WHERE pg.customer_id = %s", [customer_id])
+
+    def count_locations_created_today(self, user_id: str) -> int:
+        """Count new locations created by this user since midnight UTC today."""
+        if self._pool is None:
+            return 0
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM location_geometries
+                WHERE customer_id = %s
+                  AND created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')
+                """,
+                [user_id],
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
 
     def delete_location(self, location_key: str) -> dict[str, int]:
         if self._pool is None:

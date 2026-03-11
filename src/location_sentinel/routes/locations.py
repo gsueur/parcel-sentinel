@@ -78,6 +78,19 @@ async def create_location(
     if existing:
         return {"job_id": existing.job_id, "status": existing.status}
 
+    # Daily new-location limit (free plan). Admins and existing locations are exempt.
+    if not user.is_admin and store.get_geometry(stable_key) is None:
+        count_today = store.count_locations_created_today(user.user_id)
+        if count_today >= settings.DAILY_LOCATION_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"You have reached the daily limit of {settings.DAILY_LOCATION_LIMIT} new locations. "
+                    "Your limit resets at midnight UTC. "
+                    "To request a higher limit, contact us at gsueur@geomermaids.com."
+                ),
+            )
+
     job = job_store.create(stable_key)
     asyncio.create_task(_run_location_job(job.job_id, req, stable_key, user.user_id, req.is_public))
     return {"job_id": job.job_id, "status": "pending"}

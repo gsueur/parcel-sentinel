@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     # saturation on a server instance. Previously 8, which serialised too aggressively.
     MAX_CONCURRENT_COG_READS: int = 32
 
+    # Rate limiting
+    DAILY_LOCATION_LIMIT: int = 5  # max new locations per user per UTC day (free plan)
+
     # Cache
     CACHE_TTL_SECONDS: int = 604_800  # 7 days
 
