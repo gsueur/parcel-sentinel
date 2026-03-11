@@ -1043,7 +1043,19 @@ function startBackgroundPoll(jobId) {
       }
     } catch (e) {
       clearInterval(interval);
-      if (statusEl) { statusEl.className = 'card-failed'; statusEl.textContent = `Error: ${e.message}`; }
+      const pendingCard = document.getElementById(`job-${jobId}`);
+      if (e.message === 'HTTP 404') {
+        // Job not found — server restarted during computation.
+        // Try refreshing; the location may have completed before the restart.
+        if (pendingCard) pendingCard.remove();
+        await refreshAfterJob();
+      } else {
+        if (pendingCard) {
+          const thumb = pendingCard.querySelector('.card-thumb-computing');
+          if (thumb) thumb.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
+        }
+        if (statusEl) { statusEl.className = 'card-failed'; statusEl.textContent = `Error: ${e.message}`; }
+      }
     }
   }, 3000);
 }
@@ -1120,9 +1132,14 @@ async function regenerateCard(btn) {
       }
     } catch (e) {
       clearInterval(interval);
-      const computing = card.querySelector('.card-thumb-computing');
-      if (computing) computing.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
-      actionsEl.innerHTML = `<span style="font-size:0.72rem;color:var(--danger)">Failed: ${e.message}</span>`;
+      if (e.message === 'HTTP 404') {
+        // Job gone (server restart) — refresh; computation may have completed.
+        await refreshAfterJob();
+      } else {
+        const computing = card.querySelector('.card-thumb-computing');
+        if (computing) computing.outerHTML = '<div class="card-thumb-placeholder" style="background:rgba(220,38,38,0.08)"></div>';
+        actionsEl.innerHTML = `<span style="font-size:0.72rem;color:var(--danger)">Failed: ${e.message}</span>`;
+      }
     }
   }, 3000);
 }
