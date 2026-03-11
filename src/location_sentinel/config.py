@@ -115,7 +115,7 @@ class Settings(BaseSettings):
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last update
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.22.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.23.0"
     SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage
@@ -139,6 +139,7 @@ class Settings(BaseSettings):
     URBAN_BSI_FREQ_STRONG_THRESHOLD: float = 0.65  # high-confidence impervious signal alone (e.g. tropical cities with vegetation)
     URBAN_NDVI_THRESHOLD: float = 0.25
     URBAN_CANOPY_THRESHOLD: float = 0.25
+    URBAN_MIN_NDVI_THRESHOLD: float = 0.12  # below this = naturally barren (desert, alpine rock); no urban env averages below this over 5y
 
     # Scoring thresholds
     NDVI_ANOMALY_THRESHOLD: float = 0.1

@@ -25,6 +25,15 @@ def detect_urban(features: dict[str, float | None]) -> bool:
     if bsi_freq is None:
         return False
 
+    # Guard: near-zero 5-year mean NDVI means the site is naturally barren
+    # (desert, alpine rock, bare soil), not urban impervious. Every urban
+    # environment has enough mixed vegetation (street trees, verges, parks)
+    # to keep the 640m window mean above ~0.12. Below that threshold the
+    # high BSI frequency reflects an absence of vegetation, not impervious
+    # surfaces, and both detection paths must be suppressed.
+    if ndvi is not None and ndvi < settings.URBAN_MIN_NDVI_THRESHOLD:
+        return False
+
     # Path 1: overwhelmingly impervious signal regardless of vegetation mix
     if bsi_freq > settings.URBAN_BSI_FREQ_STRONG_THRESHOLD:
         return True
