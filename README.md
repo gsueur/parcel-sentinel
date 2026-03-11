@@ -417,7 +417,7 @@ Long-term features computed from the full date window (default 5 years):
 | `nearest_tidal_station_km` | Distance in km to the nearest NOAA tidal station, or null if none within radius |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
-| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` (acute SAR water anomaly in last ~2 months) |
+| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated: NDWI persistence > 0.08 OR chronic SAR freq > 0.10 OR anomaly > 0.35 (strong-event override); corroboration prevents high-altitude meltwater and coastal specular returns from triggering false flood alerts |
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
 | `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%); median baseline (not mean) makes the climatology robust to exceptional wet or dry years |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
@@ -460,7 +460,9 @@ Each month is compared to its monthly climatology (mean for that calendar month 
 
 ### Urban detection
 
-Two-path OR logic:
+Barren terrain guard applied first: if `ndvi_mean_5y < 0.12` (`URBAN_MIN_NDVI_THRESHOLD`), the site is naturally barren (alpine rock, desert, bare soil) and both paths are suppressed. Every urban environment maintains enough mixed vegetation in a 640 m window to keep the 5-year NDVI mean above 0.12; values below this indicate an absence of vegetation rather than impervious surfaces.
+
+Two-path OR logic (after guard):
 1. `bsi_bare_soil_freq_5y > 0.65` alone (catches tropical cities with high year-round vegetation that still have impervious surfaces)
 2. `bsi_bare_soil_freq_5y > 0.50` AND `ndvi_mean_5y < 0.25` AND low/absent canopy (dense temperate urban)
 
@@ -929,7 +931,10 @@ All settings are environment variables. Defaults work out of the box.
 | `SAR_MIN_ANOMALY_FRACTION` | `0.05` | Floor on adaptive threshold (prevents noise at low-baseline orbits) |
 | `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | `2` | Min calendar-consecutive anomalous months to count as genuine chronic flood (suppresses single-pass noise) |
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | `0.05` | Optical water persistence below which SAR chronic flood score is discounted (no NDWI corroboration) |
-| `SAR_NDWI_VETO_FACTOR` | `0.25` | Multiplier applied to chronic flood score when NDWI corroboration is absent (does not affect acute anomaly) |
+| `SAR_NDWI_VETO_FACTOR` | `0.25` | Multiplier applied to chronic flood score when NDWI corroboration is absent |
+| `SAR_ACTIVE_FLOOD_MIN_NDWI` | `0.08` | `active_flood` corroboration: minimum NDWI persistence (optical water history) |
+| `SAR_ACTIVE_FLOOD_MIN_CHRONIC` | `0.10` | `active_flood` corroboration: minimum chronic SAR water frequency |
+| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | `0.35` | `active_flood` strong-anomaly override: flag regardless of corroboration |
 | `SAR_MAX_SCENES_PER_MONTH` | `2` | Max SAR scenes per month |
 | `SAR_MAX_TOTAL_SCENES` | `120` | Hard cap on total SAR scenes |
 

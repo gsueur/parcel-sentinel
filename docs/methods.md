@@ -410,9 +410,21 @@ Three binary features (0.0 / 1.0) indicate whether a climate episode is ongoing 
 
 ```
 active_flood = 1.0  iff  sar_flood_anomaly > 0.10
+              AND  at least one corroboration condition is true:
+                     ndwi_wetness_persistence_5y > SAR_ACTIVE_FLOOD_MIN_NDWI (0.08)
+                     OR sar_water_freq_5y > SAR_ACTIVE_FLOOD_MIN_CHRONIC (0.10)
+                     OR sar_flood_anomaly > SAR_ACTIVE_FLOOD_STRONG_ANOMALY (0.35)
 ```
 
 `sar_flood_anomaly` already covers only the most recent two calendar months of SAR scenes (see §8.6). A value above 10% means SAR water fraction is elevated by at least 10 percentage points above the orbit-stratified seasonal baseline in at least one recent pass.
+
+**Corroboration requirement:** A SAR anomaly alone is not sufficient to trigger the flag. High-altitude sites with seasonal snowmelt and arid sites where meltwater briefly pools produce anomalies in the 10--25% range that are spectrally indistinguishable from genuine flooding by amplitude alone. Corroboration passes when any of the following is true:
+
+1. **NDWI optical history** (`ndwi_wetness_persistence_5y > 0.08`): surface water appeared in optical data in at least ~1 month per year over the full window, confirming the site has a genuine water history.
+2. **Chronic SAR water presence** (`sar_water_freq_5y > 0.10`): at least 10% of historical SAR scenes showed elevated water fraction, confirming the site is flood-prone.
+3. **Very strong anomaly** (`sar_flood_anomaly > 0.35`): a major event override -- catastrophic inundation, burst levees, or large-scale storm surge produces anomalies well above 35% regardless of background conditions.
+
+Sites that fail all three checks (typically: high-altitude rocky terrain, arid barren land, or coastal specular surfaces) are not flagged as actively flooded even when the anomaly threshold is met.
 
 **`active_fire`**
 
@@ -632,7 +644,14 @@ pdsi_drought_freq_5y = count(PDSI_monthly < -2.0) / count(valid months)
 
 ## 10. Urban detection
 
-Urban classification is determined by a two-path OR logic gate applied to the optical features:
+Urban classification is determined by a two-path OR logic gate applied to the optical features, preceded by a barren-terrain guard:
+
+**Barren terrain guard (applied before both paths):**
+```
+if ndvi_mean_5y < URBAN_MIN_NDVI_THRESHOLD (0.12):
+    is_urban = False  (naturally barren -- desert, alpine rock, bare soil)
+```
+Near-zero 5-year mean NDVI indicates an absence of vegetation, not the presence of impervious surfaces. Every urban environment -- including those in arid climates with irrigated street trees and parks -- maintains enough mixed vegetation in a 640 m window to keep the 5-year mean above 0.12. Values below this threshold reliably indicate naturally barren terrain such as high-altitude rocky plateaus, desert reg, or exposed scree, where high BSI frequency reflects bare mineral substrate rather than concrete or asphalt. Both detection paths are suppressed when this guard fires.
 
 **Path 1 (strong BSI signal alone):**
 ```
@@ -1073,7 +1092,10 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_MIN_ANOMALY_FRACTION` | 0.05 | Floor on adaptive threshold (prevents noise at low-baseline orbits) |
 | `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | 2 | Minimum calendar-consecutive anomalous months to count for the chronic MAD-based frequency |
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
-| `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent (does not affect acute anomaly) |
+| `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent |
+| `SAR_ACTIVE_FLOOD_MIN_NDWI` | 0.08 | `active_flood` corroboration: minimum NDWI persistence (optical water history) |
+| `SAR_ACTIVE_FLOOD_MIN_CHRONIC` | 0.10 | `active_flood` corroboration: minimum chronic SAR water frequency |
+| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag regardless of corroboration |
 
 ### Elevation parameters (Copernicus GLO-30)
 
@@ -1114,6 +1136,7 @@ All thresholds are configurable via environment variables. Defaults are listed b
 
 | Parameter | Default | Path |
 |-----------|---------|------|
+| `URBAN_MIN_NDVI_THRESHOLD` | 0.12 | Guard: below this NDVI the site is naturally barren; both paths suppressed |
 | `URBAN_BSI_FREQ_STRONG_THRESHOLD` | 0.65 | Path 1 (strong signal alone) |
 | `URBAN_BSI_FREQ_THRESHOLD` | 0.50 | Path 2 (combined) |
 | `URBAN_NDVI_THRESHOLD` | 0.25 | Path 2 |
