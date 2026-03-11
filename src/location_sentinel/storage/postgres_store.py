@@ -212,6 +212,19 @@ class PostgresStore:
                 ALTER TABLE location_geometries
                     ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             """)
+            # Jobs table: persisted so all uvicorn workers share state.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS jobs (
+                    job_id VARCHAR PRIMARY KEY,
+                    location_key VARCHAR NOT NULL,
+                    status VARCHAR NOT NULL DEFAULT 'pending',
+                    name VARCHAR,
+                    report_url VARCHAR,
+                    error TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS scene_bands (
                     location_key VARCHAR NOT NULL,
@@ -822,6 +835,75 @@ class PostgresStore:
             )
             row = cur.fetchone()
             return int(row[0]) if row else 0
+
+    # ------------------------------------------------------------------
+    # Job persistence (shared across all uvicorn workers via DB)
+    # ------------------------------------------------------------------
+
+    def create_job(self, job_id: str, location_key: str) -> None:
+        if self._pool is None:
+            return
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO jobs (job_id, location_key) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                [job_id, location_key],
+            )
+
+    def get_job(self, job_id: str) -> dict | None:
+        if self._pool is None:
+            return None
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT job_id, location_key, status, name, report_url, error, created_at, updated_at"
+                " FROM jobs WHERE job_id = %s",
+                [job_id],
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "job_id": row[0], "location_key": row[1], "status": row[2],
+            "name": row[3], "report_url": row[4], "error": row[5],
+            "created_at": row[6].isoformat() if row[6] else None,
+            "updated_at": row[7].isoformat() if row[7] else None,
+        }
+
+    def update_job(self, job_id: str, **kwargs) -> None:
+        if self._pool is None:
+            return
+        allowed = {"status", "name", "report_url", "error"}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if not updates:
+            return
+        updates["updated_at"] = datetime.now(timezone.utc)
+        cols = ", ".join(f"{k} = %s" for k in updates)
+        vals = list(updates.values()) + [job_id]
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(f"UPDATE jobs SET {cols} WHERE job_id = %s", vals)
+
+    def find_active_job(self, location_key: str) -> dict | None:
+        if self._pool is None:
+            return None
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT job_id, location_key, status, name, report_url, error, created_at, updated_at"
+                " FROM jobs WHERE location_key = %s AND status IN ('pending', 'running')"
+                " ORDER BY created_at DESC LIMIT 1",
+                [location_key],
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "job_id": row[0], "location_key": row[1], "status": row[2],
+            "name": row[3], "report_url": row[4], "error": row[5],
+            "created_at": row[6].isoformat() if row[6] else None,
+            "updated_at": row[7].isoformat() if row[7] else None,
+        }
 
     def delete_location(self, location_key: str) -> dict[str, int]:
         if self._pool is None:
