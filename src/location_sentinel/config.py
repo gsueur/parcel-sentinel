@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     # Scene selection
     MAX_SCENES_PER_MONTH: int = 2
     MAX_TOTAL_SCENES: int = 120
+    # Maximum items fetched from STAC per search. Must be large enough to cover
+    # the full date range regardless of scene density (MPC returns newest-first
+    # by default, so a low cap silently drops older months). At 10 scenes/month
+    # over 5 years = 600 scenes; 2000 gives comfortable headroom.
+    STAC_MAX_ITEMS: int = 2000
 
     # Geometry limits
     MAX_PARCEL_AREA_SQM: float = 5_000_000.0  # 500 ha

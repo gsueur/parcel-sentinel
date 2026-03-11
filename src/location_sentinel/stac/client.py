@@ -54,14 +54,14 @@ def search_scenes(
 
     logger.info(
         "STAC search bbox=%s datetime=%s/%s max_items=%d",
-        bbox, date_start, date_end, max_total_scenes * 3,
+        bbox, date_start, date_end, settings.STAC_MAX_ITEMS,
     )
     search = catalog.search(
         collections=[collection],
         intersects=geojson,
         datetime=f"{date_start}/{date_end}",
-        max_items=max_total_scenes * 3,  # fetch extra for per-month selection
-        query={"eo:cloud_cover": {"lt": 80}},  # skip scenes that will almost certainly fail SCL threshold
+        max_items=settings.STAC_MAX_ITEMS,
+        query={"eo:cloud_cover": {"lt": 80}},
     )
 
     items = list(search.items())
