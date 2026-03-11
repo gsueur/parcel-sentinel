@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import settings
@@ -80,6 +81,9 @@ def _is_browser(request: Request) -> bool:
     return any(token in ua for token in ("Mozilla", "Chrome", "Safari", "Opera", "Edg"))
 
 
+_STATIC = Path(__file__).parent / "static"
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Location Sentinel Analytics API",
@@ -102,6 +106,15 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        return FileResponse(_STATIC / "favicon.ico", media_type="image/x-icon")
+
+    @app.get("/apple-touch-icon.png", include_in_schema=False)
+    @app.get("/apple-touch-icon-precomposed.png", include_in_schema=False)
+    async def apple_touch_icon():
+        return FileResponse(_STATIC / "apple-touch-icon.png", media_type="image/png")
 
     app.include_router(health.router, prefix="/v1")
     app.include_router(auth.router, prefix="/v1")
