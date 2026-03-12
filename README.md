@@ -417,7 +417,7 @@ Long-term features computed from the full date window (default 5 years):
 | `nearest_tidal_station_km` | Distance in km to the nearest NOAA tidal station, or null if none within radius |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
-| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated: NDWI persistence > 0.08 OR chronic SAR freq > 0.10 OR anomaly > 0.35 (strong-event override); corroboration prevents high-altitude meltwater and coastal specular returns from triggering false flood alerts |
+| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated by independent evidence: NDWI persistence > 0.08 (optical water history) OR anomaly > 0.35 (strong-event override); chronic SAR freq (`sar_water_freq_5y`) is excluded from corroboration to avoid circular reasoning when both acute and chronic signals share the same look-angle artifact (single orbit on snow/rock slope) |
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
 | `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%); median baseline (not mean) makes the climatology robust to exceptional wet or dry years |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
@@ -932,8 +932,7 @@ All settings are environment variables. Defaults work out of the box.
 | `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | `2` | Min calendar-consecutive anomalous months to count as genuine chronic flood (suppresses single-pass noise) |
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | `0.05` | Optical water persistence below which SAR chronic flood score is discounted (no NDWI corroboration) |
 | `SAR_NDWI_VETO_FACTOR` | `0.25` | Multiplier applied to chronic flood score when NDWI corroboration is absent |
-| `SAR_ACTIVE_FLOOD_MIN_NDWI` | `0.08` | `active_flood` corroboration: minimum NDWI persistence (optical water history) |
-| `SAR_ACTIVE_FLOOD_MIN_CHRONIC` | `0.10` | `active_flood` corroboration: minimum chronic SAR water frequency |
+| `SAR_ACTIVE_FLOOD_MIN_NDWI` | `0.08` | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
 | `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | `0.35` | `active_flood` strong-anomaly override: flag regardless of corroboration |
 | `SAR_MAX_SCENES_PER_MONTH` | `2` | Max SAR scenes per month |
 | `SAR_MAX_TOTAL_SCENES` | `120` | Hard cap on total SAR scenes |

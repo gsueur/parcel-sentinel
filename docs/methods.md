@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.22.0` / scoring `risk-v1.14.0`
+**Version:** processing `s2l2a-v1.25.0` / scoring `risk-v1.14.0`
 **Date:** 2026-03-11
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -412,19 +412,19 @@ Three binary features (0.0 / 1.0) indicate whether a climate episode is ongoing 
 active_flood = 1.0  iff  sar_flood_anomaly > 0.10
               AND  at least one corroboration condition is true:
                      ndwi_wetness_persistence_5y > SAR_ACTIVE_FLOOD_MIN_NDWI (0.08)
-                     OR sar_water_freq_5y > SAR_ACTIVE_FLOOD_MIN_CHRONIC (0.10)
                      OR sar_flood_anomaly > SAR_ACTIVE_FLOOD_STRONG_ANOMALY (0.35)
 ```
 
 `sar_flood_anomaly` already covers only the most recent two calendar months of SAR scenes (see §8.6). A value above 10% means SAR water fraction is elevated by at least 10 percentage points above the orbit-stratified seasonal baseline in at least one recent pass.
 
-**Corroboration requirement:** A SAR anomaly alone is not sufficient to trigger the flag. High-altitude sites with seasonal snowmelt and arid sites where meltwater briefly pools produce anomalies in the 10--25% range that are spectrally indistinguishable from genuine flooding by amplitude alone. Corroboration passes when any of the following is true:
+**Corroboration requirement:** A SAR anomaly alone is not sufficient to trigger the flag. SAR backscatter depends heavily on look angle: a single orbit viewing a snow-covered or rocky slope at the right incidence angle produces low-backscatter returns indistinguishable from open water. If both the acute anomaly and the chronic water frequency are driven by the same orbit artifact, using one to corroborate the other is circular. Corroboration therefore requires independent evidence:
 
-1. **NDWI optical history** (`ndwi_wetness_persistence_5y > 0.08`): surface water appeared in optical data in at least ~1 month per year over the full window, confirming the site has a genuine water history.
-2. **Chronic SAR water presence** (`sar_water_freq_5y > 0.10`): at least 10% of historical SAR scenes showed elevated water fraction, confirming the site is flood-prone.
-3. **Very strong anomaly** (`sar_flood_anomaly > 0.35`): a major event override -- catastrophic inundation, burst levees, or large-scale storm surge produces anomalies well above 35% regardless of background conditions.
+1. **NDWI optical history** (`ndwi_wetness_persistence_5y > 0.08`): surface water appeared in optical data in at least ~1 month per year over the full window. Optical and SAR artifacts are uncorrelated, so this is a genuinely independent signal.
+2. **Very strong anomaly** (`sar_flood_anomaly > 0.35`): a major event override -- catastrophic inundation, burst levees, or large-scale storm surge produces anomalies well above 35% regardless of background conditions.
 
-Sites that fail all three checks (typically: high-altitude rocky terrain, arid barren land, or coastal specular surfaces) are not flagged as actively flooded even when the anomaly threshold is met.
+`sar_water_freq_5y` is intentionally excluded from this list: in mountain valleys and arid terrain with relief, a single orbit consistently records low backscatter from the same slope geometry. That chronic signal then appears to corroborate the acute anomaly when both share the same artifact source.
+
+Sites that fail both checks (typically: mountain valley terrain where one SAR orbit sees a snow/rock slope, high-altitude rocky terrain, or arid barren land) are not flagged as actively flooded even when the anomaly threshold is met.
 
 **`active_fire`**
 
@@ -1093,8 +1093,7 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | 2 | Minimum calendar-consecutive anomalous months to count for the chronic MAD-based frequency |
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
 | `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent |
-| `SAR_ACTIVE_FLOOD_MIN_NDWI` | 0.08 | `active_flood` corroboration: minimum NDWI persistence (optical water history) |
-| `SAR_ACTIVE_FLOOD_MIN_CHRONIC` | 0.10 | `active_flood` corroboration: minimum chronic SAR water frequency |
+| `SAR_ACTIVE_FLOOD_MIN_NDWI` | 0.08 | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
 | `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag regardless of corroboration |
 
 ### Elevation parameters (Copernicus GLO-30)

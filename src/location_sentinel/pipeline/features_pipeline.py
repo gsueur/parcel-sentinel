@@ -247,16 +247,16 @@ async def run_features(
     # Active episode flags (drives UI badges on report header and dashboard cards)
     _end_abs = int(date_end[:4]) * 12 + int(date_end[5:7])
 
-    # active_flood: SAR acute anomaly > 10%, with corroboration to avoid false positives
-    # from high-altitude meltwater and coastal specular returns.
-    # Corroboration passes when any of the following is true:
-    #   1. NDWI history shows surface water in ≥ 8% of months (optical evidence)
-    #   2. Chronic SAR water freq ≥ 10% (this site is historically flood-prone)
-    #   3. Anomaly is very strong (> 35%) — major event, override corroboration
+    # active_flood: SAR acute anomaly > 10%, with optical or strong-anomaly corroboration.
+    # Corroboration requires independent evidence to avoid SAR-slope artifacts (single orbit
+    # hitting snow/rock at a look angle that mimics water):
+    #   1. NDWI history shows surface water in >= 8% of months (optical evidence)
+    #   2. Anomaly is very strong (> 35%) -- major event, override corroboration
+    # SAR chronic (sar_water_freq) is intentionally NOT used: it can share the same
+    # look-angle artifact as the acute signal, making it circular corroboration.
     _sar_anom = (features.get("sar_flood_anomaly") or 0.0)
     _flood_corroborated = (
         (features.get("ndwi_wetness_persistence_5y") or 0.0) > settings.SAR_ACTIVE_FLOOD_MIN_NDWI
-        or (features.get("sar_water_freq_5y") or 0.0) > settings.SAR_ACTIVE_FLOOD_MIN_CHRONIC
         or _sar_anom > settings.SAR_ACTIVE_FLOOD_STRONG_ANOMALY
     )
     features["active_flood"] = 1.0 if (_sar_anom > 0.10 and _flood_corroborated) else 0.0
