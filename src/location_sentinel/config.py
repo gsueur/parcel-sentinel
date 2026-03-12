@@ -131,7 +131,7 @@ class Settings(BaseSettings):
 
     # Versions
     PROCESSING_VERSION: str = "s2l2a-v1.27.0"
-    SCORE_VERSION: str = "risk-v1.16.0"
+    SCORE_VERSION: str = "risk-v1.17.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers
     ACTIVE_FLOOD_BOOST: float = 1.40
@@ -139,11 +139,15 @@ class Settings(BaseSettings):
     ACTIVE_FIRE_BOOST: float = 1.25
 
     # Trend-aware scoring -- Part B: 1y vs 5y momentum amplifiers / dampeners
-    # Worsening: ratio 2.0 → +10%, ratio 5.0 → +30% (cap)
-    # Improving: ratio 0.5 → -5%, ratio 0.0 → -10% (damp cap, asymmetric to avoid over-suppression)
-    MOMENTUM_AMP_MAX: float = 0.30    # cap on fractional amplitude boost (= +30%)
-    MOMENTUM_AMP_SCALE: float = 0.10  # (ratio - 1.0) * scale = raw amp fraction
+    # Progressive worsening: ratio 2.0 → +12%, ratio 3.0 → +36%, ratio ≥ 4.2 → +50% (cap)
+    # (rate doubles above 2× to reflect accelerating risk)
+    # Improving: ratio 0.5 → -6%, ratio 0.0 → -12% (damp cap, asymmetric vs amp cap)
+    MOMENTUM_AMP_MAX: float = 0.50    # cap on fractional amplitude boost (= +50%)
+    MOMENTUM_AMP_SCALE: float = 0.12  # base rate per unit of excess ratio; doubles above 2×
     MOMENTUM_DAMP_MAX: float = 0.20   # cap on fractional dampening (= -20%)
+    # When any relevant momentum ratio exceeds this threshold, recent trajectory
+    # dominates and improving-slope mitigations are suppressed for that sub-score.
+    MOMENTUM_PRIORITY_THRESHOLD: float = 1.5
 
     # Trend-aware scoring -- Part C: Theil-Sen slope sub-components
     NDWI_TREND_WET_MIN: float = 0.02      # NDWI slope (index/yr) → 100 pts wetness

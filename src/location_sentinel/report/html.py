@@ -493,6 +493,15 @@ _FM: dict[str, dict] = {
              "Low or negative values indicate sustained fire damage or bare mineral soil.",
         fmt="float3", signal="high_good", thr1=0.1, thr2=0.3,
     ),
+    "nbr_momentum_ratio_1y": dict(
+        label="Fire momentum (1y vs 5y)",
+        group="Fire History", group_color="#f97316", group_index="NBR",
+        desc="Ratio of burn-anomaly frequency in the last 12 months to the 5-year baseline "
+             "(anomaly = NBR drops &gt;0.15 below seasonal climatology). "
+             "1.0 = unchanged &bull; &gt;1 = recent fire activity accelerating &bull; &lt;1 = quieter year. "
+             "Amplifies the fire exposure score progressively (rate doubles above 2&times;). Capped at 5&times;.",
+        fmt="ratio", signal="low_good", thr1=1.0, thr2=2.0,
+    ),
     "nbr_burn_freq_5y": dict(
         label="Burn signal frequency",
         group="Fire History", group_color="#f97316", group_index="NBR",

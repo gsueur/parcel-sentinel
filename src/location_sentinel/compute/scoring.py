@@ -170,23 +170,31 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             hli_amp = 1.0 + min(settings.TERRAIN_HLI_AMP_MAX, hli * settings.TERRAIN_HLI_FACTOR)
             drought_score = min(100.0, drought_score * hli_amp)
 
-        # Improving-slope mitigation: positive NDMI/PDSI trend → reduce drought score
-        # (in addition to the dilution already present in the weighted average when component = 0)
-        if ndmi_trend is not None and ndmi_trend > 0:
-            mitig = min(0.15, (ndmi_trend / abs(settings.NDMI_TREND_STRESS_MAX)) * 0.20)
-            drought_score = max(0.0, drought_score * (1.0 - mitig))
-        if pdsi_trend is not None and pdsi_trend > 0:
-            mitig = min(0.15, (pdsi_trend / abs(settings.PDSI_TREND_DROUGHT_MAX)) * 0.20)
-            drought_score = max(0.0, drought_score * (1.0 - mitig))
+        # Improving-slope mitigation: positive NDMI/PDSI trend → reduce drought score.
+        # Suppressed when any worsening momentum ratio exceeds the priority threshold --
+        # the recent trajectory then dominates over the long-term slope signal.
+        drought_momentums = [
+            features.get(k) for k in ("ndvi_momentum_ratio_1y", "ndmi_momentum_ratio_1y", "pdsi_momentum_ratio_1y")
+        ]
+        max_drought_momentum = max((m for m in drought_momentums if m is not None), default=0.0)
+        momentum_dominates = max_drought_momentum >= settings.MOMENTUM_PRIORITY_THRESHOLD
+        if not momentum_dominates:
+            if ndmi_trend is not None and ndmi_trend > 0:
+                mitig = min(0.15, (ndmi_trend / abs(settings.NDMI_TREND_STRESS_MAX)) * 0.20)
+                drought_score = max(0.0, drought_score * (1.0 - mitig))
+            if pdsi_trend is not None and pdsi_trend > 0:
+                mitig = min(0.15, (pdsi_trend / abs(settings.PDSI_TREND_DROUGHT_MAX)) * 0.20)
+                drought_score = max(0.0, drought_score * (1.0 - mitig))
 
-        # Part B: momentum amplifiers / dampeners (worsening OR improving trajectory)
-        for momentum_key in ("ndvi_momentum_ratio_1y", "ndmi_momentum_ratio_1y", "pdsi_momentum_ratio_1y"):
-            momentum = features.get(momentum_key)
+        # Part B: momentum amplifiers / dampeners (worsening OR improving trajectory).
+        # Progressive amplification: rate doubles above 2× to reflect accelerating risk.
+        for momentum in drought_momentums:
             if momentum is None:
                 continue
             if momentum > 1.0:
-                amp = 1.0 + min(settings.MOMENTUM_AMP_MAX, (momentum - 1.0) * settings.MOMENTUM_AMP_SCALE)
-                drought_score = min(100.0, drought_score * amp)
+                excess = momentum - 1.0
+                raw = excess * settings.MOMENTUM_AMP_SCALE + max(0.0, excess - 1.0) * settings.MOMENTUM_AMP_SCALE
+                drought_score = min(100.0, drought_score * (1.0 + min(settings.MOMENTUM_AMP_MAX, raw)))
             elif 0.0 < momentum < 1.0:
                 damp = 1.0 - min(settings.MOMENTUM_DAMP_MAX, (1.0 - momentum) * settings.MOMENTUM_AMP_SCALE)
                 drought_score = max(0.0, drought_score * damp)
@@ -231,6 +239,12 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         fire_exposure_score = min(100.0, nbr_burn_freq * 350)
         if nbr_burn_freq > 0.05:
             factors.append({"name": "nbr_burn_freq_5y", "direction": "positive", "weight": 0.20})
+        # Part B: fire momentum amplifier (recent burn acceleration vs 5y baseline)
+        nbr_momentum = features.get("nbr_momentum_ratio_1y")
+        if nbr_momentum is not None and nbr_momentum > 1.0:
+            excess = nbr_momentum - 1.0
+            raw = excess * settings.MOMENTUM_AMP_SCALE + max(0.0, excess - 1.0) * settings.MOMENTUM_AMP_SCALE
+            fire_exposure_score = min(100.0, fire_exposure_score * (1.0 + min(settings.MOMENTUM_AMP_MAX, raw)))
         # Part A: active episode boost (urban guard already handled above)
         if features.get("active_fire"):
             fire_exposure_score = min(100.0, fire_exposure_score * settings.ACTIVE_FIRE_BOOST)
@@ -366,12 +380,13 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             mitig = min(0.15, (-vpd_trend / settings.VPD_TREND_HIGH_MIN) * 0.15)
             heat_stress_score = max(0.0, heat_stress_score * (1.0 - mitig))
 
-        # Part B: tmax momentum amplifier / dampener
+        # Part B: tmax momentum amplifier / dampener (progressive above 2×)
         tmax_momentum = features.get("tmax_momentum_ratio_1y")
         if tmax_momentum is not None:
             if tmax_momentum > 1.0:
-                hs_amp = 1.0 + min(settings.MOMENTUM_AMP_MAX, (tmax_momentum - 1.0) * settings.MOMENTUM_AMP_SCALE)
-                heat_stress_score = min(100.0, heat_stress_score * hs_amp)
+                excess = tmax_momentum - 1.0
+                raw = excess * settings.MOMENTUM_AMP_SCALE + max(0.0, excess - 1.0) * settings.MOMENTUM_AMP_SCALE
+                heat_stress_score = min(100.0, heat_stress_score * (1.0 + min(settings.MOMENTUM_AMP_MAX, raw)))
             elif 0.0 < tmax_momentum < 1.0:
                 hs_damp = 1.0 - min(settings.MOMENTUM_DAMP_MAX, (1.0 - tmax_momentum) * settings.MOMENTUM_AMP_SCALE)
                 heat_stress_score = max(0.0, heat_stress_score * hs_damp)

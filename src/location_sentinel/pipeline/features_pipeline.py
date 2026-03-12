@@ -127,6 +127,9 @@ async def run_features(
             threshold=settings.NBR_ANOMALY_THRESHOLD,
             min_consecutive=settings.NBR_MIN_CONSECUTIVE,
         )
+        features["nbr_momentum_ratio_1y"] = compute_recent_anomaly_ratio(
+            nbr_records, date_end, threshold=settings.NBR_ANOMALY_THRESHOLD, direction="below"
+        )
 
     # NDSI features -- snow cover persistence
     ndsi_records = series.get("ndsi", [])

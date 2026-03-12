@@ -63,6 +63,17 @@ class TestScoring:
         result = compute_scores(features)
         assert result.fire_exposure_score == 100
 
+    def test_fire_momentum_boosts_fire_score(self):
+        base = {"nbr_burn_freq_5y": 0.10}
+        r_no_momentum = compute_scores(base)
+        r_momentum = compute_scores({**base, "nbr_momentum_ratio_1y": 2.5})
+        assert r_momentum.fire_exposure_score > r_no_momentum.fire_exposure_score
+
+    def test_fire_momentum_suppressed_for_urban(self):
+        features = {"is_urban": 1.0, "nbr_burn_freq_5y": 0.10, "nbr_momentum_ratio_1y": 3.0}
+        result = compute_scores(features)
+        assert result.fire_exposure_score == 0
+
     def test_no_nbr_data_defaults_zero(self):
         # When NBR is missing, fire exposure should default to 0
         features = {"ndvi_mean_5y": 0.5}
@@ -302,6 +313,28 @@ class TestScoring:
         assert r_drying.drought_score > r_flat.drought_score
 
     # --- Mitigation tests (improving conditions reduce scores) ---
+
+    def test_progressive_momentum_stronger_than_linear(self):
+        # At ratio 3×, progressive formula gives more boost than at ratio 2×
+        base = {"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25}
+        r_2x = compute_scores({**base, "ndvi_momentum_ratio_1y": 2.0})
+        r_3x = compute_scores({**base, "ndvi_momentum_ratio_1y": 3.0})
+        delta_2x = r_2x.drought_score - compute_scores(base).drought_score
+        delta_3x = r_3x.drought_score - compute_scores(base).drought_score
+        # 3× should contribute more than 2× of the 2× boost (progressive, not linear)
+        assert delta_3x > delta_2x * 2
+
+    def test_high_momentum_suppresses_slope_mitigation(self):
+        # Positive PDSI trend would normally reduce drought; high momentum should prevent it
+        base = {"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25, "pdsi_drought_freq_5y": 0.20}
+        r_slope_only = compute_scores({**base, "pdsi_trend_slope_5y": 0.4})  # improving slope
+        r_momentum_high = compute_scores({
+            **base, "pdsi_trend_slope_5y": 0.4,
+            "ndvi_momentum_ratio_1y": 2.0,  # >= MOMENTUM_PRIORITY_THRESHOLD (1.5)
+        })
+        # With high momentum, the improving slope mitigation should be suppressed,
+        # so drought is higher (or equal) compared to slope-only case
+        assert r_momentum_high.drought_score >= r_slope_only.drought_score
 
     def test_positive_ndmi_trend_reduces_drought(self):
         base = {"ndvi_mean_5y": 0.3, "ndmi_moisture_stress_freq_5y": 0.40}
