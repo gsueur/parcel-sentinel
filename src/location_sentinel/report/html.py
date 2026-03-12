@@ -1705,7 +1705,7 @@ def build_report_html(
 <div class="header">
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px">
     <h1>{display_name}</h1>
-    <a href="https://climate.geomermaids.com" style="text-decoration:none;display:flex;align-items:center;padding:4px 12px;border:1px solid #d6e0de;border-radius:5px;white-space:nowrap" target="_blank" rel="noopener">
+    <a href="https://climate-dashboard.geomermaids.com" style="text-decoration:none;display:flex;align-items:center;padding:4px 12px;border:1px solid #d6e0de;border-radius:5px;white-space:nowrap" target="_blank" rel="noopener">
       <span class="report-logo"><span class="kli">Kli</span><span class="mex">mex</span><span class="dot">&middot;</span></span>
     </a>
   </div>

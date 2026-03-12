@@ -3,37 +3,46 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Location Sentinel</title>
+  <title>Klimex — Climate Risk Intelligence</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
   <link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     :root {
-      --bg: #f1f5f9;
+      --bg: #f0f4f3;
       --surface: #ffffff;
-      --border: #e2e8f0;
-      --text: #1e293b;
-      --muted: #64748b;
-      --faint: #94a3b8;
-      --accent: #1d4ed8;
-      --danger: #dc2626;
-      --success: #16a34a;
+      --border: #d6e0de;
+      --text: #0d1f1c;
+      --muted: #4a6962;
+      --faint: #8aada7;
+      --accent: #0d6e5e;
+      --accent-light: #e6f4f1;
+      --accent-glow: rgba(13,110,94,0.15);
+      --danger: #c0392b;
+      --success: #0d6e5e;
+      --hero-bg: #071a17;
+      --hero-mid: #0d2e28;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
       background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh;
     }
     .hidden { display: none !important; }
 
-    /* ── HEADER ── */
     .header {
       padding: 12px 24px; border-bottom: 1px solid var(--border);
       background: var(--surface);
       display: flex; align-items: center; justify-content: space-between;
       position: sticky; top: 0; z-index: 100;
     }
-    .header-logo { font-size: 1.05rem; font-weight: 700; color: #0f172a; }
-    .header-logo span { color: var(--accent); }
+    .header-logo {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 1.2rem; font-weight: 700; color: #071a17; letter-spacing: 0;
+    }
+    .header-logo .kli { color: var(--accent); }
+    .header-logo .mex { color: #071a17; }
+    .header-logo .dot { color: var(--accent); font-size: 0.6em; vertical-align: super; margin-left: 1px; }
     .header-right { display: flex; align-items: center; gap: 10px; }
     .user-chip {
       font-size: 0.78rem; color: var(--muted);
@@ -80,7 +89,7 @@
       display: flex; align-items: center; justify-content: space-between;
       margin-bottom: 16px;
     }
-    .section-title { font-size: 0.8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .section-title { font-size: 0.72rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; font-family: 'DM Mono', monospace; }
     #loc-count { color: var(--muted); font-size: 0.8rem; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
     .card {
@@ -101,7 +110,7 @@
       border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite;
     }
     .card-body { padding: 11px 14px; }
-    .card-name { font-weight: 600; color: #0f172a; font-size: 0.9rem; }
+    .card-name { font-family: 'Fraunces', Georgia, serif; font-weight: 600; color: #071a17; font-size: 0.92rem; letter-spacing: 0; }
     .card-meta { font-size: 0.75rem; color: var(--muted); margin-top: 3px; }
     .card-key { font-size: 0.65rem; color: var(--faint); margin-top: 4px; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .card-computing { font-size: 0.75rem; color: var(--accent); margin-top: 3px; }
@@ -138,10 +147,10 @@
       font-size: 0.67rem; font-weight: 600; letter-spacing: 0.01em;
       border-radius: 3px; padding: 1px 6px; white-space: nowrap;
     }
-    .score-pill.good     { background: #16a34a18; color: #16a34a; border: 1px solid #16a34a44; }
+    .score-pill.good     { background: #0d6e5e18; color: #0d6e5e; border: 1px solid #0d6e5e44; }
     .score-pill.mid      { background: #d9770618; color: #d97706; border: 1px solid #d9770644; }
     .score-pill.elevated { background: #ea580c18; color: #ea580c; border: 1px solid #ea580c44; }
-    .score-pill.poor     { background: #dc262618; color: #dc2626; border: 1px solid #dc262644; }
+    .score-pill.poor     { background: #c0392b18; color: #c0392b; border: 1px solid #c0392b44; }
     .state-msg { color: var(--faint); padding: 48px 0; text-align: center; font-style: italic; }
     .card-link { display: block; text-decoration: none; color: inherit; }
     .card-link:hover .card-name { color: var(--accent); }
@@ -189,7 +198,7 @@
       padding: 14px 18px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
     }
-    .modal-header h2 { font-size: 0.95rem; font-weight: 600; color: #0f172a; }
+    .modal-header h2 { font-family: 'Fraunces', Georgia, serif; font-size: 0.95rem; font-weight: 700; color: #071a17; letter-spacing: -0.01em; }
     .close-btn { background: none; border: none; color: var(--faint); font-size: 1.3rem; cursor: pointer; padding: 0 4px; line-height: 1; }
     .close-btn:hover { color: var(--text); }
     .modal-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
@@ -276,61 +285,129 @@
     .header-divider {
       width: 1px; height: 20px; background: var(--border); flex-shrink: 0;
     }
-    .header-product { font-size: 0.95rem; font-weight: 700; color: #0f172a; white-space: nowrap; }
-    .header-product span { color: var(--accent); }
+    .header-product {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 1.1rem; font-weight: 700; color: #071a17; white-space: nowrap; letter-spacing: 0;
+    }
+    .header-product .kli { color: var(--accent); }
     .header-nav { display: flex; align-items: center; gap: 6px; }
 
     /* ── HERO ── */
     .hero {
-      background: #0f172a;
-      padding: 72px 24px 80px;
+      background: var(--hero-bg);
+      background-image:
+        radial-gradient(ellipse 80% 60% at 60% 0%, rgba(13,110,94,0.22) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 40% at 10% 100%, rgba(13,110,94,0.12) 0%, transparent 60%);
+      padding: 80px 24px 90px;
       text-align: center;
+      position: relative;
+      overflow: hidden;
     }
-    .hero-inner { max-width: 720px; margin: 0 auto; }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background-image: repeating-linear-gradient(
+        0deg, transparent, transparent 39px, rgba(13,110,94,0.06) 39px, rgba(13,110,94,0.06) 40px
+      ),
+      repeating-linear-gradient(
+        90deg, transparent, transparent 39px, rgba(13,110,94,0.06) 39px, rgba(13,110,94,0.06) 40px
+      );
+      pointer-events: none;
+    }
+    .hero-inner { max-width: 720px; margin: 0 auto; position: relative; }
     .hero-eyebrow {
-      display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.1em;
-      text-transform: uppercase; color: #60a5fa; margin-bottom: 20px;
+      display: inline-block; font-size: 0.68rem; font-weight: 500; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #4ecdb5; margin-bottom: 22px;
+      font-family: 'DM Mono', monospace;
+      border: 1px solid rgba(78,205,181,0.3); border-radius: 20px; padding: 3px 12px;
     }
     .hero h1 {
-      font-size: clamp(1.6rem, 4vw, 2.4rem); font-weight: 700; color: #f8fafc;
-      line-height: 1.2; margin-bottom: 18px;
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: clamp(1.8rem, 5vw, 3rem); font-weight: 600; color: #e8f5f2;
+      line-height: 1.15; margin-bottom: 20px; letter-spacing: -0.01em;
     }
+    .hero h1 em { font-style: normal; color: #4ecdb5; }
     .hero-sub {
-      font-size: 1rem; color: #94a3b8; line-height: 1.7;
-      max-width: 600px; margin: 0 auto 32px;
+      font-size: 1rem; color: #7aada5; line-height: 1.75;
+      max-width: 580px; margin: 0 auto 36px; font-weight: 300;
     }
     .hero-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
     .hero-actions .btn {
-      padding: 10px 24px; font-size: 0.9rem;
+      padding: 11px 28px; font-size: 0.9rem; font-family: 'DM Sans', sans-serif;
     }
-    .btn-hero-primary { background: var(--accent); color: #fff; }
+    .btn-hero-primary { background: var(--accent); color: #fff; box-shadow: 0 0 24px rgba(13,110,94,0.4); }
+    .btn-hero-primary:hover:not(:disabled) { opacity: 1 !important; background: #0a5a4c; box-shadow: 0 0 32px rgba(13,110,94,0.5); }
     .btn-hero-secondary {
-      background: transparent; color: #cbd5e1;
-      border: 1px solid #334155;
+      background: transparent; color: #9ac5be;
+      border: 1px solid rgba(154,197,190,0.3);
     }
-    .btn-hero-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.06); opacity: 1; }
+    .btn-hero-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.05); opacity: 1; border-color: rgba(154,197,190,0.6); }
 
     /* ── FEATURES ── */
     .features {
       background: var(--surface); border-bottom: 1px solid var(--border);
-      padding: 40px 24px;
+      padding: 44px 24px;
     }
     .features-inner { max-width: 1100px; margin: 0 auto; }
     .features-title {
-      font-size: 0.72rem; font-weight: 600; color: var(--faint);
-      text-transform: uppercase; letter-spacing: 0.1em;
+      font-size: 0.68rem; font-weight: 500; color: var(--faint);
+      text-transform: uppercase; letter-spacing: 0.12em;
       text-align: center; margin-bottom: 28px;
+      font-family: 'DM Mono', monospace;
     }
     .features-grid {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;
     }
     .feature-card {
-      border: 1px solid var(--border); border-radius: 8px; padding: 20px 22px;
-      background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; padding: 22px 24px;
+      background: var(--bg); transition: border-color 0.15s, box-shadow 0.15s;
     }
+    .feature-card:hover { border-color: var(--accent); box-shadow: 0 2px 12px var(--accent-glow); }
     .feature-icon { font-size: 1.4rem; margin-bottom: 10px; }
-    .feature-card h3 { font-size: 0.88rem; font-weight: 600; color: #0f172a; margin-bottom: 6px; }
-    .feature-card p { font-size: 0.8rem; color: var(--muted); line-height: 1.6; }
+    .feature-card h3 {
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 0.95rem; font-weight: 600; color: #071a17; margin-bottom: 6px; letter-spacing: 0;
+    }
+    .feature-card p { font-size: 0.8rem; color: var(--muted); line-height: 1.65; font-weight: 300; }
+
+    /* ── HOW WE ANALYZE ── */
+    .how-section {
+      background: var(--bg); border-bottom: 1px solid var(--border);
+      padding: 44px 24px;
+    }
+    .how-inner { max-width: 1100px; margin: 0 auto; }
+    .how-grid { display: flex; flex-direction: column; gap: 0; }
+    .how-row {
+      display: grid; grid-template-columns: 200px 1fr; gap: 0;
+      border-top: 1px solid var(--border); padding: 20px 0;
+      align-items: start;
+    }
+    .how-row:last-child { border-bottom: 1px solid var(--border); }
+    .how-source {
+      display: flex; flex-direction: column; gap: 5px;
+      padding-right: 24px; padding-top: 2px;
+    }
+    .how-badge {
+      display: inline-block;
+      font-family: 'Fraunces', Georgia, serif; font-size: 0.78rem; font-weight: 700;
+      color: var(--accent); letter-spacing: -0.01em;
+    }
+    .how-spec {
+      font-family: 'DM Mono', monospace; font-size: 0.65rem;
+      color: var(--faint); line-height: 1.4;
+    }
+    .how-detail p {
+      font-size: 0.8rem; color: var(--muted); line-height: 1.7; font-weight: 300;
+    }
+    .mono {
+      font-family: 'DM Mono', monospace; font-size: 0.75em;
+      color: var(--accent); background: var(--accent-light);
+      border-radius: 3px; padding: 1px 5px;
+    }
+    @media (max-width: 600px) {
+      .how-row { grid-template-columns: 1fr; gap: 8px; }
+      .how-source { padding-right: 0; }
+    }
 
     /* ── LOCATIONS SECTION WRAPPER ── */
     .locations-section { padding-top: 8px; }
@@ -340,7 +417,8 @@
       display: flex; align-items: baseline; justify-content: space-between;
     }
     .locations-section-title {
-      font-size: 1rem; font-weight: 600; color: #0f172a;
+      font-family: 'Fraunces', Georgia, serif;
+      font-size: 1rem; font-weight: 700; color: #071a17; letter-spacing: -0.01em;
     }
 
     /* ── FOOTER ── */
@@ -402,9 +480,7 @@
 <!-- ── HEADER ──────────────────────────────────────────────────────────────── -->
 <div class="header">
   <a class="header-brand" href="/">
-    <img src="geomermaid_logo.png" class="header-logo-img" alt="Geomermaids">
-    <div class="header-divider"></div>
-    <span class="header-product">Location <span>Sentinel</span></span>
+    <span class="header-product"><span class="kli">Kli</span>mex</span>
   </a>
   <div class="header-right">
     
@@ -425,16 +501,16 @@
 <!-- ── HERO ─────────────────────────────────────────────────────────────────── -->
 <section class="hero" id="hero">
   <div class="hero-inner">
-    <span class="hero-eyebrow">By Geomermaids</span>
-    <h1>Climate risk intelligence for any location on Earth.</h1>
+    <span class="hero-eyebrow">No data team required</span>
+    <h1>Climate risk scores for<br><em>any coordinate on Earth.</em></h1>
     <p class="hero-sub">
-      Location Sentinel fuses Sentinel-2 optical imagery, Sentinel-1 SAR radar, and 30 years of
-      TerraClimate reanalysis data to assess flood exposure, fire history, drought stress, and heat
-      risk at any coordinate. One analysis. One report. Zero fieldwork.
+      Drop a pin. Get flood exposure, fire history, drought stress, and heat risk —
+      derived from satellite imagery and 30 years of climate data.
+      Instant results. No GIS skills needed.
     </p>
     <div class="hero-actions">
       <button class="btn btn-hero-primary" onclick="openAuthModal('register')">Get started free</button>
-      <a href="#locations" class="btn btn-hero-secondary" style="text-decoration:none">Explore locations</a>
+      <a href="#locations" class="btn btn-hero-secondary" style="text-decoration:none">See example reports</a>
     </div>
   </div>
 </section>
@@ -446,19 +522,79 @@
     <div class="features-grid">
       <div class="feature-card">
         <div class="feature-icon">&#x1F6F0;</div>
-        <h3>Sentinel-2 optical (10 m)</h3>
-        <p>Monthly composites processed to NDVI, NDWI, NBR, NDMI, and BSI. Drought stress trends, canopy cover, fire episode detection, and urban classification -- all from 5 years of cloud-free imagery.</p>
+        <h3>Vegetation &amp; fire history</h3>
+        <p>5 years of cloud-free satellite passes reveal drought stress trends, canopy loss, fire episode detection, and urban heat signatures — at 10 m resolution, globally.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">&#x1F4E1;</div>
-        <h3>Sentinel-1 SAR flood detection</h3>
-        <p>C-band radar sees through clouds and at night. Water fraction per scene, chronic inundation frequency, and anomaly-based acute flood event detection -- orbit-stratified and snow-suppressed.</p>
+        <h3>Flood exposure, rain or shine</h3>
+        <p>Radar sees through clouds and at night. Klimex detects chronic inundation and acute flood events at your exact coordinates — not from a flood map drawn in 1996.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">&#x1F321;</div>
-        <h3>TerraClimate reanalysis (4 km)</h3>
-        <p>30 years of gridded monthly data: maximum temperature trends, precipitation anomalies, vapor pressure deficit, and PDSI drought index. Long-term climate context, not just recent imagery.</p>
+        <h3>30 years of climate context</h3>
+        <p>Temperature trends, precipitation anomalies, vapor pressure deficit, and drought index. Long-term baselines that put today's risk in historical perspective.</p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW WE ANALYZE ────────────────────────────────────────────────────────── -->
+<section class="how-section" id="how-section">
+  <div class="how-inner">
+    <p class="features-title">How we analyze</p>
+    <div class="how-grid">
+
+      <div class="how-row">
+        <div class="how-source">
+          <span class="how-badge">Sentinel-2 L2A</span>
+          <span class="how-spec">10 m · 5-day revisit · optical</span>
+        </div>
+        <div class="how-detail">
+          <p>Monthly best-scene composites over a 5-year window. Seven bands read from public COG assets on AWS, masked for cloud and snow via the Scene Classification Layer. Six spectral indices computed per scene: <span class="mono">NDVI · NDWI · NDMI · NBR · NDSI · BSI</span>. Aggregated to long-term features: vegetation trend, canopy proxy, fire episode detection, bare soil frequency, and surface water persistence.</p>
+        </div>
+      </div>
+
+      <div class="how-row">
+        <div class="how-source">
+          <span class="how-badge">Sentinel-1 GRD</span>
+          <span class="how-spec">20 m · 6-day revisit · C-band SAR</span>
+        </div>
+        <div class="how-detail">
+          <p>VV polarization backscatter read from IW GRD scenes. Water pixels identified by DN threshold calibrated to the sentinel-s1-l1c archive. Flood events detected via an orbit-stratified adaptive threshold (MAD). Snow and steep terrain excluded from water fraction computation. Outputs: chronic inundation frequency, acute flood event count, active flood flag.</p>
+        </div>
+      </div>
+
+      <div class="how-row">
+        <div class="how-source">
+          <span class="how-badge">TerraClimate</span>
+          <span class="how-spec">4 km · monthly · 30-year reanalysis</span>
+        </div>
+        <div class="how-detail">
+          <p>Point extraction via OPeNDAP from the University of Idaho THREDDS server. Five variables: <span class="mono">tmax · tmin · ppt · vpd · PDSI</span>. Derived features: maximum temperature trend and anomaly, annual precipitation, high-VPD frequency, and drought month frequency. Grid-cell results cached in DuckDB and shared across nearby queries.</p>
+        </div>
+      </div>
+
+      <div class="how-row">
+        <div class="how-source">
+          <span class="how-badge">Copernicus GLO-30</span>
+          <span class="how-spec">30 m · global DEM · terrain</span>
+        </div>
+        <div class="how-detail">
+          <p>Elevation, slope, and terrain relief extracted from the public Copernicus 30 m DEM on S3. Slope used to mask steep pixels from SAR flood detection. Elevation range used in risk scoring as a topographic flood modifier.</p>
+        </div>
+      </div>
+
+      <div class="how-row">
+        <div class="how-source">
+          <span class="how-badge">Risk scoring</span>
+          <span class="how-spec">Köppen-weighted · 6 dimensions</span>
+        </div>
+        <div class="how-detail">
+          <p>All derived features are merged and scored across six climate risk dimensions: <span class="mono">drought · wetness · fire · heat mitigation · flood · heat stress</span>. Weights are climate-zone-specific via Köppen classification — a Mediterranean site and a tropical site are not scored the same way. Urban locations receive a canopy-deficit-weighted composite.</p>
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
@@ -501,9 +637,8 @@
 
 <!-- ── FOOTER ────────────────────────────────────────────────────────────────── -->
 <footer class="footer">
-  <img src="geomermaid_logo.png" class="footer-logo" alt="Geomermaids">
   <span class="footer-text">
-    &copy; 2026 <a href="https://geomermaids.com" target="_blank" rel="noopener">Geomermaids</a>
+    &copy; 2026 <strong style="font-family:'Fraunces',Georgia,serif;color:var(--accent);font-weight:700">Klimex</strong>
     &middot; <a href="/methods.html">Scientific methods</a>
   </span>
 </footer>
@@ -609,6 +744,7 @@ function updateHeaderState() {
   const tabMine  = document.getElementById('tab-mine');
   const hero     = document.getElementById('hero');
   const features = document.getElementById('features');
+  const howSec   = document.getElementById('how-section');
 
   if (user) {
     anonEl.classList.add('hidden');
@@ -618,12 +754,14 @@ function updateHeaderState() {
     document.getElementById('user-chip').textContent = user.email || user.name || user.user_id;
     if (hero) hero.classList.add('hidden');
     if (features) features.classList.add('hidden');
+    if (howSec) howSec.classList.add('hidden');
   } else {
     anonEl.classList.remove('hidden');
     authEl.classList.add('hidden');
     tabMine.classList.add('hidden');
     if (hero) hero.classList.remove('hidden');
     if (features) features.classList.remove('hidden');
+    if (howSec) howSec.classList.remove('hidden');
     // If currently on mine tab, switch to public
     if (activeTab === 'mine') switchMainTab('public');
   }
