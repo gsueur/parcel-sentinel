@@ -34,9 +34,9 @@ Given a point or polygon geometry, this service:
 - All four pipelines run concurrently; results are merged before scoring
 - For each selected S2 scene: reads 64x64 native pixels (640m footprint) for 7 bands, masks bad pixels via SCL, computes six spectral indices
 - For each selected S1 scene: reads 64x64 pixels of VV backscatter, applies a DN threshold to detect water
-- Aggregates to monthly statistics and derives long-term features (optical, SAR, and climate)
-- Scores the location across six climate risk dimensions using climate-zone-specific weights (via Köppen classification)
-- Persists all results in DuckDB; returns JSON and renders an HTML report with charts
+- Aggregates to monthly statistics and derives long-term features (optical, SAR, and climate) including trend slopes and 1y momentum ratios
+- Scores the location across six climate risk dimensions using climate-zone-specific weights (via Köppen classification); trend-aware multipliers reflect active episodes and trajectory
+- Persists all results in PostgreSQL; returns JSON and renders an HTML report with charts
 
 Typical cold-start time (5-year window): 15-40 seconds. Cached results return instantly.
 
@@ -93,8 +93,8 @@ POST /v1/locations (geometry + options)
   Urban branch: 60% canopy deficit + 15% wetness + 15% flood + 10% heat stress
         |
         v
-  DuckDB persistence (features, timeseries, scores, band arrays, SAR arrays,
-                      TerraClimate monthly cache)
+  PostgreSQL persistence (features, timeseries, scores, band arrays, SAR arrays,
+                         TerraClimate monthly cache)
         |
         v
   JSON response + HTML report (optical charts + SAR chart + climate charts)
@@ -220,7 +220,7 @@ Variables fetched:
 
 Grid cell coordinates are snapped to the nearest 1/24° center before querying. The DuckDB `terraclimate_monthly` table acts as a persistent grid-cell-keyed cache: a cell is fetched once and reused for all locations that fall within it. Cold-start addition per new grid cell: 2-4 seconds (25 concurrent OPeNDAP requests).
 
-**Pre-warm script:** `scripts/prefetch_terraclimate.py --all-locations` iterates all stored locations and pre-fills the cache.
+Grid cell centre coordinates are snapped to the nearest 1/24° before querying. The PostgreSQL `terraclimate_monthly` table acts as a persistent grid-cell-keyed cache: a cell is fetched once and reused for all locations within it.
 
 ---
 
@@ -404,24 +404,27 @@ Long-term features computed from the full date window (default 5 years):
 | `ndvi_mean_5y` | Mean NDVI across all valid observations |
 | `ndvi_trend_slope_5y` | Theil-Sen slope, NDVI units/year (negative = declining) |
 | `ndvi_anomaly_freq_5y` | Fraction of months > 0.1 NDVI below that month's historical mean |
+| `ndvi_momentum_ratio_1y` | Ratio of anomaly frequency in the last 12 months vs. 5y baseline; > 1.0 = worsening trend |
 | `ndwi_wetness_persistence_5y` | Fraction of months with NDWI > 0 (surface water present) |
+| `ndwi_trend_slope_5y` | Theil-Sen slope of NDWI, index units/year (positive = wetter trend) |
 | `ndmi_mean_5y` | Mean NDMI over the period |
 | `ndmi_moisture_stress_freq_5y` | Fraction of months with NDMI < 0 (vegetation moisture stress) |
+| `ndmi_trend_slope_5y` | Theil-Sen slope of NDMI, index units/year (negative = moisture stress trend) |
+| `ndmi_momentum_ratio_1y` | Ratio of NDMI anomaly frequency in the last 12 months vs. 5y baseline |
 | `nbr_mean_5y` | Mean NBR over the period |
 | `nbr_burn_freq_5y` | Fraction of months where NBR drops anomalously below the site's seasonal climatology (anomaly-based, requires ≥ NBR_MIN_CONSECUTIVE consecutive months) |
 | `ndsi_snow_persistence_5y` | Fraction of months with NDSI > 0.4 (snow covered) |
 | `bsi_mean_5y` | Mean BSI over the period |
 | `bsi_bare_soil_freq_5y` | Fraction of months with BSI > 0 (bare soil exposed) |
-| `canopy_proxy_50m` | Peak growing-season NDVI mean within 50m; season window is Köppen + hemisphere aware |
-| `canopy_proxy_200m` | Peak growing-season NDVI mean within 200m; season window is Köppen + hemisphere aware |
+| `canopy_proxy` | Peak growing-season NDVI; season window is Köppen + hemisphere aware |
 | `is_urban` | 1.0 if location classified as urban/impervious, 0.0 otherwise |
 | `is_tidal_zone` | 1.0 if a NOAA tidal station is within `TIDAL_ZONE_RADIUS_KM` (30 km), 0.0 otherwise |
 | `nearest_tidal_station_km` | Distance in km to the nearest NOAA tidal station, or null if none within radius |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
-| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated by independent evidence: NDWI persistence > 0.08 (optical water history) OR anomaly > 0.35 (strong-event override); chronic SAR freq (`sar_water_freq_5y`) is excluded from corroboration to avoid circular reasoning when both acute and chronic signals share the same look-angle artifact (single orbit on snow/rock slope) |
-| `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end` |
-| `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median climatology by > 0.1; suppressed for snow months (NDSI > 0.4), tidal zone sites (NOAA station within 30 km), and persistently wet non-tidal sites (SAR water freq > 70% or NDWI persistence > 30%); median baseline (not mean) makes the climatology robust to exceptional wet or dry years |
+| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated by independent evidence: NDWI persistence > 0.08 OR anomaly > 0.35; triggers a 1.40× boost to `flood_risk_score` |
+| `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end`; triggers a 1.25× boost to `fire_exposure_score` (non-urban only) |
+| `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median by > 0.1; suppressed for snow months, tidal zones, and persistently wet sites; triggers a 1.30× boost to `drought_score` (non-urban only) |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
 | `elevation_m` | Mean terrain elevation of the 640m footprint (metres, WGS84 ellipsoidal) -- Copernicus GLO-30 |
 | `elevation_min_m` | Minimum elevation within the footprint |
@@ -430,7 +433,7 @@ Long-term features computed from the full date window (default 5 years):
 | `slope_deg` | Mean slope angle in degrees across the footprint |
 | `aspect_deg` | Circular mean downslope direction in degrees (0=N, 90=E, 180=S, 270=W), clockwise |
 | `tpi_m` | Topographic Position Index: center pixel elevation minus window mean (positive=ridge, negative=valley) |
-| `curvature` | Laplacian of the elevation surface (m⁻¹) estimated from a 5×5-pixel kernel (~50 m) at the site center; **positive = concave** (valley/bowl, water-collecting); **negative = convex** (ridge/dome, fast drainage) |
+| `curvature` | Laplacian of the elevation surface (m⁻¹); positive = concave (valley/bowl, water-collecting); negative = convex (ridge/dome) |
 | `heat_load_index` | Solar radiation proxy [0-~0.8]; maximum for south-facing steep slopes in the Northern Hemisphere |
 
 ### TerraClimate-derived features
@@ -444,11 +447,15 @@ Derived from the monthly TerraClimate series for the location's date window:
 | `tmax_summer_mean_5y` | Mean tmax during growing-season months (Köppen + hemisphere aware) |
 | `tmax_anomaly_freq_5y` | Fraction of months where tmax > monthly mean + 1σ |
 | `tmax_trend_slope_5y` | Theil-Sen slope of tmax, °C/year |
+| `tmax_momentum_ratio_1y` | Ratio of tmax anomaly frequency in the last 12 months vs. 5y baseline; amplifies `heat_stress_score` |
 | `ppt_annual_mean_5y` | Mean annual precipitation (mm) |
 | `vpd_mean_5y` | Mean vapor pressure deficit (kPa) |
 | `vpd_high_freq_5y` | Fraction of months with VPD > 1.5 kPa |
+| `vpd_trend_slope_5y` | Theil-Sen slope of VPD, kPa/year (rising = increasing atmospheric stress) |
 | `pdsi_mean_5y` | Mean PDSI (negative = drought, < -2 = moderate drought) |
 | `pdsi_drought_freq_5y` | Fraction of months with PDSI < -2 |
+| `pdsi_trend_slope_5y` | Theil-Sen slope of PDSI, units/year (negative = worsening drought trend) |
+| `pdsi_momentum_ratio_1y` | Ratio of PDSI drought frequency in the last 12 months vs. 5y baseline; amplifies `drought_score` |
 
 If TerraClimate data is unavailable (fetch failure), the `no_terraclimate_data` flag is set and `heat_stress_score` defaults to 50.
 
@@ -483,17 +490,23 @@ Six sub-scores and a composite, all integers in [0, 100].
 
 ### Drought score
 
-Weighted combination of optical and TerraClimate signals:
+Weighted combination of optical and TerraClimate signals (weights renormalized when components are absent):
 
-| Component | Weight | Mapping |
-|-----------|--------|---------|
+| Component | Nominal weight | Mapping |
+|-----------|---------------|---------|
 | NDVI anomaly frequency | 20% | [0-1] → [0-100] |
 | NDVI trend slope | 20% | [-0.05, +0.05] yr → [100, 0] |
 | NDVI mean | 15% | [0, 0.8] → [100, 0] |
 | NDMI moisture stress frequency | 20% | [0-1] → [0-100] |
 | PDSI drought frequency | 25% | [0-1] → [0-100] |
+| NDMI trend slope (v1.27) | 15% | [+0.05, -0.05] yr → [0, 100] |
+| PDSI trend slope (v1.27) | 15% | [0, -0.5] yr → [0, 100] |
 
-Suppressed to 0 for urban locations (impervious surfaces have no drought signal). PDSI component defaults to 50 if TerraClimate data is unavailable.
+Terrain amplifiers applied after weighted average (non-urban): slope > 10° adds up to +20%; south-facing (HLI) adds up to +25%.
+
+Then, if available (non-urban), momentum amplifiers: for each of `ndvi_momentum_ratio_1y`, `ndmi_momentum_ratio_1y`, `pdsi_momentum_ratio_1y` where ratio > 1.0, the score is multiplied by `1 + min(0.30, (ratio - 1.0) × 0.10)`. Ratios cap at 5.0; max per-metric amplification = +30%.
+
+Finally (non-urban), if `active_drought = 1`: score is multiplied by `ACTIVE_DROUGHT_BOOST` (1.30). Suppressed to 0 for urban locations.
 
 ### Wetness score
 
@@ -501,65 +514,63 @@ Suppressed to 0 for urban locations (impervious surfaces have no drought signal)
 wetness_score = ndwi_wetness_persistence_5y * 100
 ```
 
+If `ndwi_trend_slope_5y > 0`: wetness_score is blended as `0.85 × persistence_score + 0.15 × trend_score`, where `trend_score = min(100, trend / NDWI_TREND_WET_MIN × 100)`.
+
 ### Fire exposure score
 
 ```
 fire_exposure_score = min(100, nbr_burn_freq_5y * 350)
 ```
 
-`nbr_burn_freq_5y` is anomaly-based: it counts only months where NBR drops more than 0.15 units below the site's own seasonal climatology, in runs of at least `NBR_MIN_CONSECUTIVE` (default 3) calendar-consecutive months. This removes seasonal patterns (Mediterranean dry season, dormant prairie, harvested cropland) that produce persistently low absolute NBR without being fire-related. Only abrupt departures from the site's own seasonal norm are counted.
-
-Suppressed to 0 for urban locations (NBR false-positives on impervious surfaces).
+`nbr_burn_freq_5y` is anomaly-based: counts only months where NBR drops more than 0.15 units below the site's own seasonal climatology, in runs of at least `NBR_MIN_CONSECUTIVE` (default 3) calendar-consecutive months. If `active_fire = 1` (non-urban, NBR data present), score is multiplied by `ACTIVE_FIRE_BOOST` (1.25). Suppressed to 0 for urban locations.
 
 ### Heat mitigation score
 
 ```
-heat_mitigation_score = canopy_proxy_200m / 0.8 * 100
+heat_mitigation_score = canopy_proxy / 0.8 * 100
 ```
 
-Higher canopy = more shade = lower heat risk. This score is **inverted** in the composite (high mitigation = lower composite contribution).
+Higher canopy = more shade = lower heat risk. Inverted in the composite (high mitigation = lower composite contribution).
 
 ### Terrain scoring modifiers
 
 Three terrain-derived modifiers adjust component scores when GLO-30 DEM data is available:
 
-**HLI drought and heat amplifier:** When `heat_load_index > TERRAIN_HLI_THRESHOLD` (0.05), both `drought_score` and `heat_stress_score` are amplified by up to `TERRAIN_HLI_AMP_MAX` (+25%). South-facing steep slopes in the Northern Hemisphere receive maximum insolation, accelerating soil moisture loss and heat accumulation.
+**HLI drought and heat amplifier:** When `heat_load_index > 0.05`, both `drought_score` and `heat_stress_score` are amplified by up to +25%. South-facing steep slopes receive more insolation.
 
-**TPI flood boost:** When `tpi_m < TERRAIN_TPI_FLOOD_THRESHOLD` (−5.0 m), `flood_risk_score` is boosted by up to `TERRAIN_TPI_FLOOD_MAX_BOOST` (20 pts). Valley floors collect runoff from surrounding slopes and are systematically more flood-prone than the surrounding landscape.
+**TPI flood boost:** When `tpi_m < -5.0 m`, `flood_risk_score` is boosted by up to 20 pts. Valley floors collect runoff from surrounding terrain.
 
-**Curvature flood boost:** When `curvature > TERRAIN_CURVATURE_THRESHOLD` (+0.0001 m⁻¹, i.e. the site is concave), `flood_risk_score` receives an additional boost of up to `TERRAIN_CURVATURE_MAX_BOOST` (10 pts). Concave terrain (valley floors, bowls) concentrates overland flow and increases ponding likelihood.
+**Curvature flood boost:** When `curvature > +0.0001 m⁻¹` (concave terrain), `flood_risk_score` receives an additional boost of up to 10 pts.
 
 ---
 
 ### Flood risk score
 
 ```
-flood_risk_score = max(sar_water_freq_5y, sar_flood_anomaly) * 100
-```
-
-**NDWI optical cross-validation veto:** if the S2 optical `ndwi_wetness_persistence_5y` is below 5% (less than one-in-twenty observed months shows surface water) but the SAR chronic score is elevated, the two sensors contradict each other. Likely causes: coastal specular C-band backscatter from ocean swell, airport runways, or flat smooth rooftops -- all produce chronically low VV returns that mimic water but are invisible in optical NDWI. In this case the chronic component is multiplied by `SAR_NDWI_VETO_FACTOR = 0.25`.
-
-The veto is **not** applied to `sar_flood_anomaly` (the acute component). A normally-dry site showing a sudden SAR water spike is the strongest possible episodic flood signal; vetoing it would suppress genuine flood detections at agricultural floodplains that are optically dry in normal years.
-
-```
 chronic_score = sar_water_freq_5y * 100
 if ndwi_wetness_persistence_5y < 0.05:
-    chronic_score *= 0.25  # veto applies only to chronic
+    chronic_score *= 0.25  # NDWI veto applies only to chronic component
 acute_score = sar_flood_anomaly * 100
-flood_risk_score = max(chronic_score, acute_score)
+terrain_flash_score = f(elevation_m, slope_deg)
+flood_risk_score = max(chronic_score, acute_score, terrain_flash_score * 0.5)
 ```
+
+After terrain boosts (TPI, curvature), if `active_flood = 1`: score is multiplied by `ACTIVE_FLOOD_BOOST` (1.40), capped at 100.
+
+**NDWI veto:** When `ndwi_wetness_persistence_5y < 5%` but SAR chronic is elevated, chronic component is discounted by 0.75. Not applied to the acute anomaly component.
 
 ### Heat stress score
 
-Derived from TerraClimate temperature and vapor pressure deficit:
+Weighted combination of TerraClimate components (renormalized when absent):
 
-```
-heat_stress_score = 0.40 * tmax_anomaly_freq_5y * 100
-                  + 0.30 * clamp(tmax_trend_slope_5y / 0.05 * 100, 0, 100)
-                  + 0.30 * vpd_high_freq_5y * 100
-```
+| Component | Nominal weight | Mapping |
+|-----------|---------------|---------|
+| tmax anomaly frequency | 40% | [0-1] → [0-100] |
+| tmax warming trend | 30% | [0, 0.05 °C/yr] → [0, 100] |
+| VPD high frequency | 30% | [0-1] → [0-100] |
+| VPD trend slope (v1.27) | 20% | [0, 0.05 kPa/yr] → [0, 100] |
 
-Defaults to 50 if TerraClimate data is unavailable.
+Then, if `tmax_momentum_ratio_1y > 1.0`: score is multiplied by `1 + min(0.30, (ratio - 1.0) × 0.10)`. HLI amplifier applied after (up to +25%). Defaults to 50 if TerraClimate unavailable.
 
 ### Composite score
 

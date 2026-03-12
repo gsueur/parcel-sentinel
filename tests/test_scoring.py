@@ -58,10 +58,10 @@ class TestScoring:
     def test_fire_exposure(self):
         features = {
             "ndvi_mean_5y": 0.4,
-            "nbr_burn_freq_5y": 0.3,   # 30% of months show burn signal
+            "nbr_burn_freq_5y": 0.3,   # 30% of months show burn signal → 0.3*350=105 → capped at 100
         }
         result = compute_scores(features)
-        assert result.fire_exposure_score == 30
+        assert result.fire_exposure_score == 100
 
     def test_no_nbr_data_defaults_zero(self):
         # When NBR is missing, fire exposure should default to 0
@@ -206,6 +206,118 @@ class TestScoring:
     def test_climate_profile_in_result(self):
         result = compute_scores({"ndvi_mean_5y": 0.5}, climate_code="Dfa")
         assert result.climate_profile == "Continental / Boreal"
+
+    # --- Trend-aware scoring tests (Part A: active boosts) ---
+
+    def test_active_flood_boosts_flood_score(self):
+        base = {"sar_water_freq_5y": 0.30, "ndwi_wetness_persistence_5y": 0.10}
+        r_no_flag = compute_scores({**base, "active_flood": 0.0})
+        r_active = compute_scores({**base, "active_flood": 1.0})
+        assert r_active.flood_risk_score > r_no_flag.flood_risk_score
+
+    def test_active_flood_clamps_at_100(self):
+        features = {
+            "sar_water_freq_5y": 1.0,
+            "ndwi_wetness_persistence_5y": 0.50,
+            "active_flood": 1.0,
+        }
+        result = compute_scores(features)
+        assert result.flood_risk_score <= 100
+
+    def test_active_drought_boosts_drought_score(self):
+        base = {
+            "ndvi_mean_5y": 0.25,
+            "ndvi_anomaly_freq_5y": 0.35,
+            "ndmi_moisture_stress_freq_5y": 0.50,
+        }
+        r_no_flag = compute_scores({**base, "active_drought": 0.0})
+        r_active = compute_scores({**base, "active_drought": 1.0})
+        assert r_active.drought_score > r_no_flag.drought_score
+
+    def test_active_drought_suppressed_for_urban(self):
+        features = {
+            "is_urban": 1.0,
+            "ndvi_mean_5y": 0.15,
+            "ndvi_anomaly_freq_5y": 0.5,
+            "active_drought": 1.0,
+        }
+        result = compute_scores(features)
+        assert result.drought_score == 0  # urban drought stays zeroed regardless of flag
+
+    def test_active_fire_boosts_fire_score(self):
+        base = {"nbr_burn_freq_5y": 0.10}
+        r_no_flag = compute_scores({**base, "active_fire": 0.0})
+        r_active = compute_scores({**base, "active_fire": 1.0})
+        assert r_active.fire_exposure_score > r_no_flag.fire_exposure_score
+
+    def test_active_fire_suppressed_for_urban(self):
+        features = {"is_urban": 1.0, "nbr_burn_freq_5y": 0.3, "active_fire": 1.0}
+        result = compute_scores(features)
+        assert result.fire_exposure_score == 0
+
+    # --- Trend-aware scoring tests (Part B: momentum amplifiers) ---
+
+    def test_momentum_boosts_drought(self):
+        base = {"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25}
+        r_no_momentum = compute_scores(base)
+        r_momentum = compute_scores({**base, "ndvi_momentum_ratio_1y": 3.0})
+        assert r_momentum.drought_score > r_no_momentum.drought_score
+
+    def test_momentum_below_one_no_boost(self):
+        base = {"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25, "ndvi_momentum_ratio_1y": 0.5}
+        r_no_momentum = compute_scores({"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25})
+        r_low = compute_scores(base)
+        assert r_low.drought_score == r_no_momentum.drought_score
+
+    def test_tmax_momentum_boosts_heat_stress(self):
+        base = {"tmax_anomaly_freq_5y": 0.30, "vpd_high_freq_5y": 0.20}
+        r_no_momentum = compute_scores(base)
+        r_momentum = compute_scores({**base, "tmax_momentum_ratio_1y": 4.0})
+        assert r_momentum.heat_stress_score > r_no_momentum.heat_stress_score
+
+    # --- Trend-aware scoring tests (Part C: slope sub-components) ---
+
+    def test_negative_ndmi_trend_raises_drought(self):
+        base = {"ndvi_mean_5y": 0.4, "ndmi_moisture_stress_freq_5y": 0.3}
+        r_flat = compute_scores({**base, "ndmi_trend_slope_5y": 0.0})
+        r_stress = compute_scores({**base, "ndmi_trend_slope_5y": -0.04})
+        assert r_stress.drought_score > r_flat.drought_score
+
+    def test_positive_vpd_trend_raises_heat_stress(self):
+        base = {"tmax_anomaly_freq_5y": 0.20}
+        r_flat = compute_scores({**base, "vpd_trend_slope_5y": 0.0})
+        r_rising = compute_scores({**base, "vpd_trend_slope_5y": 0.04})
+        assert r_rising.heat_stress_score > r_flat.heat_stress_score
+
+    def test_positive_ndwi_trend_raises_wetness(self):
+        base = {"ndwi_wetness_persistence_5y": 0.20}
+        r_flat = compute_scores({**base, "ndwi_trend_slope_5y": 0.0})
+        r_wetter = compute_scores({**base, "ndwi_trend_slope_5y": 0.01})
+        assert r_wetter.wetness_score > r_flat.wetness_score
+
+    def test_negative_pdsi_trend_raises_drought(self):
+        base = {"pdsi_drought_freq_5y": 0.20}
+        r_flat = compute_scores({**base, "pdsi_trend_slope_5y": 0.0})
+        r_drying = compute_scores({**base, "pdsi_trend_slope_5y": -0.3})
+        assert r_drying.drought_score > r_flat.drought_score
+
+    def test_absent_slope_features_no_change(self):
+        # Existing test features should be unaffected when new keys are absent
+        features = {
+            "ndvi_mean_5y": 0.42,
+            "ndvi_trend_slope_5y": -0.0031,
+            "ndvi_anomaly_freq_5y": 0.18,
+            "ndwi_wetness_persistence_5y": 0.09,
+            "ndmi_moisture_stress_freq_5y": 0.25,
+            "nbr_burn_freq_5y": 0.05,
+            "canopy_proxy": 0.41,
+        }
+        r1 = compute_scores(features)
+        # Same features but with explicit zero/None momentum and slopes
+        features2 = {**features, "ndvi_momentum_ratio_1y": None, "ndmi_momentum_ratio_1y": None}
+        r2 = compute_scores(features2)
+        assert r1.drought_score == r2.drought_score
+        assert r1.composite_score == r2.composite_score
 
     def test_scores_in_range(self):
         features = {

@@ -130,8 +130,24 @@ class Settings(BaseSettings):
     DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.26.0"
-    SCORE_VERSION: str = "risk-v1.14.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.27.0"
+    SCORE_VERSION: str = "risk-v1.15.0"
+
+    # Trend-aware scoring -- Part A: active episode multipliers
+    ACTIVE_FLOOD_BOOST: float = 1.40
+    ACTIVE_DROUGHT_BOOST: float = 1.30
+    ACTIVE_FIRE_BOOST: float = 1.25
+
+    # Trend-aware scoring -- Part B: 1y vs 5y momentum amplifiers
+    # Ratio 2.0 → +10% boost; ratio 5.0 → +30% (cap)
+    MOMENTUM_AMP_MAX: float = 0.30    # cap on fractional amplitude boost (= +30%)
+    MOMENTUM_AMP_SCALE: float = 0.10  # (ratio - 1.0) * scale = raw amp fraction
+
+    # Trend-aware scoring -- Part C: Theil-Sen slope sub-components
+    NDWI_TREND_WET_MIN: float = 0.02      # NDWI slope (index/yr) → 100 pts wetness
+    NDMI_TREND_STRESS_MAX: float = -0.05  # most-negative NDMI slope → 100 pts drought
+    VPD_TREND_HIGH_MIN: float = 0.05      # VPD slope (kPa/yr) → 100 pts heat stress
+    PDSI_TREND_DROUGHT_MAX: float = -0.5  # most-negative PDSI slope → 100 pts drought
 
     # Storage
     POSTGRES_DSN: str = "postgresql://postgres:postgres@localhost:5432/remotesensing"

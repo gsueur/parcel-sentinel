@@ -8,6 +8,7 @@ from src.location_sentinel.compute.features import (
     compute_anomaly_frequency,
     compute_mean,
     compute_quality_score,
+    compute_recent_anomaly_ratio,
     compute_trend_slope,
     compute_wetness_persistence,
 )
@@ -100,17 +101,85 @@ class TestQualityScore:
         assert score == 1.0
 
     def test_half_coverage(self):
+        # formula: 0.65 * coverage + 0.35 * clarity = 0.65*0.5 + 0.35*1.0 = 0.675
         score = compute_quality_score(months_total=60, months_observed=30, mean_cloud_fraction=0.0)
-        assert score == 0.5
+        assert abs(score - 0.675) < 0.001
 
     def test_low_coverage(self):
-        # 20% coverage: confidence = 0.2/0.5 = 0.4
-        # quality = 0.2 * 1.0 * 0.4 = 0.08
+        # coverage = 12/60 = 0.2; formula: 0.65*0.2 + 0.35*1.0 = 0.48
         score = compute_quality_score(months_total=60, months_observed=12, mean_cloud_fraction=0.0)
-        assert abs(score - 0.08) < 0.01
+        assert abs(score - 0.48) < 0.001
 
     def test_zero_total(self):
         assert compute_quality_score(0, 0, 0.0) == 0.0
+
+
+class TestRecentAnomalyRatio:
+    def _make_5y(self, base_val: float = 0.5) -> list:
+        """60 months of stable values (2020-01 to 2024-12)."""
+        return _make_records([
+            (f"{2020 + (i // 12)}-{(i % 12) + 1:02d}", base_val)
+            for i in range(60)
+        ])
+
+    def test_no_historical_anomalies_returns_none(self):
+        # Flat series → baseline_freq near zero → None
+        records = self._make_5y(0.5)
+        result = compute_recent_anomaly_ratio(records, "2024-12", threshold=0.1)
+        assert result is None
+
+    def test_ratio_worsening(self):
+        # 5y series: 10% anomaly rate overall, but recent 12m have 50% anomaly rate
+        records = _make_records([
+            (f"{2020 + (i // 12)}-{(i % 12) + 1:02d}", 0.5) for i in range(48)
+        ] + [
+            # last 12 months: half are severely below climatology
+            ("2024-01", 0.3), ("2024-02", 0.5), ("2024-03", 0.3), ("2024-04", 0.5),
+            ("2024-05", 0.3), ("2024-06", 0.5), ("2024-07", 0.3), ("2024-08", 0.5),
+            ("2024-09", 0.3), ("2024-10", 0.5), ("2024-11", 0.3), ("2024-12", 0.5),
+        ])
+        result = compute_recent_anomaly_ratio(records, "2024-12", threshold=0.1)
+        assert result is not None
+        assert result > 1.0  # recent is worse than baseline
+
+    def test_ratio_improving(self):
+        # First 3 years: severely low NDVI (0.1); last 2 years: healthy (0.7).
+        # Climatology per month ≈ (0.1+0.1+0.1+0.7+0.7)/5 = 0.34.
+        # Historical departure: 0.1 - 0.34 = -0.24 < -0.1 → anomalous.
+        # Recent departure:     0.7 - 0.34 = +0.36 > -0.1 → not anomalous.
+        records = _make_records([
+            (f"{2020 + (i // 12)}-{(i % 12) + 1:02d}", 0.1 if i < 36 else 0.7)
+            for i in range(60)
+        ])
+        result = compute_recent_anomaly_ratio(records, "2024-12", threshold=0.1)
+        assert result is not None
+        assert result == 0.0
+
+    def test_capped_at_5(self):
+        # Recent period has massive anomaly rate vs very low baseline
+        # Build a series where only 1 month in first 48 was anomalous, but all 12 recent are
+        recs = _make_records(
+            [("2020-01", 0.3)] +  # 1 anomaly in year 1
+            [(f"{2020 + (i // 12)}-{(i % 12) + 1:02d}", 0.5) for i in range(1, 48)] +
+            [(f"2024-{m:02d}", 0.3) for m in range(1, 13)]  # all 12 recent are anomalous
+        )
+        result = compute_recent_anomaly_ratio(recs, "2024-12", threshold=0.1)
+        assert result is not None
+        assert result <= 5.0
+
+    def test_insufficient_data_returns_none(self):
+        records = _make_records([("2020-01", 0.3), ("2020-02", 0.4)])
+        assert compute_recent_anomaly_ratio(records, "2020-02") is None
+
+    def test_recent_window_insufficient_returns_none(self):
+        # 5y of historical data but only 1 record in recent window
+        records = _make_records([
+            (f"{2020 + (i // 12)}-{(i % 12) + 1:02d}", 0.3 if i % 6 == 0 else 0.5)
+            for i in range(59)
+        ] + [("2024-12", 0.3)])
+        # date_end is far future so recent window is very small
+        result = compute_recent_anomaly_ratio(records, "2019-01", recent_months=1)
+        assert result is None
 
 
 class TestCanopyProxy:

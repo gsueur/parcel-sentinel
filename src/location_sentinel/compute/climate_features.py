@@ -69,6 +69,44 @@ def _monthly_climatology(
     return result
 
 
+def _compute_recent_freq_ratio(
+    monthly_series: dict[tuple[int, int], float | None],
+    date_end: str,
+    is_anomaly_fn,
+    recent_months: int = 12,
+) -> float | None:
+    """Ratio of recent anomaly frequency to 5y baseline for TerraClimate series.
+
+    is_anomaly_fn: callable(year: int, month: int, value: float) -> bool
+
+    Returns min(recent_freq / baseline_freq, 5.0) or None if insufficient data.
+    """
+    points = [(y, m, v) for (y, m), v in monthly_series.items() if v is not None]
+    if len(points) < 6:
+        return None
+
+    end_year, end_month = int(date_end[:4]), int(date_end[5:7])
+    end_abs = end_year * 12 + end_month
+
+    total = len(points)
+    baseline_count = sum(1 for y, m, v in points if is_anomaly_fn(y, m, v))
+    baseline_freq = baseline_count / total
+    if baseline_freq < 0.01:
+        return None
+
+    recent_points = [
+        (y, m, v) for y, m, v in points
+        if (end_abs - (y * 12 + m)) < recent_months
+    ]
+    if len(recent_points) < 3:
+        return None
+
+    recent_count = sum(1 for y, m, v in recent_points if is_anomaly_fn(y, m, v))
+    recent_freq = recent_count / len(recent_points)
+
+    return round(min(recent_freq / baseline_freq, 5.0), 4)
+
+
 def compute_climate_features(
     monthly_series: dict[str, dict[tuple[int, int], float | None]],
     date_start: str,
@@ -123,12 +161,24 @@ def compute_climate_features(
         features["tmax_trend_slope_5y"] = (
             round(_theil_sen_slope_per_year(tmax), 4) if len(tmax_vals) >= 12 else None
         )
+
+        # tmax momentum: ratio of recent-12m anomaly freq vs 5y baseline
+        if len(tmax_vals) >= 12 and clim:
+            def _tmax_anomaly(y: int, m: int, v: float) -> bool:
+                if m not in clim:
+                    return False
+                mean_m, std_m = clim[m]
+                return v > mean_m + settings.TERRACLIMATE_TMAX_ANOMALY_SIGMA * std_m
+            features["tmax_momentum_ratio_1y"] = _compute_recent_freq_ratio(tmax, date_end, _tmax_anomaly)
+        else:
+            features["tmax_momentum_ratio_1y"] = None
     else:
         features.update({
             "tmax_mean_5y": None,
             "tmax_summer_mean_5y": None,
             "tmax_anomaly_freq_5y": None,
             "tmax_trend_slope_5y": None,
+            "tmax_momentum_ratio_1y": None,
         })
 
     # ── tmin ──────────────────────────────────────────────────────────────────
@@ -160,20 +210,36 @@ def compute_climate_features(
         threshold = settings.TERRACLIMATE_VPD_HIGH_THRESHOLD
         high_count = sum(1 for v in vpd_vals if v > threshold)
         features["vpd_high_freq_5y"] = round(high_count / len(vpd_vals), 4)
+        features["vpd_trend_slope_5y"] = (
+            round(_theil_sen_slope_per_year(vpd), 4) if len(vpd_vals) >= 12 else None
+        )
     else:
         features["vpd_mean_5y"] = None
         features["vpd_high_freq_5y"] = None
+        features["vpd_trend_slope_5y"] = None
 
     # ── PDSI (Palmer Drought Severity Index) ─────────────────────────────────
     pdsi = monthly_series.get("PDSI", {})
     pdsi_vals = _valid_values(pdsi)
     if pdsi_vals:
         features["pdsi_mean_5y"] = round(statistics.mean(pdsi_vals), 3)
-        threshold = settings.TERRACLIMATE_PDSI_DROUGHT_THRESHOLD
-        drought_count = sum(1 for v in pdsi_vals if v < threshold)
+        pdsi_drought_threshold = settings.TERRACLIMATE_PDSI_DROUGHT_THRESHOLD
+        drought_count = sum(1 for v in pdsi_vals if v < pdsi_drought_threshold)
         features["pdsi_drought_freq_5y"] = round(drought_count / len(pdsi_vals), 4)
+        features["pdsi_trend_slope_5y"] = (
+            round(_theil_sen_slope_per_year(pdsi), 4) if len(pdsi_vals) >= 12 else None
+        )
+        # pdsi momentum: ratio of recent-12m drought freq vs 5y baseline
+        if len(pdsi_vals) >= 12:
+            def _pdsi_anomaly(y: int, m: int, v: float) -> bool:
+                return v < pdsi_drought_threshold
+            features["pdsi_momentum_ratio_1y"] = _compute_recent_freq_ratio(pdsi, date_end, _pdsi_anomaly)
+        else:
+            features["pdsi_momentum_ratio_1y"] = None
     else:
         features["pdsi_mean_5y"] = None
         features["pdsi_drought_freq_5y"] = None
+        features["pdsi_trend_slope_5y"] = None
+        features["pdsi_momentum_ratio_1y"] = None
 
     return features

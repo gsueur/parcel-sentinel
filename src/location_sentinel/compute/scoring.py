@@ -133,6 +133,21 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         if pdsi_drought > 0.15:
             factors.append({"name": "pdsi_drought_freq_5y", "direction": "positive", "weight": 0.25})
 
+    # Part C -- slope sub-components
+    ndmi_trend = features.get("ndmi_trend_slope_5y")
+    if ndmi_trend is not None:
+        # Negative slope = worsening moisture stress. Map [abs(NDMI_TREND_STRESS_MAX), 0] → [100, 0]
+        stress_slope_score = max(0.0, min(100.0, (-ndmi_trend / abs(settings.NDMI_TREND_STRESS_MAX)) * 100))
+        drought_components.append(stress_slope_score)
+        drought_weights.append(0.15)
+
+    pdsi_trend = features.get("pdsi_trend_slope_5y")
+    if pdsi_trend is not None:
+        # Negative slope = worsening drought. Map [abs(PDSI_TREND_DROUGHT_MAX), 0] → [100, 0]
+        pdsi_slope_score = max(0.0, min(100.0, (-pdsi_trend / abs(settings.PDSI_TREND_DROUGHT_MAX)) * 100))
+        drought_components.append(pdsi_slope_score)
+        drought_weights.append(0.15)
+
     slope_deg = features.get("slope_deg")
 
     hli = features.get("heat_load_index")
@@ -154,6 +169,17 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         if hli is not None and hli > settings.TERRAIN_HLI_THRESHOLD:
             hli_amp = 1.0 + min(settings.TERRAIN_HLI_AMP_MAX, hli * settings.TERRAIN_HLI_FACTOR)
             drought_score = min(100.0, drought_score * hli_amp)
+
+        # Part B: momentum amplifiers (worsening trajectory)
+        for momentum_key in ("ndvi_momentum_ratio_1y", "ndmi_momentum_ratio_1y", "pdsi_momentum_ratio_1y"):
+            momentum = features.get(momentum_key)
+            if momentum is not None and momentum > 1.0:
+                amp = 1.0 + min(settings.MOMENTUM_AMP_MAX, (momentum - 1.0) * settings.MOMENTUM_AMP_SCALE)
+                drought_score = min(100.0, drought_score * amp)
+
+        # Part A: active episode boost
+        if features.get("active_drought"):
+            drought_score = min(100.0, drought_score * settings.ACTIVE_DROUGHT_BOOST)
     else:
         drought_score = 50.0
 
@@ -166,6 +192,12 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             factors.append({"name": "ndwi_wetness_persistence_5y", "direction": "positive", "weight": 0.25})
     else:
         wetness_score = 50.0
+
+    # Part C: positive NDWI trend blended in at 15% weight
+    ndwi_trend = features.get("ndwi_trend_slope_5y")
+    if ndwi_trend is not None and ndwi_trend > 0:
+        trend_wet_score = min(100.0, (ndwi_trend / settings.NDWI_TREND_WET_MIN) * 100)
+        wetness_score = min(100.0, wetness_score * 0.85 + trend_wet_score * 0.15)
 
     # --- Fire exposure score (0-100) ---
     # Fraction of months where NBR drops anomalously below the site's seasonal climatology
@@ -180,6 +212,9 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         fire_exposure_score = min(100.0, nbr_burn_freq * 350)
         if nbr_burn_freq > 0.05:
             factors.append({"name": "nbr_burn_freq_5y", "direction": "positive", "weight": 0.20})
+        # Part A: active episode boost (urban guard already handled above)
+        if features.get("active_fire"):
+            fire_exposure_score = min(100.0, fire_exposure_score * settings.ACTIVE_FIRE_BOOST)
     else:
         fire_exposure_score = 0.0  # no NBR data → assume no fire evidence
 
@@ -248,6 +283,10 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         )
         flood_risk_score = min(100.0, flood_risk_score + curv_boost)
 
+    # Part A: active flood boost
+    if features.get("active_flood"):
+        flood_risk_score = min(100.0, flood_risk_score * settings.ACTIVE_FLOOD_BOOST)
+
     if flood_risk_score > 10:
         driver = "sar_flood_anomaly" if sar_flood_anomaly * 100 >= sar_water_freq * 100 else "sar_water_freq_5y"
         factors.append({
@@ -288,6 +327,13 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             if vpd_high_freq > 0.25:
                 factors.append({"name": "vpd_high_freq_5y", "direction": "positive", "weight": 0.30})
 
+        # Part C: VPD trend slope sub-component
+        vpd_trend = features.get("vpd_trend_slope_5y")
+        if vpd_trend is not None:
+            vpd_slope_score = max(0.0, min(100.0, (vpd_trend / settings.VPD_TREND_HIGH_MIN) * 100))
+            hs_components.append(vpd_slope_score)
+            hs_weights.append(0.20)
+
         if hs_components:
             total_hw = sum(hs_weights)
             heat_stress_score: float = (
@@ -295,6 +341,12 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             )
         else:
             heat_stress_score = 50.0
+
+        # Part B: tmax momentum amplifier
+        tmax_momentum = features.get("tmax_momentum_ratio_1y")
+        if tmax_momentum is not None and tmax_momentum > 1.0:
+            hs_amp = 1.0 + min(settings.MOMENTUM_AMP_MAX, (tmax_momentum - 1.0) * settings.MOMENTUM_AMP_SCALE)
+            heat_stress_score = min(100.0, heat_stress_score * hs_amp)
     else:
         heat_stress_score = 50.0
 

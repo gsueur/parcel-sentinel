@@ -101,6 +101,66 @@ def compute_anomaly_frequency(
     return round(sum(qualifying) / observed, 4)
 
 
+def compute_recent_anomaly_ratio(
+    records: list[MonthlyRecord],
+    date_end: str,
+    recent_months: int = 12,
+    threshold: float = settings.NDVI_ANOMALY_THRESHOLD,
+    direction: str = "below",
+) -> float | None:
+    """Ratio of recent-window anomaly frequency to 5y baseline frequency.
+
+    Compares how often the index was anomalous in the last `recent_months`
+    relative to the full series. A ratio > 1 means conditions are worsening;
+    < 1 means improving. Capped at 5.0 to bound the amplifier.
+
+    direction: 'below' -- anomaly when value < climatology - threshold (NDVI, NDMI)
+               'above' -- anomaly when value > climatology + threshold (future use)
+
+    Returns None if baseline frequency is near zero (no historical anomalies to
+    compare against) or if the recent window has fewer than 3 observations.
+    """
+    sorted_recs = sorted((r for r in records if r.mean is not None), key=lambda r: r.month)
+    if len(sorted_recs) < 6:
+        return None
+
+    by_calendar_month: dict[int, list[float]] = {}
+    for rec in sorted_recs:
+        cal_month = int(rec.month.split("-")[1])
+        by_calendar_month.setdefault(cal_month, []).append(rec.mean)
+    climatology = {m: float(np.mean(vals)) for m, vals in by_calendar_month.items()}
+
+    end_year, end_month = int(date_end[:4]), int(date_end[5:7])
+    end_abs = end_year * 12 + end_month
+
+    def _is_anomaly(rec: MonthlyRecord) -> bool:
+        cal_month = int(rec.month.split("-")[1])
+        clim = climatology.get(cal_month)
+        if clim is None:
+            return False
+        if direction == "below":
+            return (rec.mean - clim) < -threshold
+        return (rec.mean - clim) > threshold
+
+    total = len(sorted_recs)
+    baseline_count = sum(1 for r in sorted_recs if _is_anomaly(r))
+    baseline_freq = baseline_count / total
+    if baseline_freq < 0.01:
+        return None
+
+    recent_recs = [
+        r for r in sorted_recs
+        if 0 <= end_abs - (int(r.month[:4]) * 12 + int(r.month[5:7])) < recent_months
+    ]
+    if len(recent_recs) < 3:
+        return None
+
+    recent_count = sum(1 for r in recent_recs if _is_anomaly(r))
+    recent_freq = recent_count / len(recent_recs)
+
+    return round(min(recent_freq / baseline_freq, 5.0), 4)
+
+
 def compute_wetness_persistence(
     records: list[MonthlyRecord],
     threshold: float = settings.NDWI_WET_THRESHOLD,

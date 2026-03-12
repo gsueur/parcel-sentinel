@@ -13,6 +13,7 @@ from ..compute.features import (
     compute_mean,
     compute_moisture_stress_frequency,
     compute_quality_score,
+    compute_recent_anomaly_ratio,
     compute_snow_persistence,
     compute_trend_slope,
     compute_wetness_persistence,
@@ -91,17 +92,25 @@ async def run_features(
         features["ndvi_mean_5y"] = compute_mean(ndvi_records)
         features["ndvi_trend_slope_5y"] = compute_trend_slope(ndvi_records)
         features["ndvi_anomaly_freq_5y"] = compute_anomaly_frequency(ndvi_records)
+        features["ndvi_momentum_ratio_1y"] = compute_recent_anomaly_ratio(
+            ndvi_records, date_end, threshold=settings.NDVI_ANOMALY_THRESHOLD, direction="below"
+        )
 
     # NDWI features
     ndwi_records = series.get("ndwi", [])
     if ndwi_records:
         features["ndwi_wetness_persistence_5y"] = compute_wetness_persistence(ndwi_records)
+        features["ndwi_trend_slope_5y"] = compute_trend_slope(ndwi_records)
 
     # NDMI features -- vegetation moisture stress
     ndmi_records = series.get("ndmi", [])
     if ndmi_records:
         features["ndmi_mean_5y"] = compute_mean(ndmi_records)
         features["ndmi_moisture_stress_freq_5y"] = compute_moisture_stress_frequency(ndmi_records)
+        features["ndmi_trend_slope_5y"] = compute_trend_slope(ndmi_records)
+        features["ndmi_momentum_ratio_1y"] = compute_recent_anomaly_ratio(
+            ndmi_records, date_end, threshold=settings.NDVI_ANOMALY_THRESHOLD, direction="below"
+        )
 
     # NBR features -- fire / burn history
     nbr_records = series.get("nbr", [])

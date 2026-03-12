@@ -1,7 +1,7 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.26.0` / scoring `risk-v1.14.0`
-**Date:** 2026-03-11
+**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.15.0`
+**Date:** 2026-03-12
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
@@ -321,6 +321,8 @@ ndwi_wetness_persistence_5y = count(NDWI_monthly > 0) / count(observed months)
 
 High values indicate persistent surface water (wetlands, riparian zones, tidal flats).
 
+**`ndwi_trend_slope_5y`** -- Theil-Sen slope of monthly NDWI values, in index units per year. Minimum 6 valid observations required. A positive slope indicates a wetter trajectory; negative indicates drying. Used as a supplementary component in `wetness_score` (section 13.2).
+
 ### 7.3 NDMI features
 
 **`ndmi_mean_5y`** -- Mean of all valid monthly NDMI values.
@@ -330,6 +332,10 @@ High values indicate persistent surface water (wetlands, riparian zones, tidal f
 ```
 ndmi_moisture_stress_freq_5y = count(NDMI_monthly < 0) / count(observed months)
 ```
+
+**`ndmi_trend_slope_5y`** -- Theil-Sen slope of monthly NDMI values, in index units per year. A negative slope indicates a worsening moisture stress trend. Used as a supplementary drought component in `drought_score` (section 13.1).
+
+**`ndmi_momentum_ratio_1y`** -- See section 7.10.
 
 ### 7.4 NBR features
 
@@ -376,6 +382,8 @@ bsi_bare_soil_freq_5y = count(BSI_monthly > 0) / count(observed months)
 
 BSI frequency is used (rather than BSI mean) for urban detection because snow on impervious surfaces produces negative BSI, which would dilute the annual mean. Frequency over the snow-inclusive SCL class set is robust to this effect.
 
+Also for section 7.1: **`ndvi_momentum_ratio_1y`** -- See section 7.10.
+
 ### 7.7 Canopy proxy
 
 **`canopy_proxy`** -- Mean peak-season NDVI across years, serving as a proxy for canopy cover density:
@@ -401,6 +409,37 @@ Growing season definition (Köppen zone + hemisphere):
 SH months are the NH months shifted by 6 calendar months. Köppen code is looked up from the 0.5° gridded climatology stored at location creation time.
 
 The canopy proxy approximates canopy closure from the peak photosynthetic signal rather than mean NDVI, which is suppressed in winter. It is used in heat mitigation scoring and urban detection.
+
+### 7.10 Recent anomaly ratios (1y momentum)
+
+Four features quantify whether the most recent 12 months are anomalous more or less often than the 5-year baseline. The ratio > 1.0 means conditions are worsening; < 1.0 means improving. Capped at 5.0.
+
+**For optical indices (`ndvi_momentum_ratio_1y`, `ndmi_momentum_ratio_1y`):**
+
+```
+sorted_valid = all valid monthly records sorted chronologically
+
+For each record r:
+    climatology[cal_month] = mean of all values for that calendar month
+    is_anomaly(r) = True iff r.mean < climatology[r.cal_month] - threshold
+
+baseline_freq  = count(is_anomaly) / count(sorted_valid)
+recent_recs    = records where 0 ≤ (end_abs − record_abs) < 12 months
+recent_freq    = count(is_anomaly in recent_recs) / count(recent_recs)
+
+momentum_ratio = min(recent_freq / baseline_freq, 5.0)
+```
+
+Returns `None` when `baseline_freq < 0.01` (no historical anomalies to compare against) or when fewer than 3 observations exist in the recent window. Threshold defaults to `NDVI_ANOMALY_THRESHOLD` (0.1 index units below seasonal mean).
+
+**For TerraClimate variables (`tmax_momentum_ratio_1y`, `pdsi_momentum_ratio_1y`):**
+
+The same ratio logic applies but uses absolute thresholds rather than climatology-relative departure:
+
+- `tmax_momentum_ratio_1y`: anomaly defined as `tmax > climatology_mean[m] + σ × std[m]` (same as `tmax_anomaly_freq_5y`)
+- `pdsi_momentum_ratio_1y`: anomaly defined as `PDSI < -2.0` (same threshold as `pdsi_drought_freq_5y`)
+
+These features act as scaling amplifiers in risk scoring (section 13.6) and are recomputed from already-cached monthly timeseries -- no additional satellite fetching is required.
 
 ### 7.8 Active episode flags
 
@@ -638,6 +677,8 @@ vpd_high_freq_5y = count(vpd_monthly > 1.5) / count(valid months)
 
 VPD above ~1.5 kPa induces significant stomatal closure in most vegetation types and is associated with elevated wildfire risk in Mediterranean and arid climates.
 
+**`vpd_trend_slope_5y`** -- Theil-Sen slope of monthly VPD, in kPa per year. Minimum 12 valid observations required. A rising trend indicates increasing atmospheric moisture demand. Used as a supplementary heat stress component in `heat_stress_score` (section 13.5).
+
 ### 9.4 PDSI features
 
 **`pdsi_mean_5y`** -- Mean PDSI over the analysis window. PDSI > 0 = wetter than normal; PDSI < 0 = drier; PDSI < −2 = moderate drought; PDSI < −4 = extreme drought (Palmer 1965 classification).
@@ -647,6 +688,10 @@ VPD above ~1.5 kPa induces significant stomatal closure in most vegetation types
 ```
 pdsi_drought_freq_5y = count(PDSI_monthly < -2.0) / count(valid months)
 ```
+
+**`pdsi_trend_slope_5y`** -- Theil-Sen slope of monthly PDSI, in index units per year. A negative slope indicates worsening drought conditions over the analysis window. Used as a supplementary drought component in `drought_score` (section 13.1).
+
+**`pdsi_momentum_ratio_1y`** -- Ratio of PDSI drought frequency (PDSI < −2) in the last 12 months vs. the 5-year baseline. Computed using the same ratio method as the optical momentum features (section 7.10) but with the absolute drought threshold rather than a climatology-relative departure. Returns None when `pdsi_drought_freq_5y < 0.01` or when fewer than 3 recent observations are available.
 
 ---
 
@@ -789,7 +834,7 @@ All scores are integers in [0, 100]. A uniform rounding and clamping function is
 
 ### 11.1 Drought score
 
-Weighted combination of four optical components and one climate component. Only components with available data are included; weights are renormalized to sum to 1.0 when any component is missing.
+Weighted combination of optical and climate components. Only components with available data are included; weights are renormalized to sum to 1.0 when any component is missing.
 
 | Component | Formula | Nominal weight |
 |-----------|---------|----------------|
@@ -798,36 +843,62 @@ Weighted combination of four optical components and one climate component. Only 
 | NDVI mean | `clamp((0.8 − ndvi_mean) / 0.8 × 100,  0, 100)` | 0.15 |
 | NDMI moisture stress | `ndmi_moisture_stress_freq_5y × 100` | 0.20 |
 | PDSI drought frequency | `pdsi_drought_freq_5y × 100` | 0.25 |
+| NDMI trend slope (v1.27) | `clamp(−ndmi_trend / 0.05 × 100,  0, 100)` | 0.15 |
+| PDSI trend slope (v1.27) | `clamp(−pdsi_trend / 0.50 × 100,  0, 100)` | 0.15 |
 
-Trend slope mapping: a slope of −0.05 NDVI/yr maps to 100 (severe decline); +0.05 NDVI/yr maps to 0 (vegetation recovering). NDVI mean mapping: NDVI = 0 maps to 100 (bare); NDVI = 0.8 maps to 0 (dense healthy vegetation).
+Trend slope mapping (NDVI): −0.05/yr → 100 (severe decline); +0.05/yr → 0 (recovering). NDVI mean: NDVI = 0 → 100 (bare); NDVI = 0.8 → 0 (dense vegetation). NDMI trend: −0.05/yr → 100 (worsening stress); 0/yr → 0. PDSI trend: −0.50/yr → 100 (worsening drought); 0/yr → 0.
 
-**Terrain drought amplifier (non-urban only):** Steep slopes produce thin, poorly developed soils with reduced plant-available water capacity. When `slope_deg > TERRAIN_DROUGHT_SLOPE_MIN` (10°), the computed drought score is multiplied by a terrain amplifier:
+**Terrain drought amplifier (non-urban only):**
 
 ```
 terrain_amp = 1.0 + min(TERRAIN_DROUGHT_AMP_MAX, (slope_deg − 10.0) / 100.0)
 drought_score = min(100, drought_score × terrain_amp)
 ```
 
-At 25°: +15% amplification. At 35°+: capped at +20%. Only applied when DEM data is available.
+At 25°: +15% amplification; capped at +20%. Only applied when DEM data is available.
 
-**HLI drought amplifier (non-urban only):** South-facing steep slopes receive more direct solar radiation, which accelerates evapotranspiration and soil desiccation independently of broader climate trends. When `heat_load_index > TERRAIN_HLI_THRESHOLD` (0.05), the drought score is further multiplied:
+**HLI drought amplifier (non-urban only):**
 
 ```
-hli_amp = 1.0 + min(TERRAIN_HLI_AMP_MAX, heat_load_index × TERRAIN_HLI_FACTOR)
+hli_amp = 1.0 + min(0.25, heat_load_index × 0.5)
 drought_score = min(100, drought_score × hli_amp)
 ```
 
-`TERRAIN_HLI_FACTOR = 0.5`, `TERRAIN_HLI_AMP_MAX = 0.25`. At HLI = 0.5 (moderately south-facing + steep): +25% amplification (capped). Only applied when DEM data is available.
+**Momentum amplifiers (Part B, non-urban only, applied after terrain amplifiers):**
 
-Forced to 0 for urban locations.
+For each of `ndvi_momentum_ratio_1y`, `ndmi_momentum_ratio_1y`, `pdsi_momentum_ratio_1y`:
 
-Default (all components missing): 50.
+```
+if momentum_ratio is not None and momentum_ratio > 1.0:
+    amp = 1.0 + min(MOMENTUM_AMP_MAX, (momentum_ratio − 1.0) × MOMENTUM_AMP_SCALE)
+    drought_score = min(100, drought_score × amp)
+```
+
+`MOMENTUM_AMP_MAX = 0.30`, `MOMENTUM_AMP_SCALE = 0.10`. Ratio 2.0 → +10%; ratio 5.0 → +30% (cap). All three apply independently and multiplicatively.
+
+**Active episode boost (Part A, non-urban only, applied last):**
+
+```
+if active_drought:
+    drought_score = min(100, drought_score × ACTIVE_DROUGHT_BOOST)  # 1.30
+```
+
+Forced to 0 for urban locations. Default (all components missing): 50.
 
 ### 11.2 Wetness score
 
 ```
 wetness_score = ndwi_wetness_persistence_5y × 100
 ```
+
+**NDWI trend blend (Part C, v1.27):** If `ndwi_trend_slope_5y > 0`, a trend component is blended in at 15% weight:
+
+```
+trend_wet_score = min(100, ndwi_trend / NDWI_TREND_WET_MIN × 100)
+wetness_score   = min(100, wetness_score × 0.85 + trend_wet_score × 0.15)
+```
+
+`NDWI_TREND_WET_MIN = 0.02` index units/year. A rising NDWI trend adds at most +15 pts to a zero-persistence site. Negative trends are not penalized.
 
 Default (no NDWI data): 50.
 
@@ -849,9 +920,14 @@ Indicative mapping:
 | 0.20 -- 0.25 | 70 -- 88 | Significant (one major fire in 5 years) |
 | 0.29+ | 100 | High recurrence |
 
-Forced to 0 for urban locations (see section 13.1).
+**Active episode boost (Part A, non-urban only, when NBR data is present):**
 
-Default (no NBR data): 0.
+```
+if active_fire:
+    fire_exposure_score = min(100, fire_exposure_score × ACTIVE_FIRE_BOOST)  # 1.25
+```
+
+Forced to 0 for urban locations (see section 13.1). Default (no NBR data): 0.
 
 ### 11.4 Heat mitigation score
 
@@ -888,6 +964,17 @@ The terrain flash component models fast runoff concentration: it requires **both
 
 The maximum of all three components ensures that a significant flood event or terrain susceptibility signal is not diluted. Not suppressed for urban locations.
 
+After terrain boosts (TPI and curvature), the active episode boost is applied:
+
+**Active episode boost (Part A):**
+
+```
+if active_flood:
+    flood_risk_score = min(100, flood_risk_score × ACTIVE_FLOOD_BOOST)  # 1.40
+```
+
+This applies regardless of urban classification (flooding is not suppressed for urban locations).
+
 **TPI flood boost:** Valley floors systematically accumulate runoff from surrounding terrain. When `tpi_m < TERRAIN_TPI_FLOOD_THRESHOLD` (−5.0 m), a boost is added after the max-of-components step:
 
 ```
@@ -923,20 +1010,28 @@ Default when no SAR data (`no_sar_data` flag set): 0.
 
 ### 11.6 Heat stress score
 
-Weighted combination of three TerraClimate components, renormalized when components are missing:
+Weighted combination of TerraClimate components, renormalized when components are missing:
 
 | Component | Formula | Nominal weight |
 |-----------|---------|----------------|
 | tmax anomaly frequency | `tmax_anomaly_freq_5y × 100` | 0.40 |
 | tmax warming trend | `clamp(tmax_trend / 0.05 × 100,  0, 100)` | 0.30 |
 | VPD high frequency | `vpd_high_freq_5y × 100` | 0.30 |
+| VPD trend slope (v1.27) | `clamp(vpd_trend / VPD_TREND_HIGH_MIN × 100,  0, 100)` | 0.20 |
 
-Trend mapping: 0.05 °C/yr maps to 100; 0 °C/yr maps to 0; negative trends are clamped to 0.
+`VPD_TREND_HIGH_MIN = 0.05 kPa/yr`. tmax trend: 0.05 °C/yr → 100; ≤ 0 → 0. VPD trend: 0.05 kPa/yr → 100; ≤ 0 → 0. Components are weighted and renormalized; absent keys do not change the score.
 
-**HLI heat stress amplifier (non-urban only):** The same HLI amplifier applied to drought score is also applied to heat stress score. South-facing steep terrain receives elevated direct solar radiation, amplifying surface heat accumulation independently of the regional climate signal captured by TerraClimate:
+**Momentum amplifier (Part B):** After base computation, if `tmax_momentum_ratio_1y > 1.0`:
 
 ```
-hli_amp = 1.0 + min(TERRAIN_HLI_AMP_MAX, heat_load_index × TERRAIN_HLI_FACTOR)
+hs_amp = 1.0 + min(MOMENTUM_AMP_MAX, (tmax_momentum_ratio_1y − 1.0) × MOMENTUM_AMP_SCALE)
+heat_stress_score = min(100, heat_stress_score × hs_amp)
+```
+
+**HLI heat stress amplifier (non-urban only):**
+
+```
+hli_amp = 1.0 + min(0.25, heat_load_index × 0.5)
 heat_stress_score = min(100, heat_stress_score × hli_amp)
 ```
 
@@ -1152,13 +1247,39 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `URBAN_NDVI_THRESHOLD` | 0.25 | Path 2 |
 | `URBAN_CANOPY_THRESHOLD` | 0.25 | Path 2 |
 
+### Trend-aware scoring parameters (v1.27.0)
+
+**Active episode multipliers (Part A):**
+
+| Parameter | Default | Applied to |
+|-----------|---------|-----------|
+| `ACTIVE_FLOOD_BOOST` | 1.40 | `flood_risk_score` when `active_flood = 1` |
+| `ACTIVE_DROUGHT_BOOST` | 1.30 | `drought_score` when `active_drought = 1` (non-urban) |
+| `ACTIVE_FIRE_BOOST` | 1.25 | `fire_exposure_score` when `active_fire = 1` (non-urban, NBR present) |
+
+**Momentum amplifier parameters (Part B):**
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `MOMENTUM_AMP_MAX` | 0.30 | Cap on fractional amplification per momentum signal (+30% max) |
+| `MOMENTUM_AMP_SCALE` | 0.10 | `(ratio − 1.0) × scale = raw amp`; ratio 2.0 → +10%, ratio 5.0 → +30% |
+
+**Slope sub-component thresholds (Part C):**
+
+| Parameter | Default | Applied in |
+|-----------|---------|-----------|
+| `NDWI_TREND_WET_MIN` | 0.02 index/yr | NDWI positive trend maps to 100 pts at this slope |
+| `NDMI_TREND_STRESS_MAX` | −0.05 index/yr | Most negative NDMI slope maps to 100 pts drought |
+| `VPD_TREND_HIGH_MIN` | 0.05 kPa/yr | VPD slope maps to 100 pts heat stress at this value |
+| `PDSI_TREND_DROUGHT_MAX` | −0.5 units/yr | Most negative PDSI slope maps to 100 pts drought |
+
 ### TerraClimate thresholds
 
 | Parameter | Default | Applied in |
 |-----------|---------|-----------|
 | `TERRACLIMATE_VPD_HIGH_THRESHOLD` | 1.5 kPa | `vpd_high_freq_5y` |
-| `TERRACLIMATE_PDSI_DROUGHT_THRESHOLD` | −2.0 | `pdsi_drought_freq_5y` |
-| `TERRACLIMATE_TMAX_ANOMALY_SIGMA` | 1.0 σ | `tmax_anomaly_freq_5y` |
+| `TERRACLIMATE_PDSI_DROUGHT_THRESHOLD` | −2.0 | `pdsi_drought_freq_5y`, `pdsi_momentum_ratio_1y` |
+| `TERRACLIMATE_TMAX_ANOMALY_SIGMA` | 1.0 σ | `tmax_anomaly_freq_5y`, `tmax_momentum_ratio_1y` |
 
 ### Growing season
 
@@ -1184,4 +1305,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Document generated from source code at commit `a12e777` (master), processing version `s2l2a-v1.19.0`, score version `risk-v1.14.0`.*
+*Processing version `s2l2a-v1.27.0` / score version `risk-v1.15.0`. Trend-aware scoring (active boosts, momentum amplifiers, slope sub-components) introduced in v1.27.0/v1.15.0.*
