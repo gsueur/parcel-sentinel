@@ -263,11 +263,11 @@ class TestScoring:
         r_momentum = compute_scores({**base, "ndvi_momentum_ratio_1y": 3.0})
         assert r_momentum.drought_score > r_no_momentum.drought_score
 
-    def test_momentum_below_one_no_boost(self):
-        base = {"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25, "ndvi_momentum_ratio_1y": 0.5}
-        r_no_momentum = compute_scores({"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25})
-        r_low = compute_scores(base)
-        assert r_low.drought_score == r_no_momentum.drought_score
+    def test_momentum_below_one_dampens(self):
+        base = {"ndvi_mean_5y": 0.3, "ndvi_anomaly_freq_5y": 0.25}
+        r_no_momentum = compute_scores(base)
+        r_improving = compute_scores({**base, "ndvi_momentum_ratio_1y": 0.5})
+        assert r_improving.drought_score < r_no_momentum.drought_score
 
     def test_tmax_momentum_boosts_heat_stress(self):
         base = {"tmax_anomaly_freq_5y": 0.30, "vpd_high_freq_5y": 0.20}
@@ -300,6 +300,60 @@ class TestScoring:
         r_flat = compute_scores({**base, "pdsi_trend_slope_5y": 0.0})
         r_drying = compute_scores({**base, "pdsi_trend_slope_5y": -0.3})
         assert r_drying.drought_score > r_flat.drought_score
+
+    # --- Mitigation tests (improving conditions reduce scores) ---
+
+    def test_positive_ndmi_trend_reduces_drought(self):
+        base = {"ndvi_mean_5y": 0.3, "ndmi_moisture_stress_freq_5y": 0.40}
+        r_flat = compute_scores({**base, "ndmi_trend_slope_5y": 0.0})
+        r_improving = compute_scores({**base, "ndmi_trend_slope_5y": 0.04})
+        assert r_improving.drought_score < r_flat.drought_score
+
+    def test_positive_pdsi_trend_reduces_drought(self):
+        base = {"pdsi_drought_freq_5y": 0.30}
+        r_flat = compute_scores({**base, "pdsi_trend_slope_5y": 0.0})
+        r_improving = compute_scores({**base, "pdsi_trend_slope_5y": 0.4})
+        assert r_improving.drought_score < r_flat.drought_score
+
+    def test_negative_ndwi_trend_reduces_wetness(self):
+        base = {"ndwi_wetness_persistence_5y": 0.60}
+        r_flat = compute_scores({**base, "ndwi_trend_slope_5y": 0.0})
+        r_drying = compute_scores({**base, "ndwi_trend_slope_5y": -0.02})
+        assert r_drying.wetness_score < r_flat.wetness_score
+
+    def test_negative_vpd_trend_reduces_heat_stress(self):
+        base = {"tmax_anomaly_freq_5y": 0.30, "vpd_high_freq_5y": 0.25}
+        r_flat = compute_scores({**base, "vpd_trend_slope_5y": 0.0})
+        r_cooling = compute_scores({**base, "vpd_trend_slope_5y": -0.04})
+        assert r_cooling.heat_stress_score < r_flat.heat_stress_score
+
+    def test_tmax_momentum_below_one_dampens_heat_stress(self):
+        base = {"tmax_anomaly_freq_5y": 0.30, "vpd_high_freq_5y": 0.20}
+        r_no_momentum = compute_scores(base)
+        r_improving = compute_scores({**base, "tmax_momentum_ratio_1y": 0.4})
+        assert r_improving.heat_stress_score < r_no_momentum.heat_stress_score
+
+    def test_improving_conditions_lower_composite(self):
+        # Full improving-trend scenario: all recent signals pointing recovery
+        stressed = {
+            "ndvi_mean_5y": 0.28, "ndvi_anomaly_freq_5y": 0.35, "ndmi_moisture_stress_freq_5y": 0.45,
+            "ndwi_wetness_persistence_5y": 0.50, "pdsi_drought_freq_5y": 0.25,
+            "tmax_anomaly_freq_5y": 0.30, "vpd_high_freq_5y": 0.20,
+        }
+        recovering = {
+            **stressed,
+            "ndvi_momentum_ratio_1y": 0.3,
+            "ndmi_momentum_ratio_1y": 0.4,
+            "pdsi_momentum_ratio_1y": 0.5,
+            "tmax_momentum_ratio_1y": 0.4,
+            "ndmi_trend_slope_5y": 0.03,
+            "pdsi_trend_slope_5y": 0.3,
+            "vpd_trend_slope_5y": -0.04,
+            "ndwi_trend_slope_5y": -0.02,
+        }
+        r_stressed = compute_scores(stressed)
+        r_recovering = compute_scores(recovering)
+        assert r_recovering.composite_score < r_stressed.composite_score
 
     def test_absent_slope_features_no_change(self):
         # Existing test features should be unaffected when new keys are absent

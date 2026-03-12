@@ -170,12 +170,26 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
             hli_amp = 1.0 + min(settings.TERRAIN_HLI_AMP_MAX, hli * settings.TERRAIN_HLI_FACTOR)
             drought_score = min(100.0, drought_score * hli_amp)
 
-        # Part B: momentum amplifiers (worsening trajectory)
+        # Improving-slope mitigation: positive NDMI/PDSI trend → reduce drought score
+        # (in addition to the dilution already present in the weighted average when component = 0)
+        if ndmi_trend is not None and ndmi_trend > 0:
+            mitig = min(0.15, (ndmi_trend / abs(settings.NDMI_TREND_STRESS_MAX)) * 0.20)
+            drought_score = max(0.0, drought_score * (1.0 - mitig))
+        if pdsi_trend is not None and pdsi_trend > 0:
+            mitig = min(0.15, (pdsi_trend / abs(settings.PDSI_TREND_DROUGHT_MAX)) * 0.20)
+            drought_score = max(0.0, drought_score * (1.0 - mitig))
+
+        # Part B: momentum amplifiers / dampeners (worsening OR improving trajectory)
         for momentum_key in ("ndvi_momentum_ratio_1y", "ndmi_momentum_ratio_1y", "pdsi_momentum_ratio_1y"):
             momentum = features.get(momentum_key)
-            if momentum is not None and momentum > 1.0:
+            if momentum is None:
+                continue
+            if momentum > 1.0:
                 amp = 1.0 + min(settings.MOMENTUM_AMP_MAX, (momentum - 1.0) * settings.MOMENTUM_AMP_SCALE)
                 drought_score = min(100.0, drought_score * amp)
+            elif 0.0 < momentum < 1.0:
+                damp = 1.0 - min(settings.MOMENTUM_DAMP_MAX, (1.0 - momentum) * settings.MOMENTUM_AMP_SCALE)
+                drought_score = max(0.0, drought_score * damp)
 
         # Part A: active episode boost
         if features.get("active_drought"):
@@ -193,11 +207,16 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     else:
         wetness_score = 50.0
 
-    # Part C: positive NDWI trend blended in at 15% weight
+    # Part C: NDWI trend adjusts wetness bidirectionally
     ndwi_trend = features.get("ndwi_trend_slope_5y")
-    if ndwi_trend is not None and ndwi_trend > 0:
-        trend_wet_score = min(100.0, (ndwi_trend / settings.NDWI_TREND_WET_MIN) * 100)
-        wetness_score = min(100.0, wetness_score * 0.85 + trend_wet_score * 0.15)
+    if ndwi_trend is not None:
+        if ndwi_trend > 0:
+            trend_wet_score = min(100.0, (ndwi_trend / settings.NDWI_TREND_WET_MIN) * 100)
+            wetness_score = min(100.0, wetness_score * 0.85 + trend_wet_score * 0.15)
+        elif ndwi_trend < 0:
+            # Drying trend: reduce wetness score (site becoming drier than its 5y average)
+            mitig = min(0.15, (-ndwi_trend / settings.NDWI_TREND_WET_MIN) * 0.15)
+            wetness_score = max(0.0, wetness_score * (1.0 - mitig))
 
     # --- Fire exposure score (0-100) ---
     # Fraction of months where NBR drops anomalously below the site's seasonal climatology
@@ -342,11 +361,20 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         else:
             heat_stress_score = 50.0
 
-        # Part B: tmax momentum amplifier
+        # Improving VPD trend mitigation (negative slope = atmospheric drought stress declining)
+        if vpd_trend is not None and vpd_trend < 0:
+            mitig = min(0.15, (-vpd_trend / settings.VPD_TREND_HIGH_MIN) * 0.15)
+            heat_stress_score = max(0.0, heat_stress_score * (1.0 - mitig))
+
+        # Part B: tmax momentum amplifier / dampener
         tmax_momentum = features.get("tmax_momentum_ratio_1y")
-        if tmax_momentum is not None and tmax_momentum > 1.0:
-            hs_amp = 1.0 + min(settings.MOMENTUM_AMP_MAX, (tmax_momentum - 1.0) * settings.MOMENTUM_AMP_SCALE)
-            heat_stress_score = min(100.0, heat_stress_score * hs_amp)
+        if tmax_momentum is not None:
+            if tmax_momentum > 1.0:
+                hs_amp = 1.0 + min(settings.MOMENTUM_AMP_MAX, (tmax_momentum - 1.0) * settings.MOMENTUM_AMP_SCALE)
+                heat_stress_score = min(100.0, heat_stress_score * hs_amp)
+            elif 0.0 < tmax_momentum < 1.0:
+                hs_damp = 1.0 - min(settings.MOMENTUM_DAMP_MAX, (1.0 - tmax_momentum) * settings.MOMENTUM_AMP_SCALE)
+                heat_stress_score = max(0.0, heat_stress_score * hs_damp)
     else:
         heat_stress_score = 50.0
 
