@@ -423,12 +423,29 @@ _FM: dict[str, dict] = {
              "Negative = declining vegetation density. Small positive = stable recovery.",
         fmt="slope", signal="high_good", thr1=-0.005, thr2=0.0,
     ),
+    "ndvi_momentum_ratio_1y": dict(
+        label="Vegetation stress momentum (1y vs 5y)",
+        group="Vegetation Health", group_color="#22c55e", group_index="NDVI",
+        desc="Ratio of anomaly frequency in the last 12 months to the 5-year baseline, "
+             "computed using the seasonal NDVI climatology as reference. "
+             "1.0 = conditions unchanged &bull; &gt;1 = worsening &bull; &lt;1 = improving. "
+             "Amplifies the drought score when &gt;1. Capped at 5&times;.",
+        fmt="ratio", signal="low_good", thr1=1.0, thr2=2.0,
+    ),
     "ndvi_anomaly_freq_5y": dict(
         label="Drought anomaly frequency",
         group="Vegetation Health", group_color="#22c55e", group_index="NDVI",
         desc="Share of months where NDVI fell more than 0.1 NDVI units below its seasonal baseline. "
              "Below 10%: occasional stress &bull; 10&ndash;30%: recurring anomalies &bull; above 30%: frequent drought.",
         fmt="pct", signal="low_good", thr1=0.1, thr2=0.3,
+    ),
+    "ndwi_trend_slope_5y": dict(
+        label="Open-water trend",
+        group="Open Water", group_color="#3b82f6", group_index="NDWI",
+        desc="Theil&ndash;Sen robust slope of NDWI over 5 years (units per year). "
+             "Positive = increasing wetness trend &bull; negative = drying. "
+             "Blended at 15% into the wetness score.",
+        fmt="slope", signal="context", thr1=-0.01, thr2=0.01,
     ),
     "ndwi_wetness_persistence_5y": dict(
         label="Open-water persistence",
@@ -444,6 +461,22 @@ _FM: dict[str, dict] = {
         desc="Mean NDMI across 5 years. Positive values indicate adequate leaf water content; "
              "negative values indicate chronic moisture deficit within the canopy.",
         fmt="float3", signal="high_good", thr1=-0.1, thr2=0.1,
+    ),
+    "ndmi_trend_slope_5y": dict(
+        label="Vegetation moisture trend",
+        group="Vegetation Moisture", group_color="#06b6d4", group_index="NDMI",
+        desc="Theil&ndash;Sen robust slope of NDMI over 5 years (units per year). "
+             "Negative = worsening moisture deficit trend &bull; positive = improving. "
+             "Contributes to the drought score (weight 0.15) when negative.",
+        fmt="slope", signal="high_good", thr1=-0.01, thr2=0.0,
+    ),
+    "ndmi_momentum_ratio_1y": dict(
+        label="Moisture stress momentum (1y vs 5y)",
+        group="Vegetation Moisture", group_color="#06b6d4", group_index="NDMI",
+        desc="Ratio of moisture-stress anomaly frequency in the last 12 months to the 5-year baseline. "
+             "1.0 = conditions unchanged &bull; &gt;1 = stress accelerating &bull; &lt;1 = improving. "
+             "Amplifies the drought score when &gt;1. Capped at 5&times;.",
+        fmt="ratio", signal="low_good", thr1=1.0, thr2=2.0,
     ),
     "ndmi_moisture_stress_freq_5y": dict(
         label="Moisture stress frequency",
@@ -581,6 +614,24 @@ _FM: dict[str, dict] = {
              "Below 15%: rare stress &bull; 15&ndash;30%: recurring &bull; above 30%: chronic.",
         fmt="pct", signal="low_good", thr1=0.15, thr2=0.30,
     ),
+    "vpd_trend_slope_5y": dict(
+        label="VPD warming trend",
+        group="Climate (TerraClimate)", group_color="#f97316", group_index=None,
+        desc="Theil&ndash;Sen robust slope of monthly VPD over 5 years (kPa/year). "
+             "Positive = rising atmospheric dryness stress. "
+             "Above 0.05 kPa/yr is a notable worsening trend. "
+             "Contributes to the heat stress score (weight 0.20).",
+        fmt="vpd_slope", signal="low_good", thr1=0.02, thr2=0.05,
+    ),
+    "tmax_momentum_ratio_1y": dict(
+        label="Heat anomaly momentum (1y vs 5y)",
+        group="Climate (TerraClimate)", group_color="#f43f5e", group_index=None,
+        desc="Ratio of heat anomaly frequency in the last 12 months to the 5-year baseline "
+             "(anomaly = tmax &gt; historical monthly mean + 1 std dev). "
+             "1.0 = unchanged &bull; &gt;1 = heat anomalies accelerating &bull; &lt;1 = improving. "
+             "Amplifies the heat stress score when &gt;1. Capped at 5&times;.",
+        fmt="ratio", signal="low_good", thr1=1.0, thr2=2.0,
+    ),
     "pdsi_mean_5y": dict(
         label="Average PDSI",
         group="Climate (TerraClimate)", group_color="#d97706", group_index=None,
@@ -596,6 +647,23 @@ _FM: dict[str, dict] = {
              "Directly contributes to the drought sub-score (weight 0.25). "
              "Below 10%: occasional &bull; 10&ndash;25%: recurring &bull; above 25%: chronic drought.",
         fmt="pct", signal="low_good", thr1=0.10, thr2=0.25,
+    ),
+    "pdsi_trend_slope_5y": dict(
+        label="PDSI drought trend",
+        group="Climate (TerraClimate)", group_color="#d97706", group_index=None,
+        desc="Theil&ndash;Sen robust slope of PDSI over 5 years (index units per year). "
+             "Negative = worsening drought conditions over time. "
+             "Below &minus;0.5/yr is a notable drying trend. "
+             "Contributes to the drought score (weight 0.15).",
+        fmt="pdsi_slope", signal="high_good", thr1=-0.5, thr2=0.0,
+    ),
+    "pdsi_momentum_ratio_1y": dict(
+        label="PDSI drought momentum (1y vs 5y)",
+        group="Climate (TerraClimate)", group_color="#d97706", group_index=None,
+        desc="Ratio of drought months (PDSI &lt; &minus;2) in the last 12 months to the 5-year baseline frequency. "
+             "1.0 = unchanged &bull; &gt;1 = drought conditions intensifying &bull; &lt;1 = improving. "
+             "Amplifies the drought score when &gt;1. Capped at 5&times;.",
+        fmt="ratio", signal="low_good", thr1=1.0, thr2=2.0,
     ),
     "sar_flood_anomaly": dict(
         label="SAR flood anomaly (acute event)",
@@ -705,6 +773,12 @@ def _fmt_feat_value(v: float, fmt: str) -> str:
         return f"{v:+.1f} m ({_tpi_label(v)})"
     if fmt == "curv":
         return f"{v:.2e} m⁻¹ ({_curv_label(v)})"
+    if fmt == "ratio":
+        return f"{v:.2f}×"
+    if fmt == "vpd_slope":
+        return f"{v:+.4f} kPa/yr"
+    if fmt == "pdsi_slope":
+        return f"{v:+.3f} / yr"
     return f"{v:+.3f}"  # float3
 
 
