@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import numpy as np
+
 from ..compute.canopy import compute_canopy_proxy_from_series
 from ..compute.urban import detect_urban
 from ..compute.features import (
@@ -152,6 +154,36 @@ async def run_features(
     # _sar_scene_arrays: list of (month_key, scene_id, vv_dn, water_frac, rel_orbit)
     sar_scene_fracs: list[tuple[str, float, int]] = sar_features.pop("_sar_scene_fracs", [])
     sar_scene_arrays: list[tuple[str, str, object, float, int]] = sar_features.pop("_sar_scene_arrays", [])
+
+    # DEM slope mask: exclude steep-terrain pixels from SAR water fraction.
+    # SAR backscatter on slopes produces low-DN returns that mimic open water
+    # (geometric artefact -- look-angle dependent, not a real water signal).
+    # The elevation_array is guaranteed to be cached by run_dem_features above.
+    _flat_mask: np.ndarray | None = None
+    _elev_bytes = store.get_elevation_array(location_key)
+    if _elev_bytes is not None:
+        _sz = settings.COG_WINDOW_SIZE
+        _elev_arr = np.frombuffer(bytes(_elev_bytes), dtype=np.float32).reshape(_sz, _sz)
+        _px = settings.S2_PIXEL_SIZE_M
+        _fill = float(np.nanmean(_elev_arr)) if not np.all(np.isnan(_elev_arr)) else 0.0
+        _grad_row, _grad_col = np.gradient(np.nan_to_num(_elev_arr, nan=_fill))
+        _slope_deg = np.degrees(np.arctan(np.sqrt((_grad_col / _px) ** 2 + (_grad_row / _px) ** 2)))
+        _flat_mask = _slope_deg < settings.DEM_FLAT_SLOPE_THRESHOLD
+        logger.info(
+            "DEM flat mask: %.1f%% of window is flat (slope < %.0f°)",
+            100.0 * _flat_mask.mean(),
+            settings.DEM_FLAT_SLOPE_THRESHOLD,
+        )
+
+    # Recompute per-scene water fractions restricted to flat-terrain pixels.
+    if _flat_mask is not None and sar_scene_arrays:
+        from ..compute.sar_features import compute_water_fraction as _compute_wf
+        _corrected = []
+        for _mk, _sid, _vv_dn, _wf, _orbit in sar_scene_arrays:
+            _cwf = _compute_wf(_vv_dn, _flat_mask)
+            _corrected.append((_mk, _sid, _vv_dn, _cwf if _cwf is not None else _wf, _orbit))
+        sar_scene_arrays = _corrected
+        sar_scene_fracs = [(_mk, _wf, _orbit) for _mk, _sid, _vv, _wf, _orbit in sar_scene_arrays]
 
     # Burn months derived from NBR: used for SAR suppression and the active_fire flag.
     # Computed unconditionally (NBR does not depend on SAR data being available).

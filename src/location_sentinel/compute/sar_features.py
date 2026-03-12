@@ -8,13 +8,18 @@ import numpy as np
 from ..config import settings
 
 
-def compute_water_fraction(vv_dn: np.ndarray) -> float | None:
+def compute_water_fraction(vv_dn: np.ndarray, flat_mask: np.ndarray | None = None) -> float | None:
     """Compute fraction of water pixels in a VV backscatter array.
 
     Water pixels: DN < SAR_WATER_DN_THRESHOLD AND DN > 0 (exclude nodata).
+    If flat_mask is provided (True = flat terrain), only those pixels are
+    considered valid, excluding steep-slope pixels that mimic water via
+    geometric backscatter artefacts.
     Returns None if no valid pixels exist.
     """
     valid_mask = vv_dn > 0
+    if flat_mask is not None:
+        valid_mask = valid_mask & flat_mask
     valid_count = int(valid_mask.sum())
     if valid_count == 0:
         return None

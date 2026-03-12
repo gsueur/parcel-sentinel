@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.25.0` / scoring `risk-v1.14.0`
+**Version:** processing `s2l2a-v1.26.0` / scoring `risk-v1.14.0`
 **Date:** 2026-03-11
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -486,7 +486,9 @@ For each S1 GRD scene, the VV backscatter array (64 × 64 pixels, uint16 DN) is 
 
 ```
 valid_pixels = pixels where DN > 0  (DN = 0 is nodata)
+              AND slope_deg < DEM_FLAT_SLOPE_THRESHOLD  (see §8.2)
 water_pixels = pixels where 0 < DN < SAR_WATER_DN_THRESHOLD (75 DN)
+              AND slope_deg < DEM_FLAT_SLOPE_THRESHOLD
 water_fraction = water_pixels / valid_pixels
 ```
 
@@ -501,6 +503,12 @@ The 75 DN threshold was empirically calibrated against known reference sites:
 | Urban / corner reflectors | ≥ 500 DN | ≥ −30 dB |
 
 Open water acts as a specular reflector: VV microwave energy scatters away from the sensor, yielding very low backscatter. The 75 DN threshold sits between the water range (35 -- 70 DN) and the land mean (141 DN), providing a margin above the noise floor.
+
+**DEM slope mask (`DEM_FLAT_SLOPE_THRESHOLD = 15°`):** SAR C-band backscatter is strongly look-angle dependent. On steep slopes, the radar energy can be directed away from the sensor in a geometry that mimics calm open water, even over rocky or snow-covered terrain. To avoid counting these geometric artefacts as water pixels, the valid pixel set is restricted to pixels where the DEM-derived slope is below 15°. Both the numerator (water pixels) and denominator (valid pixels) exclude steep-slope pixels before the fraction is computed.
+
+The slope is derived from the cached 64 × 64 elevation array (same window as the SAR read) using `numpy.gradient` with the 10 m effective pixel spacing. The DEM pipeline runs concurrently with the SAR pipeline; the elevation array is guaranteed to be in the database before the water fractions are recomputed. If the elevation array is unavailable (e.g. DEM tile missing for a remote location), no masking is applied and water fractions fall back to the unmasked computation.
+
+This correction has no effect on flat terrain (slope uniformly below threshold) and reduces inflated fractions in mountain valley and alpine locations where a single SAR orbit has a look angle that persistently views a slope face.
 
 ### 8.2 Snow suppression
 
@@ -1037,9 +1045,11 @@ Concrete, asphalt, and other impervious surfaces have low NIR reflectance and mo
 
 Post-fire burn scars leave bare soil and ash with VV backscatter values that can fall below the 75 DN water threshold. This produces false "water" detections in SAR scenes acquired over recently burned areas. The burn suppression (section 8.3) mitigates this by excluding SAR scenes from months where co-located NBR confirms a burn signal. Residual risk: if the optical SCL mask discards the S2 scene for the same month (e.g. smoke), NBR is not available and burn suppression does not apply.
 
-### 13.3 SAR snow / water confusion
+### 13.3 SAR snow / water confusion and steep-terrain artefacts
 
 Smooth compacted snow is specularly reflective in C-band, producing backscatter in the water DN range. The snow suppression filter (section 8.2) addresses this for the chronic frequency metric. Flooded agricultural fields can also exhibit elevated NDSI due to specular reflection from waterlogged soil surfaces; the flood anomaly metric deliberately omits snow suppression for this reason.
+
+Rocky or snow-covered slopes at certain look angles produce geometrically induced low-backscatter returns even when no water is present. This artefact is look-angle-dependent and therefore orbit-specific: one orbit may record a slope as "water" while a second orbit from a different direction records it as land. The DEM slope mask (section 8.1) addresses this by excluding pixels steeper than 15° from the water fraction computation, so a hillside pixel never contributes to a false-flood count. Residual risk: slopes that are exactly at the threshold angle, or locations where the 30 m DEM tile is unavailable, may still produce slightly elevated fractions.
 
 ### 13.4 NDWI and SAR do not measure the same quantity
 
@@ -1095,6 +1105,7 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent |
 | `SAR_ACTIVE_FLOOD_MIN_NDWI` | 0.08 | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
 | `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag regardless of corroboration |
+| `DEM_FLAT_SLOPE_THRESHOLD` | 15.0° | Per-pixel slope above which the pixel is excluded from SAR water fraction (numerator and denominator) |
 
 ### Elevation parameters (Copernicus GLO-30)
 

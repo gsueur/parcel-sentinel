@@ -122,8 +122,15 @@ class Settings(BaseSettings):
     TIDAL_ZONE_MAX_ELEV_M: float = 10.0     # Elevation gate: above this, tidal influence is impossible
     NOAA_STATION_REFRESH_DAYS: int = 30     # Re-fetch station list this many days after last update
 
+    # SAR slope masking (DEM-derived flat-terrain filter)
+    # Pixels with slope >= this threshold are excluded from the SAR water fraction
+    # denominator. Rocky/snowy hillsides at steep angles produce low-DN C-band
+    # returns that mimic open water -- masking them corrects the water fraction
+    # without touching the snow or burn suppression logic.
+    DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
+
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.25.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.26.0"
     SCORE_VERSION: str = "risk-v1.14.0"
 
     # Storage

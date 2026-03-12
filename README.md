@@ -153,7 +153,9 @@ Bands used:
 
 Conversion: `sigma0_dB ≈ 20 * log10(DN) - 83`
 
-Current threshold: `SAR_WATER_DN_THRESHOLD = 75` (above noise floor, below land mean). A pixel is classified as water when `0 < DN < 75`. A scene is classified as flooded when at least 35% of the 64x64 window pixels meet this criterion (`SAR_MIN_WATER_PIXEL_FRACTION = 0.35`).
+Current threshold: `SAR_WATER_DN_THRESHOLD = 75` (above noise floor, below land mean). A pixel is classified as water when `0 < DN < 75`. A scene is classified as flooded when at least 35% of the **flat-terrain** pixels in the 64x64 window meet this criterion (`SAR_MIN_WATER_PIXEL_FRACTION = 0.35`).
+
+**DEM slope mask (v1.26.0):** SAR backscatter on steep slopes is geometrically dependent on look angle and can produce low-DN returns that mimic open water. Before computing any per-scene water fraction, pixels where the DEM-derived slope exceeds `DEM_FLAT_SLOPE_THRESHOLD` (15°) are excluded from both the numerator (water pixels) and denominator (valid pixels). This corrects inflated water fractions at mountain valley and alpine sites without affecting flat terrain where the threshold has no effect. The slope is computed via `numpy.gradient` on the cached 64x64 elevation array using the 10 m pixel spacing.
 
 For the chronic frequency metric two thresholds are evaluated per orbit and the higher frequency is returned:
 
@@ -632,7 +634,7 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.19.0",
+  "processing_version": "s2l2a-v1.26.0",
   "score_version": "risk-v1.14.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
@@ -899,7 +901,7 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.19.0` | Cache key tag for features |
+| `PROCESSING_VERSION` | `s2l2a-v1.26.0` | Cache key tag for features |
 | `SCORE_VERSION` | `risk-v1.14.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
@@ -934,6 +936,7 @@ All settings are environment variables. Defaults work out of the box.
 | `SAR_NDWI_VETO_FACTOR` | `0.25` | Multiplier applied to chronic flood score when NDWI corroboration is absent |
 | `SAR_ACTIVE_FLOOD_MIN_NDWI` | `0.08` | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
 | `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | `0.35` | `active_flood` strong-anomaly override: flag regardless of corroboration |
+| `DEM_FLAT_SLOPE_THRESHOLD` | `15.0` | Pixels steeper than this (degrees) are excluded from SAR water fraction computation |
 | `SAR_MAX_SCENES_PER_MONTH` | `2` | Max SAR scenes per month |
 | `SAR_MAX_TOTAL_SCENES` | `120` | Hard cap on total SAR scenes |
 
