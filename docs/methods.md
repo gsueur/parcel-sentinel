@@ -747,6 +747,8 @@ Captures dense temperate urban cores (e.g. Boston, Chicago) with low NDVI, low c
 
 Both paths evaluate to False (non-urban) if `bsi_bare_soil_freq_5y` is not available.
 
+**Known limitation -- coastal boundary locations:** When the 640 m window straddles a coastline (beach, boardwalk, harbour edge), the open water and sand portions drive mean NDVI below the 0.12 barren-terrain guard, suppressing urban detection even when the land portion is dense urban. This is a known false negative for coastal urban locations where the analysis window cannot be contained within the built area. See also §13.7.
+
 Urban classification has the following downstream effects:
 - `drought_score` is forced to 0 (impervious surfaces have no vegetation drought signal)
 - `fire_exposure_score` is forced to 0 (NBR on concrete/asphalt spectrally mimics burned vegetation; see section 13.1)
@@ -1272,6 +1274,8 @@ The NDWI optical cross-validation veto (section 11.5) addresses this by discount
 ### 13.7 640 m window and land cover heterogeneity
 
 The fixed 640 m × 640 m footprint means that a point location in a mixed environment (e.g. a building at the edge of a park) integrates signal from surrounding land cover. The reported NDVI, BSI, and canopy proxy reflect the 640 m neighbourhood average, not the specific parcel land cover. This is by design: the intent is to capture the broader landscape context relevant to climate risk, not parcel-specific green space.
+
+A specific consequence at coastal boundaries: open water and beach sand both produce near-zero NDVI. When the window straddles a shoreline, the non-land portion depresses the window mean below the urban-detection barren-terrain guard (0.12), causing dense coastal urban areas (waterfronts, boardwalks, harbour districts) to be classified as non-urban. The tidal zone flag is typically set for such locations, which already suppresses drought scoring -- the primary downstream effect of the urban flag in these contexts.
 
 ---
 
