@@ -430,7 +430,7 @@ Long-term features computed from the full date window (default 5 years):
 | `nearest_tidal_station_km` | Distance in km to the nearest NOAA tidal station, or null if none within radius |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
-| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated by independent evidence: NDWI persistence > 0.08 OR anomaly > 0.35; triggers a 1.40× boost to `flood_risk_score` |
+| `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated by independent evidence: NDWI persistence > 0.08, OR anomaly > 0.35 with any optical water history (blocked when `sar_water_freq_5y > 0.50` and NDWI < 0.08, indicating SAR look-angle terrain artifacts); triggers a 1.40× boost to `flood_risk_score` |
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end`; triggers a 1.25× boost to `fire_exposure_score` (non-urban only) |
 | `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median by > 0.1; suppressed for snow months, tidal zones, and persistently wet sites; triggers a 1.30× boost to `drought_score` (non-urban only) |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
@@ -974,7 +974,8 @@ All settings are environment variables. Defaults work out of the box.
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | `0.05` | Optical water persistence below which SAR chronic flood score is discounted (no NDWI corroboration) |
 | `SAR_NDWI_VETO_FACTOR` | `0.25` | Multiplier applied to chronic flood score when NDWI corroboration is absent |
 | `SAR_ACTIVE_FLOOD_MIN_NDWI` | `0.08` | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
-| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | `0.35` | `active_flood` strong-anomaly override: flag regardless of corroboration |
+| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | `0.35` | `active_flood` strong-anomaly override: flag if anomaly exceeds this (blocked when SAR is artifactual) |
+| `SAR_CHRONIC_ARTIFACT_THRESHOLD` | `0.50` | `active_flood` artifact guard: if `sar_water_freq_5y` exceeds this while NDWI is below `SAR_ACTIVE_FLOOD_MIN_NDWI`, SAR is treated as look-angle-contaminated and the strong-anomaly bypass is disabled |
 | `DEM_FLAT_SLOPE_THRESHOLD` | `15.0` | Pixels steeper than this (degrees) are excluded from SAR water fraction computation |
 | `SAR_MAX_SCENES_PER_MONTH` | `2` | Max SAR scenes per month |
 | `SAR_MAX_TOTAL_SCENES` | `120` | Hard cap on total SAR scenes |

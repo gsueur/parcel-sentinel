@@ -468,7 +468,13 @@ Three binary features (0.0 / 1.0) indicate whether a climate episode is ongoing 
 active_flood = 1.0  iff  sar_flood_anomaly > 0.10
               AND  at least one corroboration condition is true:
                      ndwi_wetness_persistence_5y > SAR_ACTIVE_FLOOD_MIN_NDWI (0.08)
-                     OR sar_flood_anomaly > SAR_ACTIVE_FLOOD_STRONG_ANOMALY (0.35)
+                     OR (NOT sar_likely_artifactual
+                         AND sar_flood_anomaly > SAR_ACTIVE_FLOOD_STRONG_ANOMALY (0.35)
+                         AND ndwi_wetness_persistence_5y > 0.0)
+
+where:
+  sar_likely_artifactual = sar_water_freq_5y > SAR_CHRONIC_ARTIFACT_THRESHOLD (0.50)
+                           AND ndwi_wetness_persistence_5y < SAR_ACTIVE_FLOOD_MIN_NDWI (0.08)
 ```
 
 `sar_flood_anomaly` already covers only the most recent two calendar months of SAR scenes (see §8.6). A value above 10% means SAR water fraction is elevated by at least 10 percentage points above the orbit-stratified seasonal baseline in at least one recent pass.
@@ -476,11 +482,13 @@ active_flood = 1.0  iff  sar_flood_anomaly > 0.10
 **Corroboration requirement:** A SAR anomaly alone is not sufficient to trigger the flag. SAR backscatter depends heavily on look angle: a single orbit viewing a snow-covered or rocky slope at the right incidence angle produces low-backscatter returns indistinguishable from open water. If both the acute anomaly and the chronic water frequency are driven by the same orbit artifact, using one to corroborate the other is circular. Corroboration therefore requires independent evidence:
 
 1. **NDWI optical history** (`ndwi_wetness_persistence_5y > 0.08`): surface water appeared in optical data in at least ~1 month per year over the full window. Optical and SAR artifacts are uncorrelated, so this is a genuinely independent signal.
-2. **Very strong anomaly** (`sar_flood_anomaly > 0.35`): a major event override -- catastrophic inundation, burst levees, or large-scale storm surge produces anomalies well above 35% regardless of background conditions.
+2. **Very strong anomaly** (`sar_flood_anomaly > 0.35`): a major event override -- catastrophic inundation, burst levees, or large-scale storm surge produces anomalies well above 35% regardless of background conditions. This bypass is blocked when SAR is determined to be artifactual (see below).
 
-`sar_water_freq_5y` is intentionally excluded from this list: in mountain valleys and arid terrain with relief, a single orbit consistently records low backscatter from the same slope geometry. That chronic signal then appears to corroborate the acute anomaly when both share the same artifact source.
+**SAR look-angle artifact detection:** If `sar_water_freq_5y > 0.50` (SAR chronically reports water in more than half of all scenes) but `ndwi_wetness_persistence_5y < 0.08` (optical shows little to no surface water history), the two sensors are in fundamental disagreement. The most common cause is terrain look-angle contamination: a montane slope oriented toward the sensor produces specular C-band returns indistinguishable from open water in nearly every pass, inflating both the chronic frequency and any derived anomaly. Because the chronic and acute SAR signals share the same geometric source, neither can independently corroborate the other. The site is marked `sar_likely_artifactual` and the strong-anomaly bypass is disabled; `active_flood` then requires optical corroboration (`ndwi_wetness_persistence_5y > 0.08`) to be raised.
 
-Sites that fail both checks (typically: mountain valley terrain where one SAR orbit sees a snow/rock slope, high-altitude rocky terrain, or arid barren land) are not flagged as actively flooded even when the anomaly threshold is met.
+`sar_water_freq_5y` is otherwise intentionally excluded from the corroboration list: in mountain valleys and arid terrain with relief, a single orbit consistently records low backscatter from the same slope geometry, making chronic and acute SAR signals circularly correlated.
+
+Sites that fail all corroboration checks (mountain valley terrain with chronic SAR/optical disagreement, high-altitude rocky terrain, or arid barren land) are not flagged as actively flooded even when the anomaly threshold is met.
 
 **`active_fire`**
 
@@ -1296,7 +1304,8 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
 | `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent |
 | `SAR_ACTIVE_FLOOD_MIN_NDWI` | 0.08 | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
-| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag regardless of corroboration |
+| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag if anomaly exceeds this (blocked when SAR is artifactual) |
+| `SAR_CHRONIC_ARTIFACT_THRESHOLD` | 0.50 | `active_flood` artifact guard: if `sar_water_freq_5y` exceeds this while NDWI is below `SAR_ACTIVE_FLOOD_MIN_NDWI`, SAR is treated as look-angle-contaminated and the strong-anomaly bypass is disabled |
 | `DEM_FLAT_SLOPE_THRESHOLD` | 15.0° | Per-pixel slope above which the pixel is excluded from SAR water fraction (numerator and denominator) |
 
 ### Elevation parameters (hybrid DTM)

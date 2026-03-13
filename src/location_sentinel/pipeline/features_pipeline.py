@@ -302,9 +302,22 @@ async def run_features(
     # look-angle artifact as the acute signal, making it circular corroboration.
     _sar_anom = (features.get("sar_flood_anomaly") or 0.0)
     _ndwi_wet = (features.get("ndwi_wetness_persistence_5y") or 0.0)
+    _sar_chronic = (features.get("sar_water_freq_5y") or 0.0)
+    # SAR look-angle artifact detection: if SAR chronically shows high water frequency
+    # but optical NDWI shows little surface water, the C-band backscatter is contaminated
+    # by terrain slope geometry (montane areas). The acute anomaly is also unreliable in
+    # that case -- block the strong-anomaly bypass entirely for such sites.
+    _sar_likely_artifactual = (
+        _sar_chronic > settings.SAR_CHRONIC_ARTIFACT_THRESHOLD
+        and _ndwi_wet < settings.SAR_ACTIVE_FLOOD_MIN_NDWI
+    )
     _flood_corroborated = (
         _ndwi_wet > settings.SAR_ACTIVE_FLOOD_MIN_NDWI
-        or (_sar_anom > settings.SAR_ACTIVE_FLOOD_STRONG_ANOMALY and _ndwi_wet > 0.0)
+        or (
+            not _sar_likely_artifactual
+            and _sar_anom > settings.SAR_ACTIVE_FLOOD_STRONG_ANOMALY
+            and _ndwi_wet > 0.0
+        )
     )
     features["active_flood"] = 1.0 if (_sar_anom > 0.10 and _flood_corroborated) else 0.0
 

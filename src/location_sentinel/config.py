@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # creating circular corroboration.
     SAR_ACTIVE_FLOOD_MIN_NDWI: float = 0.08      # >= ~1 month/year optical water history
     SAR_ACTIVE_FLOOD_STRONG_ANOMALY: float = 0.35  # very strong anomaly -- flag regardless
+    # If SAR chronically shows water in > 50% of scenes but NDWI shows < 8% of months,
+    # the SAR backscatter is almost certainly contaminated by look-angle terrain artifacts
+    # (montane slopes producing specular reflection indistinguishable from open water).
+    # In that case the acute anomaly is also unreliable -- block the strong-anomaly bypass.
+    SAR_CHRONIC_ARTIFACT_THRESHOLD: float = 0.50  # chronic SAR water freq above which SAR is unreliable when NDWI disagrees
 
     # Standardized window size for all raster reads
     COG_WINDOW_SIZE: int = 64
@@ -134,7 +139,7 @@ class Settings(BaseSettings):
     DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.30.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.31.0"
     SCORE_VERSION: str = "risk-v1.19.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers
