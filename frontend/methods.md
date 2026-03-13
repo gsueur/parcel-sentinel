@@ -19,7 +19,7 @@
 9. [TerraClimate gridded climate features](#9-terraclimate-gridded-climate-features)
 10. [Urban detection](#10-urban-detection)
 11. [Tidal zone classification (NOAA CO-OPS)](#11-tidal-zone-classification)
-12. [Elevation features (Copernicus GLO-30)](#12-elevation-features)
+12. [Elevation features (DTM: 3DEP / GLO-30)](#12-elevation-features)
 13. [Risk scoring](#13-risk-scoring)
 14. [Quality metadata](#14-quality-metadata)
 15. [Known limitations and spectral confounds](#15-known-limitations-and-spectral-confounds)
@@ -109,16 +109,31 @@ grid_lon = lon_idx / 24 − 179.979167
 
 ---
 
-### 1.4 Copernicus GLO-30 DEM
+### 1.4 Elevation DEM (hybrid: USGS 3DEP + Copernicus GLO-30)
+
+Terrain features are read from a two-source priority chain. For US locations the USGS 3DEP 1" lidar-derived DTM is tried first; if the tile is missing or yields insufficient valid pixels, or for all non-US locations, the Copernicus GLO-30 DSM is used as the global fallback.
+
+**USGS 3DEP 1" (primary, US only)**
+
+| Attribute | Value |
+|-----------|-------|
+| Product | USGS 3D Elevation Program, 1 arc-second (~30 m), bare-earth lidar DTM |
+| Source | Airborne lidar; removes vegetation canopy and building rooftops |
+| Archive | AWS S3 `s3://prd-tnm/` (us-west-2), public, no authentication required |
+| Tile grid | 1°×1° tiles, naming `StagedProducts/Elevation/1/TIFF/current/n{lat}w{lon}/USGS_1_n{lat}w{lon}.tif` |
+| Coverage | Continental US, Alaska, Hawaii (lat 18--72°N, lon 180--64°W) |
+| Cache | Same `elevation_cache` table; one read per location |
+
+**Copernicus GLO-30 (fallback, global)**
 
 | Attribute | Value |
 |-----------|-------|
 | Product | Copernicus Digital Elevation Model (GLO-30), 1 arc-second resolution (~30 m) |
-| Source | TanDEM-X radar; vertical accuracy ~1 m RMSE over flat terrain, ~2-4 m in rugged terrain |
+| Source | TanDEM-X radar (DSM -- includes canopy and building heights); vertical accuracy ~1 m RMSE flat, ~2-4 m rugged |
 | Archive | AWS S3 `s3://copernicus-dem-30m/` (eu-central-1), public, no authentication required |
 | Tile grid | 1°×1° tiles, naming `Copernicus_DSM_COG_10_{N|S}{lat:02d}_00_{E|W}{lon:03d}_00_DEM/...tif` |
 | Coverage | Global |
-| Cache | Elevation features stored permanently in `elevation_cache` table; one read per location |
+| Cache | Same `elevation_cache` table; one read per location |
 
 ### 1.5 NOAA CO-OPS (tidal stations and tide predictions)
 
@@ -780,7 +795,7 @@ This cross-reference allows visual validation that SAR-detected water fraction f
 
 ### 12.1 Data access
 
-A single 64×64 pixel window (640m × 640m footprint) is read from the Copernicus GLO-30 COG tile that contains the location centroid. The read uses rasterio with anonymous S3 access (`AWS_NO_SIGN_REQUEST=YES`) and bilinear resampling to the target window size. If fewer than 25% of pixels contain valid data (e.g. tile edge, ocean), the read is discarded and the `no_dem_data` quality flag is set.
+A single 64×64 pixel window (640m × 640m footprint) is read from the best available bare-earth DEM tile for the location centroid. For US locations (lat 18--72°N, lon 180--64°W) the USGS 3DEP 1" lidar DTM (`prd-tnm`, us-west-2) is tried first; on tile failure or insufficient valid pixels, or for all non-US locations, the Copernicus GLO-30 DSM (`copernicus-dem-30m`, eu-central-1) is used as the global fallback. Both sources use rasterio with anonymous S3 access (`AWS_NO_SIGN_REQUEST=YES`) and bilinear resampling. If fewer than 25% of pixels contain valid data (e.g. tile edge, ocean), the result is discarded and the `no_dem_data` quality flag is set.
 
 ### 12.2 Derived features
 
@@ -1102,7 +1117,7 @@ Default (no TerraClimate data, `no_terraclimate_data` flag): 50.
 
 ### 11.7 Landslide risk score
 
-A standalone terrain hazard score (0-100) derived from the GLO-30 DEM. It is **not included in the composite** -- landslide is an independent geophysical hazard orthogonal to the climate risk dimensions. It is surfaced separately in the API response and the HTML report.
+A standalone terrain hazard score (0-100) derived from the terrain DTM (3DEP for US locations, GLO-30 globally). It is **not included in the composite** -- landslide is an independent geophysical hazard orthogonal to the climate risk dimensions. It is surfaced separately in the API response and the HTML report.
 
 **Physical basis:** Slope angle is the primary driver of gravitational shear stress. Terrain relief (elevation range of the 640m footprint) is a secondary proxy for slope length and material accumulation potential.
 
@@ -1187,7 +1202,7 @@ Quality flags:
 | `no_sar_data` | No Sentinel-1 scenes found or all scenes failed to read |
 | `sar_burn_suppression` | At least one SAR month excluded due to co-located NBR burn signal |
 | `no_terraclimate_data` | TerraClimate fetch failed for all requested variables |
-| `no_dem_data` | GLO-30 tile read failed or < 25% valid pixels (ocean tile edge, missing coverage) |
+| `no_dem_data` | DEM tile read failed for all sources (3DEP + GLO-30), or < 25% valid pixels (ocean tile edge, missing coverage) |
 
 ---
 
@@ -1263,12 +1278,14 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag regardless of corroboration |
 | `DEM_FLAT_SLOPE_THRESHOLD` | 15.0° | Per-pixel slope above which the pixel is excluded from SAR water fraction (numerator and denominator) |
 
-### Elevation parameters (Copernicus GLO-30)
+### Elevation parameters (hybrid DTM)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `DEM_AWS_BUCKET` | `copernicus-dem-30m` | S3 bucket for GLO-30 COG tiles |
-| `DEM_AWS_REGION` | `eu-central-1` | Bucket region for GDAL virtual filesystem routing |
+| `DEM_3DEP_BUCKET` | `prd-tnm` | S3 bucket for USGS 3DEP 1" tiles (US primary, us-west-2) |
+| `DEM_3DEP_REGION` | `us-west-2` | Bucket region for 3DEP GDAL virtual filesystem routing |
+| `DEM_AWS_BUCKET` | `copernicus-dem-30m` | S3 bucket for GLO-30 COG tiles (global fallback) |
+| `DEM_AWS_REGION` | `eu-central-1` | Bucket region for GLO-30 GDAL virtual filesystem routing |
 
 ### Terrain risk scoring thresholds
 

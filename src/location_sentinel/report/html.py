@@ -685,10 +685,10 @@ _FM: dict[str, dict] = {
              "above 30%: acute flood signal detected.",
         fmt="pct", signal="low_good", thr1=0.10, thr2=0.30,
     ),
-    # Terrain features (Copernicus GLO-30 DEM derived)
+    # Terrain features (DTM: USGS 3DEP for US, Copernicus GLO-30 globally)
     "aspect_deg": dict(
         label="Slope aspect",
-        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        group="Terrain (DTM)", group_color="#a78bfa", group_index=None,
         desc="Circular mean downslope direction of the 64&times;64 window (0&deg; = North, clockwise). "
              "South-facing slopes (NH) receive more solar radiation, driving higher drought and heat stress. "
              "North-facing slopes (NH) stay cooler and wetter.",
@@ -696,7 +696,7 @@ _FM: dict[str, dict] = {
     ),
     "tpi_m": dict(
         label="Topographic Position Index",
-        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        group="Terrain (DTM)", group_color="#a78bfa", group_index=None,
         desc="Center-pixel elevation minus the mean of the 64&times;64 window (metres). "
              "Positive = ridgetop / hilltop; near-zero = planar; negative = valley floor / depression. "
              "Valley floors concentrate runoff and amplify flood risk.",
@@ -704,7 +704,7 @@ _FM: dict[str, dict] = {
     ),
     "curvature": dict(
         label="Terrain curvature",
-        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        group="Terrain (DTM)", group_color="#a78bfa", group_index=None,
         desc="Laplacian curvature of the elevation surface at the site center (m&minus;&sup1;). "
              "Positive = concave (valley/bowl, collects water); near-zero = planar; "
              "negative = convex (ridge/dome, sheds water). Contributes to flood risk scoring.",
@@ -712,7 +712,7 @@ _FM: dict[str, dict] = {
     ),
     "heat_load_index": dict(
         label="Heat load index (HLI)",
-        group="Terrain (GLO-30)", group_color="#a78bfa", group_index=None,
+        group="Terrain (DTM)", group_color="#a78bfa", group_index=None,
         desc="Solar radiation proxy combining aspect and slope (0 = N-facing flat, ~0.8 = S-facing steep). "
              "Computed as (1&minus;cos(aspect&minus;180&deg;))/2 &times; sin(slope) for Northern Hemisphere. "
              "High HLI amplifies drought and heat stress scores.",
@@ -730,7 +730,7 @@ _GROUP_ORDER = [
     "Canopy & Context",
     "SAR Flood",
     "Climate (TerraClimate)",
-    "Terrain (GLO-30)",
+    "Terrain (DTM)",
 ]
 
 
@@ -1506,7 +1506,7 @@ def build_report_html(
     else:
         climate_html = ""
 
-    # Elevation badge (Copernicus GLO-30)
+    # Elevation badge (DTM: USGS 3DEP for US, Copernicus GLO-30 globally)
     if elevation and elevation.get("elevation_m") is not None:
         elev_m = elevation["elevation_m"]
         elev_min = elevation.get("elevation_min_m")
@@ -1520,7 +1520,7 @@ def build_report_html(
         else:
             elev_str = f"&#9651; {elev_m:.0f} m"
         elevation_html = (
-            f'<span class="elev-badge" title="Copernicus GLO-30 DEM &mdash; min / mean / max elevation of 640 m window{slope_str}">'
+            f'<span class="elev-badge" title="Terrain DTM (USGS 3DEP for US / Copernicus GLO-30 globally) &mdash; min / mean / max elevation of 640 m window{slope_str}">'
             f'{elev_str}{slope_str}{range_str}'
             f'</span>'
         )
@@ -1542,9 +1542,9 @@ def build_report_html(
     # Mapbox thumbnail + DEM relief stacked in left column
     thumb_url = f"/v1/thumbnail/{location_key}.png"
     dem_html = (
-        f'<img src="data:image/png;base64,{dem_png_b64}" alt="Terrain relief (GLO-30)"'
+        f'<img src="data:image/png;base64,{dem_png_b64}" alt="Terrain relief (DTM)"'
         f' style="margin-top:8px;border-radius:4px;display:block;width:96px;height:96px;image-rendering:pixelated">'
-        f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">&#9651; Terrain relief &mdash; Copernicus GLO-30</div>'
+        f'<div style="font-size:0.68rem;color:#94a3b8;margin-top:4px">&#9651; Terrain relief &mdash; 3DEP / GLO-30</div>'
     ) if dem_png_b64 else ""
     if geometry_geojson:
         thumb_html = (

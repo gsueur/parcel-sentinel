@@ -30,7 +30,7 @@ Given a point or polygon geometry, this service:
 - Searches the Sentinel-2 L2A archive for satellite passes over that location (back 5 years by default)
 - Searches the Sentinel-1 GRD archive for SAR passes over the same period
 - Fetches TerraClimate monthly climate variables (temperature, precipitation, VPD, PDSI) from the University of Idaho THREDDS server
-- Reads terrain elevation from the Copernicus GLO-30 DEM (30m, global, public S3)
+- Reads terrain elevation from a hybrid bare-earth DTM: USGS 3DEP 1" lidar (US locations) with Copernicus GLO-30 as global fallback
 - All four pipelines run concurrently; results are merged before scoring
 - For each selected S2 scene: reads 64x64 native pixels (640m footprint) for 7 bands, masks bad pixels via SCL, computes six spectral indices
 - For each selected S1 scene: reads 64x64 pixels of VV backscatter, applies a DN threshold to detect water
@@ -55,11 +55,11 @@ POST /v1/locations (geometry + options)
         |
         |-------------- asyncio.gather -------------------------------------------------|
         v                  v                        v                               v
-  Sentinel-2 L2A     Sentinel-1 GRD          TerraClimate pipeline        Copernicus GLO-30
+  Sentinel-2 L2A     Sentinel-1 GRD          TerraClimate pipeline        DTM (3DEP / GLO-30)
   STAC search        STAC search             OPeNDAP point extraction      DEM COG read
   Earth Search v1    Earth Search v1         U. Idaho THREDDS              /vsis3/, no-sign
   s2-l2a collection  s1-grd collection       5 vars × N years              1 arc-sec (~30m)
-  sentinel-cogs      sentinel-s1-l1c         tmax tmin ppt vpd PDSI        eu-central-1
+  sentinel-cogs      sentinel-s1-l1c         tmax tmin ppt vpd PDSI        3DEP (US) / GLO-30
         |                  |                        |                               |
         v                  v                        v                               v
   Scene selection    Scene selection         DuckDB grid-cell cache        64x64 px window
@@ -166,14 +166,22 @@ For the chronic frequency metric two thresholds are evaluated per orbit and the 
 
 ---
 
-### Copernicus GLO-30 DEM
+### Elevation DEM (hybrid: USGS 3DEP + Copernicus GLO-30)
 
-**Product:** Copernicus Digital Elevation Model, 30m (1 arc-second) global
+For US locations (lat 18-72°N, lon 180-64°W), the USGS 3DEP 1" bare-earth lidar DTM is tried first. Outside the US, or if the 3DEP tile is missing/insufficient, the Copernicus GLO-30 DSM is used as the global fallback.
+
+**USGS 3DEP (US primary):**
+**Product:** USGS 3D Elevation Program, 1 arc-second (~30m), lidar bare-earth DTM
+**Archive:** AWS S3 `s3://prd-tnm/` (us-west-2), public, no authentication
+**Tile path:** `StagedProducts/Elevation/1/TIFF/current/n{lat}w{lon}/USGS_1_n{lat}w{lon}.tif`
+
+**Copernicus GLO-30 (global fallback):**
+**Product:** Copernicus Digital Elevation Model, 30m (1 arc-second) global DSM
 **Source:** TanDEM-X radar acquisition; vertical accuracy ~1 m RMSE over flat terrain
 **Archive:** AWS S3 `s3://copernicus-dem-30m/` (eu-central-1), public, no authentication
 **Access pattern:** Single 64x64 pixel window read per location; result cached permanently in DuckDB
 
-One 1°x1° tile is opened per location. The tile path follows the convention:
+One 1°x1° tile is opened per location. GLO-30 tile path convention:
 ```
 Copernicus_DSM_COG_10_{N|S}{lat:02d}_00_{E|W}{lon:03d}_00_DEM/{tile}.tif
 ```
@@ -426,7 +434,7 @@ Long-term features computed from the full date window (default 5 years):
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end`; triggers a 1.25× boost to `fire_exposure_score` (non-urban only) |
 | `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median by > 0.1; suppressed for snow months, tidal zones, and persistently wet sites; triggers a 1.30× boost to `drought_score` (non-urban only) |
 | `quality_score` | Combined [0-1] measure of temporal coverage and cloud clarity |
-| `elevation_m` | Mean terrain elevation of the 640m footprint (metres, WGS84 ellipsoidal) -- Copernicus GLO-30 |
+| `elevation_m` | Mean terrain elevation of the 640m footprint (metres, WGS84 ellipsoidal) -- USGS 3DEP (US) or Copernicus GLO-30 (global) |
 | `elevation_min_m` | Minimum elevation within the footprint |
 | `elevation_max_m` | Maximum elevation within the footprint |
 | `elevation_range_m` | Max minus min elevation within the footprint (terrain relief proxy) |
@@ -534,7 +542,7 @@ Higher canopy = more shade = lower heat risk. Inverted in the composite (high mi
 
 ### Terrain scoring modifiers
 
-Three terrain-derived modifiers adjust component scores when GLO-30 DEM data is available:
+Three terrain-derived modifiers adjust component scores when DEM data is available:
 
 **HLI drought and heat amplifier:** When `heat_load_index > 0.05`, both `drought_score` and `heat_stress_score` are amplified by up to +25%. South-facing steep slopes receive more insolation.
 
@@ -727,7 +735,7 @@ Returns a self-contained HTML page with:
 - Location thumbnail (Mapbox)
 - Analysis period and processing/score versions in the header
 - Active episode badges (flood / fire / drought) in the header when any flag is set
-- Climate zone badge (Köppen code), elevation badge (▲ min / mean / max m · slope · relief from GLO-30), and for tidal zone sites a tidal station badge (nearest NOAA station name and distance)
+- Climate zone badge (Köppen code), elevation badge (▲ min / mean / max m · slope · relief from 3DEP/GLO-30), and for tidal zone sites a tidal station badge (nearest NOAA station name and distance)
 - Per-index time series charts (Chart.js)
 - SAR water fraction chart with seasonal baseline and flood alert banner; burn-suppressed months annotated
 - SAR scene table: all scenes from the last 12 months, months as rows, orbits as columns; for tidal zone sites each scene additionally shows the MSL tide level at the Sentinel-1 acquisition time (interpolated from NOAA hourly predictions)
@@ -761,7 +769,7 @@ Returns the same data as the HTML report as structured JSON. Useful for programm
 | `sar_scenes` | Last 12 months of SAR scene metadata: `[{ scene_id, month_key, rel_orbit, water_frac, tide_level_m }, ...]` -- pixel arrays excluded; `tide_level_m` is MSL tide at acquisition time for tidal zone sites (null otherwise) |
 | `tc_monthly` | TerraClimate monthly values per variable |
 | `nearest_tidal_station` | Nearest NOAA tidal station within 30 km: `{ station_id, name, lat, lon, tide_type, state, distance_km }`, or null for inland sites |
-| `elevation` | Copernicus GLO-30 terrain features: `{ elevation_m, elevation_min_m, elevation_max_m, elevation_range_m, slope_deg }`, or null if tile unavailable |
+| `elevation` | Terrain features (3DEP lidar DTM for US, GLO-30 globally): `{ elevation_m, elevation_min_m, elevation_max_m, elevation_range_m, slope_deg }`, or null if all DEM sources unavailable |
 | `map_links` | `report_url` and `thumbnail_url` |
 
 Example: `GET /v1/location/a1b2c3/report.json`
@@ -992,12 +1000,14 @@ SH months are NH months shifted by +6 calendar months. The latitude boundary and
 | `NDSI_SNOW_THRESHOLD` | `0.4` | NDSI above → snow covered |
 | `BSI_BARE_THRESHOLD` | `0.0` | BSI above → bare soil |
 
-### Copernicus GLO-30 DEM
+### Elevation DEM (hybrid DTM)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DEM_AWS_BUCKET` | `copernicus-dem-30m` | Public S3 bucket for GLO-30 tiles |
-| `DEM_AWS_REGION` | `eu-central-1` | S3 bucket region |
+| `DEM_3DEP_BUCKET` | `prd-tnm` | S3 bucket for USGS 3DEP 1" tiles (US primary) |
+| `DEM_3DEP_REGION` | `us-west-2` | S3 region for 3DEP bucket |
+| `DEM_AWS_BUCKET` | `copernicus-dem-30m` | Public S3 bucket for GLO-30 tiles (global fallback) |
+| `DEM_AWS_REGION` | `eu-central-1` | S3 region for GLO-30 bucket |
 
 ### NOAA tidal station integration
 

@@ -16,10 +16,21 @@ _GDAL_ENV = {
     "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif,.tiff",
 }
 
-# GLO-30 is 1 arc-second resolution.
+# 3DEP tiles are in us-west-2; inherit all other GLO-30 env settings.
+_GDAL_ENV_3DEP = {**_GDAL_ENV, "AWS_REGION": settings.DEM_3DEP_REGION}
+
+# GLO-30 / 3DEP are both ~1 arc-second resolution.
 # 1 arc-second latitude  ≈ 30.87 m (constant)
 # 1 arc-second longitude ≈ 30.87 * cos(lat) m (varies with latitude)
 _ARC_SEC_M = 30.87
+
+# Continental US + Alaska + Hawaii bounding box
+_US_LAT_MIN, _US_LAT_MAX = 18.0, 72.0
+_US_LON_MIN, _US_LON_MAX = -180.0, -64.0
+
+
+def _is_us(lat: float, lon: float) -> bool:
+    return _US_LAT_MIN <= lat <= _US_LAT_MAX and _US_LON_MIN <= lon <= _US_LON_MAX
 
 
 def _tile_path(lat: float, lon: float) -> str:
@@ -40,40 +51,44 @@ def _tile_path(lat: float, lon: float) -> str:
     return f"/vsis3/{settings.DEM_AWS_BUCKET}/{name}/{name}.tif"
 
 
-def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
-    """Read a 64×64 elevation window from Copernicus GLO-30 via /vsis3/.
+def _tile_path_3dep(lat: float, lon: float) -> str:
+    """Return the /vsis3/ path for a USGS 3DEP 1" tile containing (lat, lon).
 
-    Returns a dict with:
-      elevation_m        -- mean elevation of the window (metres, WGS84 ellipsoidal)
-      elevation_range_m  -- max-min within the window (terrain relief proxy)
-      slope_deg          -- mean slope angle (degrees) derived from numpy gradient
+    Bucket: prd-tnm (public, no auth, us-west-2)
+    Pattern: n{lat}w{lon}/USGS_1_n{lat}w{lon}.tif  (lowercase, 2-digit lat, 3-digit lon)
+    Example: lat=38.9, lon=-77.0  →  n38w077/USGS_1_n38w077.tif
+    """
+    lat_tile = int(math.floor(lat))
+    lon_tile = int(math.floor(lon))
+    lat_hem = "n" if lat_tile >= 0 else "s"
+    lon_hem = "w" if lon_tile <= 0 else "e"
+    tag = f"{lat_hem}{abs(lat_tile):02d}{lon_hem}{abs(lon_tile):03d}"
+    return f"/vsis3/{settings.DEM_3DEP_BUCKET}/StagedProducts/Elevation/1/TIFF/current/{tag}/USGS_1_{tag}.tif"
 
-    Returns None on any read failure (tile missing, outside coverage, etc.).
-    Runs synchronously -- call from an asyncio executor.
+
+def _read_dem_from_path(
+    path: str, lat: float, lon: float, gdal_env: dict
+) -> dict[str, float] | None:
+    """Read a 64×64 elevation window from a COG at *path* via /vsis3/.
+
+    Returns the same feature dict as read_dem_sync, or None on any failure.
     """
     import rasterio
     from rasterio.windows import Window
 
-    path = _tile_path(lat, lon)
     size = settings.COG_WINDOW_SIZE  # 64 — output pixel count (matches S2)
 
-    # Target footprint: same geographic extent as the S2 window (640 m).
-    # GLO-30 native pixel size at this latitude:
     pixel_lat_m = _ARC_SEC_M
     pixel_lon_m = _ARC_SEC_M * math.cos(math.radians(lat))
-    # Number of native DEM pixels that span the S2 footprint (640 m).
     s2_footprint_m = size * settings.S2_PIXEL_SIZE_M  # 640 m
     dem_native = max(4, round(s2_footprint_m / pixel_lat_m))  # ~21 at mid-latitudes
 
-    # Effective pixel size of the 64×64 output grid over the 640 m footprint.
-    # Used for all gradient/curvature calculations below.
     eff_lat_m = s2_footprint_m / size   # ≈ 10 m
     eff_lon_m = (dem_native * pixel_lon_m) / size
 
     try:
-        with rasterio.Env(**_GDAL_ENV):
+        with rasterio.Env(**gdal_env):
             with rasterio.open(path) as src:
-                # rasterio.index returns (row, col) for a (lon, lat) point
                 row_c, col_c = src.index(lon, lat)
 
                 col_off = max(0, col_c - dem_native // 2)
@@ -84,7 +99,7 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
                 window = Window(col_off, row_off, col_end - col_off, row_end - row_off)
                 data = src.read(
                     1, window=window,
-                    out_shape=(size, size),  # resample to 64×64 for gradient quality
+                    out_shape=(size, size),
                     resampling=rasterio.enums.Resampling.bilinear,
                 ).astype(np.float32)
 
@@ -94,7 +109,7 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
 
         valid = data[~np.isnan(data)]
         if len(valid) < size * size * 0.25:
-            logger.warning("DEM: <25%% valid pixels at (%.4f, %.4f), skipping", lat, lon)
+            logger.warning("DEM: <25%% valid pixels at (%.4f, %.4f) path=%.80s", lat, lon, path)
             return None
 
         elev_m = float(np.nanmean(data))
@@ -123,9 +138,6 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
         # Curvature: Laplacian at the center point using a 5×5 kernel.
         # Sign convention: positive = concave (valley/bowl, collects water);
         # negative = convex (ridge/dome, sheds water).
-        # A center-point estimate is used rather than the window mean because
-        # the mean dilutes the local signal in narrow valleys: the intense
-        # concavity at the valley floor gets averaged with the surrounding slopes.
         d2z_dy2 = np.gradient(dz_dy, axis=0) / eff_lat_m
         d2z_dx2 = np.gradient(dz_dx, axis=1) / eff_lon_m
         laplacian = d2z_dy2 + d2z_dx2
@@ -163,3 +175,25 @@ def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
     except Exception as exc:
         logger.warning("DEM read failed path=%.80s err=%s", path, exc)
         return None
+
+
+def read_dem_sync(lat: float, lon: float) -> dict[str, float] | None:
+    """Read a 64×64 elevation window from the best available bare-earth DEM via /vsis3/.
+
+    Source priority:
+      1. USGS 3DEP 1" (true lidar DTM) -- US locations only
+      2. Copernicus GLO-30 (DSM fallback) -- global
+
+    Returns None if all sources fail (tile missing, outside coverage, etc.).
+    Runs synchronously -- call from an asyncio executor.
+    """
+    candidates: list[tuple[str, dict]] = []
+    if _is_us(lat, lon):
+        candidates.append((_tile_path_3dep(lat, lon), _GDAL_ENV_3DEP))
+    candidates.append((_tile_path(lat, lon), _GDAL_ENV))
+
+    for path, env in candidates:
+        result = _read_dem_from_path(path, lat, lon, env)
+        if result is not None:
+            return result
+    return None

@@ -33,9 +33,13 @@ class Settings(BaseSettings):
     AWS_SENTINEL_BUCKET: str = "sentinel-cogs"
     AWS_SENTINEL_REGION: str = "us-west-2"
 
-    # Copernicus GLO-30 DEM (public S3, no-sign)
+    # Copernicus GLO-30 DEM (public S3, no-sign) -- global fallback
     DEM_AWS_BUCKET: str = "copernicus-dem-30m"
     DEM_AWS_REGION: str = "eu-central-1"
+
+    # USGS 3DEP 1" (true lidar DTM, public S3, no-sign) -- US primary
+    DEM_3DEP_BUCKET: str = "prd-tnm"
+    DEM_3DEP_REGION: str = "us-west-2"
 
     # SAR / Sentinel-1 GRD
     SAR_STAC_COLLECTION: str = "sentinel-1-grd"
@@ -130,7 +134,7 @@ class Settings(BaseSettings):
     DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.27.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.28.0"
     SCORE_VERSION: str = "risk-v1.17.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers
@@ -199,7 +203,7 @@ class Settings(BaseSettings):
     TERRACLIMATE_PDSI_DROUGHT_THRESHOLD: float = -2.0
     TERRACLIMATE_TMAX_ANOMALY_SIGMA: float = 1.0     # stdevs above monthly mean
 
-    # Terrain risk scoring thresholds (GLO-30 DEM derived)
+    # Terrain risk scoring thresholds (DTM derived: 3DEP for US, GLO-30 globally)
     TERRAIN_LANDSLIDE_SLOPE_MAX: float = 25.0     # slope_deg mapped to 100 for landslide score
     TERRAIN_LANDSLIDE_RELIEF_MAX: float = 300.0   # elevation_range_m mapped to 100
     TERRAIN_FLASH_ELEV_MAX: float = 300.0         # elevation_m above which terrain flash = 0
