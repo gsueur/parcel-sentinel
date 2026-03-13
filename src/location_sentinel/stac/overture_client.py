@@ -63,7 +63,7 @@ def query_buildings_sync(lat: float, lon: float, bucket: str, release: str) -> d
             SELECT
                 COUNT(*)::INTEGER                                              AS building_count,
                 COALESCE(SUM(
-                    ST_Area(ST_Intersection(ST_GeomFromWKB(geometry), {envelope}))
+                    ST_Area(ST_Intersection(geometry, {envelope}))
                     * {deg_to_m2}
                 ), 0.0)                                                        AS building_area_m2,
                 AVG(CASE WHEN height > 0 THEN height END)                     AS mean_height_m
