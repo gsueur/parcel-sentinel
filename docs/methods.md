@@ -1,7 +1,7 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.17.0`
-**Date:** 2026-03-12
+**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.19.0`
+**Date:** 2026-03-13
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
@@ -742,7 +742,7 @@ Both paths evaluate to False (non-urban) if `bsi_bare_soil_freq_5y` is not avail
 Urban classification has the following downstream effects:
 - `drought_score` is forced to 0 (impervious surfaces have no vegetation drought signal)
 - `fire_exposure_score` is forced to 0 (NBR on concrete/asphalt spectrally mimics burned vegetation; see section 13.1)
-- The composite score uses a fixed urban weighting profile (section 11.6)
+- The composite score uses a fixed urban weighted-average profile blended with the dominant sub-score (section 11.8)
 
 ---
 
@@ -1117,7 +1117,7 @@ Default (no TerraClimate data, `no_terraclimate_data` flag): 50.
 
 ### 11.7 Landslide risk score
 
-A standalone terrain hazard score (0-100) derived from the terrain DTM (3DEP for US locations, GLO-30 globally). It is **not included in the composite** -- landslide is an independent geophysical hazard orthogonal to the climate risk dimensions. It is surfaced separately in the API response and the HTML report.
+A standalone terrain hazard score (0-100) derived from the terrain DTM (3DEP for US locations, GLO-30 globally). It is **not included in the weighted-average component of the composite** but does enter the `dominant` (max) term (section 11.8), so a high landslide score lifts the composite. It is surfaced separately in the API response and the HTML report.
 
 **Physical basis:** Slope angle is the primary driver of gravitational shear stress. Terrain relief (elevation range of the 640m footprint) is a secondary proxy for slope length and material accumulation potential.
 
@@ -1143,27 +1143,48 @@ The gauge is hidden in the HTML report when `slope_deg` is null (no DEM data) an
 
 ### 11.8 Composite score
 
+The composite blends regional calibration with worst-case hazard surfacing:
+
+```
+composite = 0.40 × weighted_avg + 0.60 × dominant
+```
+
+`dominant = max(all sub-scores)`. At α = 0.60 a single hazard at 90 produces composite ≈ 65; all sub-scores equal at 25 produces composite = 25 (no inflation); all at 80 produces 80.
+
 **Urban locations** (climate-zone weights are not applicable to impervious surfaces):
 
 ```
-composite = 0.60 × (100 − heat_mitigation_score)
-          + 0.15 × wetness_score
-          + 0.15 × flood_risk_score
-          + 0.10 × heat_stress_score
+urban_weighted = 0.60 × (100 − heat_mitigation_score)
+               + 0.15 × wetness_score
+               + 0.15 × flood_risk_score
+               + 0.10 × heat_stress_score
+
+urban_max = max(100 − heat_mitigation_score, wetness_score,
+                flood_risk_score, heat_stress_score)
+
+composite = 0.40 × urban_weighted + 0.60 × urban_max
 ```
 
-The canopy deficit term (60%) dominates because the primary long-term climate risk for urban environments is the urban heat island effect, which is modulated by vegetation and shading.
+The canopy deficit term dominates the weighted-average component because the primary long-term climate risk for urban environments is the urban heat island effect, which is modulated by vegetation and shading.
 
 **Non-urban locations** (climate-zone-weighted):
 
 ```
-composite = w_drought     × drought_score
-          + w_wetness     × wetness_score
-          + w_fire        × fire_exposure_score
-          + w_heat_inv    × (100 − heat_mitigation_score)
-          + w_flood       × flood_risk_score
-          + w_heat_stress × heat_stress_score
+weighted_avg = w_drought     × drought_score
+             + w_wetness     × wetness_score
+             + w_fire        × fire_exposure_score
+             + w_heat_inv    × (100 − heat_mitigation_score)
+             + w_flood       × flood_risk_score
+             + w_heat_stress × heat_stress_score
+
+dominant = max(drought_score, wetness_score, fire_exposure_score,
+               100 − heat_mitigation_score, flood_risk_score,
+               heat_stress_score, landslide_score)
+
+composite = 0.40 × weighted_avg + 0.60 × dominant
 ```
+
+`landslide_score` is included in `dominant` only. Adding it to the weighted average would require rebalancing all climate zone weight dicts; surfacing it through the max achieves the intent (a high landslide score lifts the composite) without structural changes to the weighting system.
 
 Climate zone weights (Köppen classification; all rows sum to 1.0):
 
@@ -1385,4 +1406,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Processing version `s2l2a-v1.27.0` / score version `risk-v1.17.0`. Trend-aware scoring (active boosts, momentum amplifiers, slope sub-components) introduced in v1.27.0/v1.15.0. Bidirectional mitigations (improving trends reduce scores) added in v1.16.0. Progressive momentum formula, fire momentum (`nbr_momentum_ratio_1y`), and momentum priority threshold added in v1.17.0.*
+*Processing version `s2l2a-v1.27.0` / score version `risk-v1.19.0`. Trend-aware scoring (active boosts, momentum amplifiers, slope sub-components) introduced in v1.27.0/v1.15.0. Bidirectional mitigations (improving trends reduce scores) added in v1.16.0. Progressive momentum formula, fire momentum (`nbr_momentum_ratio_1y`), and momentum priority threshold added in v1.17.0. Dominant-hazard composite (40% weighted average + 60% max sub-score) introduced in v1.19.0.*

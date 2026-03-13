@@ -413,25 +413,46 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         landslide_score = 0.0
 
     # --- Composite (0-100) ---
+    # Formula: 40% climate-zone-weighted average + 60% dominant (max) sub-score.
+    # Ensures a single extreme hazard always surfaces instead of being diluted by
+    # the weighted average. landslide_score enters the max() only (no rebalancing
+    # of climate zone weights needed).
     if is_urban:
         # Urban: canopy deficit dominates; wetness, flood, and heat stress are secondary.
         # Climate zone weights are irrelevant on impervious surfaces.
-        composite = (
+        urban_weighted = (
             0.60 * (100 - heat_mitigation_score)
             + 0.15 * wetness_score
             + 0.15 * flood_risk_score
             + 0.10 * heat_stress_score
         )
+        urban_max = max(
+            100 - heat_mitigation_score,
+            wetness_score,
+            flood_risk_score,
+            heat_stress_score,
+        )
+        composite = 0.40 * urban_weighted + 0.60 * urban_max
     else:
         # Climate-zone-weighted composite. heat_inv = canopy deficit (100 - mitigation).
-        composite = (
-            w["drought"]     * drought_score
-            + w["wetness"]   * wetness_score
-            + w["fire"]      * fire_exposure_score
-            + w["heat_inv"]  * (100 - heat_mitigation_score)
-            + w["flood"]     * flood_risk_score
+        weighted_avg = (
+            w["drought"]       * drought_score
+            + w["wetness"]     * wetness_score
+            + w["fire"]        * fire_exposure_score
+            + w["heat_inv"]    * (100 - heat_mitigation_score)
+            + w["flood"]       * flood_risk_score
             + w["heat_stress"] * heat_stress_score
         )
+        dominant = max(
+            drought_score,
+            wetness_score,
+            fire_exposure_score,
+            100 - heat_mitigation_score,
+            flood_risk_score,
+            heat_stress_score,
+            landslide_score,
+        )
+        composite = 0.40 * weighted_avg + 0.60 * dominant
 
     return ScoreResult(
         drought_score=_clamp(drought_score),

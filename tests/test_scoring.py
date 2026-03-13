@@ -137,12 +137,14 @@ class TestScoring:
         assert result.landslide_risk_score == 0
 
     def test_urban_composite_formula(self):
-        # composite = 0.60*(100-heat_mitigation) + 0.15*wetness + 0.15*flood + 0.10*heat_stress
+        # urban_weighted = 0.60*(100-heat_mitigation) + 0.15*wetness + 0.15*flood + 0.10*heat_stress
         # canopy=0.56 → heat_mitigation=0.56/0.8*100=70
         # wetness = 0.20*100 = 20
         # flood = 0 (no SAR data)
         # heat_stress = 50 (default when no TerraClimate data)
-        # composite = 0.60*(100-70) + 0.15*20 + 0.15*0 + 0.10*50 = 18+3+0+5 = 26
+        # urban_weighted = 0.60*(100-70) + 0.15*20 + 0.15*0 + 0.10*50 = 18+3+0+5 = 26
+        # urban_max = max(30, 20, 0, 50) = 50
+        # composite = int(0.40*26 + 0.60*50) = int(40.4) = 40
         features = {
             "is_urban": 1.0,
             "ndwi_wetness_persistence_5y": 0.20,
@@ -153,7 +155,7 @@ class TestScoring:
         assert result.wetness_score == 20
         assert result.drought_score == 0
         assert result.fire_exposure_score == 0
-        assert result.composite_score == 26  # 0.60*(100-70) + 0.15*20 + 0.15*0 + 0.10*50
+        assert result.composite_score == 40  # int(0.40*26 + 0.60*50) = int(40.4) = 40
 
     # --- Climate profile tests ---
 
@@ -434,3 +436,45 @@ class TestScoring:
             result.composite_score,
         ]:
             assert 0 <= score <= 100
+
+    # --- Dominant-hazard composite formula tests (risk-v1.19.0) ---
+
+    def test_single_extreme_hazard_surfaces_in_composite(self):
+        # A single high flood score should produce composite >> weighted average alone.
+        # With flood=90 and weak signals elsewhere, composite should be well above
+        # the ~28 that a pure weighted average would yield (default flood weight=0.12).
+        features = {
+            "sar_water_freq_5y": 1.0,   # flood_risk → ~100 after clamp
+            "ndwi_wetness_persistence_5y": 0.60,
+            # all other features absent → drought=50, fire=0, heat_stress=50, heat_mitigation=50
+        }
+        result = compute_scores(features)
+        # Pure weighted avg with flood≈100 and defaults would be ~40; dominant=100.
+        # New composite = 0.40 * weighted_avg + 0.60 * 100 → should be well above 50.
+        assert result.flood_risk_score >= 80
+        assert result.composite_score >= 55
+        # Composite must be higher than it would be without dominant-max blending
+        assert result.composite_score > result.flood_risk_score * 0.45
+
+    def test_composite_bounded_by_dominant_hazard(self):
+        # composite = 0.40 * weighted_avg + 0.60 * dominant
+        # Property: composite is always in [weighted_avg, dominant] (or equal if both same).
+        # Also: composite >= 0.60 * dominant, so a high sub-score always lifts the composite.
+        features = {
+            "sar_water_freq_5y": 0.80,
+            "ndwi_wetness_persistence_5y": 0.50,
+        }
+        result = compute_scores(features)
+        dominant = max(
+            result.drought_score,
+            result.wetness_score,
+            result.fire_exposure_score,
+            100 - result.heat_mitigation_score,
+            result.flood_risk_score,
+            result.heat_stress_score,
+            result.landslide_risk_score,
+        )
+        # composite must be at least 60% of the dominant sub-score
+        assert result.composite_score >= 0.60 * dominant - 0.01
+        # composite must not exceed the dominant sub-score
+        assert result.composite_score <= dominant + 0.01

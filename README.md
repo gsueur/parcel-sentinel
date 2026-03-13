@@ -89,8 +89,8 @@ POST /v1/locations (geometry + options)
         |
         v
   Risk scoring (drought, wetness, fire, heat mitigation, flood, heat stress)
-  Climate-zone-weighted composite (6-key weights)
-  Urban branch: 60% canopy deficit + 15% wetness + 15% flood + 10% heat stress
+  Composite: 40% climate-zone-weighted average + 60% dominant sub-score
+  Urban branch: same blended formula over canopy deficit / wetness / flood / heat stress
         |
         v
   PostgreSQL persistence (features, timeseries, scores, band arrays, SAR arrays,
@@ -582,25 +582,45 @@ Then, if `tmax_momentum_ratio_1y > 1.0`: score is multiplied by `1 + min(0.30, (
 
 ### Composite score
 
-**Urban locations** (climate-zone weights irrelevant on impervious surfaces):
+The composite blends a climate-calibrated average with the single worst hazard at the location:
 
 ```
-composite = 0.60 * (100 - heat_mitigation_score)
-          + 0.15 * wetness_score
-          + 0.15 * flood_risk_score
-          + 0.10 * heat_stress_score
+composite = 0.40 × weighted_avg + 0.60 × dominant
 ```
 
-**Non-urban locations** (climate-zone-weighted):
+`dominant` is `max(all_sub_scores)`. This ensures that a single extreme hazard (e.g. flood = 90) surfaces in the composite instead of being diluted by the weighted average. At α = 0.60: one hazard at 90 → composite ≈ 65; all sub-scores at 25 → composite = 25 (no inflation).
+
+**Urban locations** -- weighted average component:
 
 ```
-composite = w[drought]     * drought_score
-          + w[wetness]     * wetness_score
-          + w[fire]        * fire_exposure_score
-          + w[heat_inv]    * (100 - heat_mitigation_score)
-          + w[flood]       * flood_risk_score
-          + w[heat_stress] * heat_stress_score
+urban_weighted = 0.60 * (100 - heat_mitigation_score)
+               + 0.15 * wetness_score
+               + 0.15 * flood_risk_score
+               + 0.10 * heat_stress_score
+
+urban_max = max(100 - heat_mitigation_score, wetness_score, flood_risk_score, heat_stress_score)
+
+composite = 0.40 * urban_weighted + 0.60 * urban_max
 ```
+
+**Non-urban locations** -- climate-zone-weighted average component:
+
+```
+weighted_avg = w[drought]     * drought_score
+             + w[wetness]     * wetness_score
+             + w[fire]        * fire_exposure_score
+             + w[heat_inv]    * (100 - heat_mitigation_score)
+             + w[flood]       * flood_risk_score
+             + w[heat_stress] * heat_stress_score
+
+dominant = max(drought_score, wetness_score, fire_exposure_score,
+               100 - heat_mitigation_score, flood_risk_score,
+               heat_stress_score, landslide_score)
+
+composite = 0.40 * weighted_avg + 0.60 * dominant
+```
+
+`landslide_score` enters `dominant` only -- it is not added to the weighted average (avoids rebalancing all climate zone weight dicts).
 
 Climate-zone weights (Köppen classification, all rows sum to 1.0):
 
@@ -654,7 +674,7 @@ Interactive docs: `http://localhost:8000/docs`
   "location_key": "a1b2c3",
   "name": "Miami downtown",
   "processing_version": "s2l2a-v1.26.0",
-  "score_version": "risk-v1.14.0",
+  "score_version": "risk-v1.19.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -921,7 +941,7 @@ All settings are environment variables. Defaults work out of the box.
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `PROCESSING_VERSION` | `s2l2a-v1.26.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.14.0` | Cache key tag for scores |
+| `SCORE_VERSION` | `risk-v1.19.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2
