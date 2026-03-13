@@ -399,8 +399,13 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
 
     # --- Landslide risk score (0-100, standalone -- not in composite) ---
     # Slope is the primary driver (shear stress); relief is secondary (slope length).
+    # Suppressed for urban locations: GLO-30 is a surface model (DSM) -- building rooftop
+    # edges inflate the gradient and produce spurious slope readings in dense urban areas.
+    # Landslides are also physically impossible on fully impervious surfaces.
     elev_range_m = features.get("elevation_range_m")
-    if slope_deg is not None:
+    if is_urban:
+        landslide_score = 0.0
+    elif slope_deg is not None:
         slope_score = min(100.0, slope_deg / settings.TERRAIN_LANDSLIDE_SLOPE_MAX * 100)
         relief_score = min(100.0, (elev_range_m or 0.0) / settings.TERRAIN_LANDSLIDE_RELIEF_MAX * 100)
         landslide_score = 0.70 * slope_score + 0.30 * relief_score

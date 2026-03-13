@@ -125,6 +125,17 @@ class TestScoring:
         result = compute_scores(features)
         assert result.fire_exposure_score == 0
 
+    def test_urban_landslide_zeroed(self):
+        # GLO-30 is a DSM -- building rooftops inflate slope in urban areas.
+        # Landslide is physically impossible on impervious surfaces.
+        features = {
+            "is_urban": 1.0,
+            "slope_deg": 10.0,
+            "elevation_range_m": 80.0,
+        }
+        result = compute_scores(features)
+        assert result.landslide_risk_score == 0
+
     def test_urban_composite_formula(self):
         # composite = 0.60*(100-heat_mitigation) + 0.15*wetness + 0.15*flood + 0.10*heat_stress
         # canopy=0.56 → heat_mitigation=0.56/0.8*100=70
