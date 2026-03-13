@@ -484,6 +484,10 @@
         <input type="text" id="reg-name" placeholder="Your name (optional)" autocomplete="name">
         <input type="email" id="reg-email" placeholder="Email" autocomplete="email">
         <input type="password" id="reg-password" placeholder="Password (min 8 chars)" autocomplete="new-password">
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.82rem;color:var(--muted);cursor:pointer;margin-top:2px">
+          <input type="checkbox" id="reg-newsletter" style="width:14px;height:14px;cursor:pointer">
+          Subscribe to the newsletter
+        </label>
         <button class="btn btn-primary" onclick="doRegister()">Create account</button>
         <div id="reg-status" class="auth-status hidden"></div>
       </div>
@@ -1033,16 +1037,17 @@ async function doLogin() {
 }
 
 async function doRegister() {
-  const name     = document.getElementById('reg-name').value.trim();
-  const email    = document.getElementById('reg-email').value.trim();
-  const password = document.getElementById('reg-password').value;
+  const name       = document.getElementById('reg-name').value.trim();
+  const email      = document.getElementById('reg-email').value.trim();
+  const password   = document.getElementById('reg-password').value;
+  const newsletter = document.getElementById('reg-newsletter').checked;
   if (!email || !password) { setAuthStatus('reg-status', 'error', 'Email and password are required.'); return; }
   if (password.length < 8) { setAuthStatus('reg-status', 'error', 'Password must be at least 8 characters.'); return; }
   try {
     const res = await fetch(`${API_URL}/v1/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, name: name || undefined }),
+      body: JSON.stringify({ email, password, name: name || undefined, newsletter }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);

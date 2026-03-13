@@ -23,6 +23,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str
     name: str | None = None
+    newsletter: bool = False
 
 
 class LoginRequest(BaseModel):
@@ -40,6 +41,7 @@ async def register(body: RegisterRequest):
         email=body.email,
         password_hash=hash_password(body.password),
         name=body.name,
+        newsletter=body.newsletter,
     )
     token = store.create_verification_token(user["user_id"])
 

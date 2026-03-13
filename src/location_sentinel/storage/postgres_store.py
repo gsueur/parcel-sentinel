@@ -168,8 +168,13 @@ class PostgresStore:
                     name VARCHAR,
                     role VARCHAR NOT NULL DEFAULT 'user',
                     is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                    newsletter BOOLEAN NOT NULL DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+            cur.execute("""
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS newsletter BOOLEAN NOT NULL DEFAULT FALSE
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS email_verification_tokens (
@@ -995,7 +1000,9 @@ class PostgresStore:
     # Users
     # ------------------------------------------------------------------
 
-    def create_user(self, email: str, password_hash: str, name: str | None = None) -> dict:
+    def create_user(
+        self, email: str, password_hash: str, name: str | None = None, newsletter: bool = False
+    ) -> dict:
         if self._pool is None:
             raise RuntimeError("DB not connected")
         with self._get_conn() as conn:
@@ -1006,8 +1013,8 @@ class PostgresStore:
                 if cur.fetchone() is None:
                     break
             cur.execute(
-                "INSERT INTO users (user_id, email, password_hash, name) VALUES (%s, %s, %s, %s)",
-                [user_id, email, password_hash, name],
+                "INSERT INTO users (user_id, email, password_hash, name, newsletter) VALUES (%s, %s, %s, %s, %s)",
+                [user_id, email, password_hash, name, newsletter],
             )
         return {"user_id": user_id, "email": email, "name": name, "role": "user"}
 
