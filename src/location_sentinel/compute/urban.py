@@ -35,13 +35,18 @@ def detect_urban(features: dict[str, float | None]) -> bool:
         return False
 
     # Path 1: overwhelmingly impervious signal with elevated vegetation (tropical/coastal cities,
-    # e.g. Miami). Requires ndvi > URBAN_NDVI_THRESHOLD (0.25) because this path was specifically
-    # designed for high-vegetation urban mixes -- rocky/arid terrain with high BSI from bare rock
-    # but low-medium NDVI would otherwise be mis-classified. Path 2 handles the medium-NDVI case.
+    # e.g. Miami). Requires ndvi > URBAN_NDVI_THRESHOLD (0.25) since this path is specifically
+    # for high-vegetation urban mixes; rocky/arid terrain with low-medium NDVI would otherwise
+    # be mis-classified (see URBAN_MIN_NDVI_THRESHOLD guard above).
+    # Also requires canopy < URBAN_BSI_STRONG_MAX_CANOPY (0.45): vineyards and orchards produce
+    # the same BSI > 65% + NDVI > 0.25 signature from bare-soil rows + seasonal crop canopy,
+    # but their canopy cover consistently exceeds what any urban area achieves. Path 2 handles
+    # the medium-NDVI dense-urban pattern.
     if (
         bsi_freq > settings.URBAN_BSI_FREQ_STRONG_THRESHOLD
         and ndvi is not None
         and ndvi > settings.URBAN_NDVI_THRESHOLD
+        and (canopy is None or canopy < settings.URBAN_BSI_STRONG_MAX_CANOPY)
     ):
         return True
 
