@@ -788,6 +788,7 @@ Returns a self-contained HTML page with:
 - TerraClimate charts: monthly tmax/tmin temperature and PPT/VPD dual-axis
 - Feature table grouped by theme with contextual descriptions
 - Seven risk score gauges with explanations (including landslide risk when DEM data is available)
+- Urban detection reason (when `is_urban = 1`): which detection path fired (Overture building fraction, spectral Path 1 mixed vegetation + impervious, or spectral Path 2 dense temperate core) with the actual measured values vs. thresholds
 - Quality metadata with colour-coded indicators (green / amber / red) for coverage, cloud fraction, and months observed
 - Data quality disclaimer explaining the satellite-derived nature of estimates and known limitations
 - Climate zone profile and composite weight breakdown
@@ -834,8 +835,8 @@ Response: `image/png`, `Cache-Control: public, max-age=86400`
 
 Returns all stored locations ordered by last-updated timestamp.
 
-- `?format=json` (default): JSON response with a `server_versions` envelope and a `locations` array. Each location includes `processing_version`, `score_version`, and `active_episodes` (list of active flag names: `"active_flood"`, `"active_fire"`, `"active_drought"`). Clients can compare version fields against `server_versions.processing` and `server_versions.score` to detect stale entries.
-- `?format=html`: Browsable index page with thumbnails, links to individual reports, "Update available" badges for stale locations, and episode badge pills (flood / fire / drought) on cards with active flags
+- `?format=json` (default): JSON response with a `server_versions` envelope and a `locations` array. Each location includes `processing_version`, `score_version`, `active_episodes` (list of active flag names: `"active_flood"`, `"active_fire"`, `"active_drought"`), and `is_urban` (boolean). Clients can compare version fields against `server_versions.processing` and `server_versions.score` to detect stale entries.
+- `?format=html`: Browsable index page with thumbnails, links to individual reports, "Update available" badges for stale locations, episode badge pills (flood / fire / drought) on cards with active flags, and an "Urban" badge on cards where `is_urban` is true
 
 ---
 

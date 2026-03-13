@@ -121,6 +121,12 @@
       background: #fef3c7; color: #92400e;
       border: 1px solid #fcd34d; border-radius: 3px; padding: 1px 6px; vertical-align: middle;
     }
+    .badge-urban {
+      display: inline-block; margin-left: 5px;
+      font-size: 0.65rem; font-weight: 500;
+      background: #f0fdf4; color: #166534;
+      border: 1px solid #86efac; border-radius: 3px; padding: 1px 6px; vertical-align: middle;
+    }
     .badge-public {
       display: inline-block; margin-left: 5px;
       font-size: 0.65rem; font-weight: 500;
@@ -975,6 +981,9 @@ function renderGrid(gridId, locations, showActions, showOwner = false) {
     const ownerBadge = showOwner && loc.customer_name
       ? `<span class="badge-owner" title="${loc.customer_name}">${loc.customer_name}</span>`
       : '';
+    const urbanBadge = loc.is_urban
+      ? `<span class="badge-urban">Urban</span>`
+      : '';
     let scorePill = '';
     if (loc.composite_score != null) {
       const s = loc.composite_score;
@@ -1018,7 +1027,7 @@ function renderGrid(gridId, locations, showActions, showOwner = false) {
           <img class="card-thumb" src="${API_URL}${loc.thumbnail_url}"
                alt="" onerror="this.outerHTML='<div class=card-thumb-placeholder></div>'">
           <div class="card-body">
-            <div class="card-name">${name}${visiBadge}${ownerBadge}</div>
+            <div class="card-name">${name}${visiBadge}${ownerBadge}${urbanBadge}</div>
             <div class="card-meta">${meta}</div>
             ${scoresRow}
             ${episodeBadges}

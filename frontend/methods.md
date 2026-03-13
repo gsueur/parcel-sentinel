@@ -1,7 +1,7 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.17.0`
-**Date:** 2026-03-12
+**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.19.0`
+**Date:** 2026-03-13
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
@@ -135,7 +135,29 @@ Terrain features are read from a two-source priority chain. For US locations the
 | Coverage | Global |
 | Cache | Same `elevation_cache` table; one read per location |
 
-### 1.5 NOAA CO-OPS (tidal stations and tide predictions)
+### 1.5 Overture Maps (building footprints)
+
+| Attribute | Value |
+|-----------|-------|
+| Provider | Overture Maps Foundation |
+| Release | Pinned at `OVERTURE_RELEASE` (default `2026-02-18.0`) |
+| Format | GeoParquet, partitioned by `theme=buildings/type=building` |
+| Storage | Public S3 (`s3://overturemaps-us-west-2/release/{version}/theme=buildings/type=building/`) |
+| Access | DuckDB with `httpfs` and `spatial` extensions; anonymous (no credentials required) |
+| Coverage | Global |
+| Caching | `buildings_cache` table, keyed on `(location_key, overture_release)`; independent of `PROCESSING_VERSION` |
+
+Three features are derived:
+
+| Feature | Formula / description |
+|---------|----------------------|
+| `building_count` | Integer count of footprints where `ST_Intersects(geometry, window_envelope)` |
+| `building_fraction` | `Σ ST_Area(ST_Intersection(geometry, window_envelope)) × deg_to_m² scale / 409,600 m²`; range [0, 1] |
+| `mean_building_height_m` | Mean of the Overture `height` attribute across intersecting footprints; sparse, often null in low-coverage regions |
+
+The buildings pipeline runs concurrently with S2, S1 SAR, TerraClimate, and DEM. Results are cached per `(location_key, overture_release)` independently of `PROCESSING_VERSION`: bumping the processing version to invalidate optical or SAR caches does not trigger a re-query of Overture.
+
+### 1.6 NOAA CO-OPS (tidal stations and tide predictions)
 
 | Attribute | Value |
 |-----------|-------|
@@ -468,7 +490,13 @@ Three binary features (0.0 / 1.0) indicate whether a climate episode is ongoing 
 active_flood = 1.0  iff  sar_flood_anomaly > 0.10
               AND  at least one corroboration condition is true:
                      ndwi_wetness_persistence_5y > SAR_ACTIVE_FLOOD_MIN_NDWI (0.08)
-                     OR sar_flood_anomaly > SAR_ACTIVE_FLOOD_STRONG_ANOMALY (0.35)
+                     OR (NOT sar_likely_artifactual
+                         AND sar_flood_anomaly > SAR_ACTIVE_FLOOD_STRONG_ANOMALY (0.35)
+                         AND ndwi_wetness_persistence_5y > 0.0)
+
+where:
+  sar_likely_artifactual = sar_water_freq_5y > SAR_CHRONIC_ARTIFACT_THRESHOLD (0.50)
+                           AND ndwi_wetness_persistence_5y < SAR_ACTIVE_FLOOD_MIN_NDWI (0.08)
 ```
 
 `sar_flood_anomaly` already covers only the most recent two calendar months of SAR scenes (see §8.6). A value above 10% means SAR water fraction is elevated by at least 10 percentage points above the orbit-stratified seasonal baseline in at least one recent pass.
@@ -476,11 +504,13 @@ active_flood = 1.0  iff  sar_flood_anomaly > 0.10
 **Corroboration requirement:** A SAR anomaly alone is not sufficient to trigger the flag. SAR backscatter depends heavily on look angle: a single orbit viewing a snow-covered or rocky slope at the right incidence angle produces low-backscatter returns indistinguishable from open water. If both the acute anomaly and the chronic water frequency are driven by the same orbit artifact, using one to corroborate the other is circular. Corroboration therefore requires independent evidence:
 
 1. **NDWI optical history** (`ndwi_wetness_persistence_5y > 0.08`): surface water appeared in optical data in at least ~1 month per year over the full window. Optical and SAR artifacts are uncorrelated, so this is a genuinely independent signal.
-2. **Very strong anomaly** (`sar_flood_anomaly > 0.35`): a major event override -- catastrophic inundation, burst levees, or large-scale storm surge produces anomalies well above 35% regardless of background conditions.
+2. **Very strong anomaly** (`sar_flood_anomaly > 0.35`): a major event override -- catastrophic inundation, burst levees, or large-scale storm surge produces anomalies well above 35% regardless of background conditions. This bypass is blocked when SAR is determined to be artifactual (see below).
 
-`sar_water_freq_5y` is intentionally excluded from this list: in mountain valleys and arid terrain with relief, a single orbit consistently records low backscatter from the same slope geometry. That chronic signal then appears to corroborate the acute anomaly when both share the same artifact source.
+**SAR look-angle artifact detection:** If `sar_water_freq_5y > 0.50` (SAR chronically reports water in more than half of all scenes) but `ndwi_wetness_persistence_5y < 0.08` (optical shows little to no surface water history), the two sensors are in fundamental disagreement. The most common cause is terrain look-angle contamination: a montane slope oriented toward the sensor produces specular C-band returns indistinguishable from open water in nearly every pass, inflating both the chronic frequency and any derived anomaly. Because the chronic and acute SAR signals share the same geometric source, neither can independently corroborate the other. The site is marked `sar_likely_artifactual` and the strong-anomaly bypass is disabled; `active_flood` then requires optical corroboration (`ndwi_wetness_persistence_5y > 0.08`) to be raised.
 
-Sites that fail both checks (typically: mountain valley terrain where one SAR orbit sees a snow/rock slope, high-altitude rocky terrain, or arid barren land) are not flagged as actively flooded even when the anomaly threshold is met.
+`sar_water_freq_5y` is otherwise intentionally excluded from the corroboration list: in mountain valleys and arid terrain with relief, a single orbit consistently records low backscatter from the same slope geometry, making chronic and acute SAR signals circularly correlated.
+
+Sites that fail all corroboration checks (mountain valley terrain with chronic SAR/optical disagreement, high-altitude rocky terrain, or arid barren land) are not flagged as actively flooded even when the anomaly threshold is met.
 
 **`active_fire`**
 
@@ -714,35 +744,64 @@ pdsi_drought_freq_5y = count(PDSI_monthly < -2.0) / count(valid months)
 
 ## 10. Urban detection
 
-Urban classification is determined by a two-path OR logic gate applied to the optical features, preceded by a barren-terrain guard:
+Urban classification uses a three-stage decision tree. The Overture Maps building fraction is the primary signal where available; the existing BSI spectral paths serve as fallback.
 
-**Barren terrain guard (applied before both paths):**
+**Barren terrain guard (applied first):**
 ```
 if ndvi_mean_5y < URBAN_MIN_NDVI_THRESHOLD (0.12):
     is_urban = False  (naturally barren -- desert, alpine rock, bare soil)
 ```
-Near-zero 5-year mean NDVI indicates an absence of vegetation, not the presence of impervious surfaces. Every urban environment -- including those in arid climates with irrigated street trees and parks -- maintains enough mixed vegetation in a 640 m window to keep the 5-year mean above 0.12. Values below this threshold reliably indicate naturally barren terrain such as high-altitude rocky plateaus, desert reg, or exposed scree, where high BSI frequency reflects bare mineral substrate rather than concrete or asphalt. Both detection paths are suppressed when this guard fires.
+Every urban environment maintains enough mixed vegetation in a 640 m window to keep the 5-year NDVI mean above 0.12; values below this indicate an absence of vegetation rather than impervious surfaces. Both the Overture and BSI paths are suppressed when the guard fires.
 
-**Path 1 (strong BSI signal alone):**
+**Overture primary path (after guard):**
 ```
-is_urban = True  if  bsi_bare_soil_freq_5y > 0.65
+if building_fraction > URBAN_BUILDING_FRACTION_THRESHOLD (0.10):
+    is_urban = True   (direct measurement; takes precedence)
+elif building_fraction < URBAN_BUILDING_FRACTION_VETO (0.02):
+    is_urban = False  (veto; suppresses BSI spectral paths)
 ```
-Captures tropical and subtropical cities (e.g. Miami, Houston) where year-round vegetation mixed with impervious surfaces keeps NDVI elevated, but the high frequency of bare/impervious signals in BSI still exceeds the threshold.
+When `building_fraction` is available and above 0.10, the site is classified as urban without consulting the spectral indices. This directly measures impervious surface density rather than inferring it from reflectance. When `building_fraction` is below 0.02, the site is classified as non-urban regardless of BSI, suppressing spurious urban classification in agricultural and rural areas with high BSI.
 
-**Path 2 (combined signal):**
+Sites with `building_fraction` between 0.02 and 0.10, or where Overture data is unavailable (null), fall through to the BSI spectral paths.
+
+**BSI spectral fallback (two-path OR logic):**
+
+Path 1 (strong BSI signal alone):
 ```
-is_urban = True  if  bsi_bare_soil_freq_5y > 0.50
-                AND  ndvi_mean_5y < 0.25
-                AND  (canopy_proxy is None  OR  canopy_proxy < 0.25)
+is_urban = True  if  bsi_bare_soil_freq_5y > URBAN_BSI_FREQ_STRONG_THRESHOLD (0.65)
+```
+Captures tropical and subtropical cities (e.g. Miami, Houston) where year-round vegetation keeps NDVI elevated but the high frequency of bare/impervious signals in BSI exceeds the threshold.
+
+Path 2 (combined signal):
+```
+is_urban = True  if  bsi_bare_soil_freq_5y > URBAN_BSI_FREQ_THRESHOLD (0.50)
+                AND  ndvi_mean_5y < URBAN_NDVI_THRESHOLD (0.25)
+                AND  (canopy_proxy is None  OR  canopy_proxy < URBAN_CANOPY_THRESHOLD (0.25))
 ```
 Captures dense temperate urban cores (e.g. Boston, Chicago) with low NDVI, low canopy, and persistent impervious signals.
 
-Both paths evaluate to False (non-urban) if `bsi_bare_soil_freq_5y` is not available.
+Both BSI paths evaluate to False (non-urban) if `bsi_bare_soil_freq_5y` is not available.
+
+**Coastal boundary note:** When the 640 m window straddles a coastline, the open water and sand portions can depress mean NDVI toward the barren-terrain guard, potentially suppressing urban detection. With Overture-based detection, this limitation is substantially reduced: building footprints are measured directly and are not affected by adjacent ocean or beach signals. The `building_fraction` veto (< 0.02) prevents coastal open-water overlap from triggering false urban classification. See also §15.7.
 
 Urban classification has the following downstream effects:
 - `drought_score` is forced to 0 (impervious surfaces have no vegetation drought signal)
-- `fire_exposure_score` is forced to 0 (NBR on concrete/asphalt spectrally mimics burned vegetation; see section 13.1)
-- The composite score uses a fixed urban weighting profile (section 11.6)
+- `fire_exposure_score` is forced to 0 (NBR on concrete/asphalt spectrally mimics burned vegetation; see section 15.1)
+- The composite score uses a fixed urban weighted-average profile blended with the dominant sub-score (section 11.8)
+
+### 10.1 Detection path explanation in the report
+
+When `is_urban = 1`, the HTML report displays a "Detection path" line inside the urban banner explaining which signal triggered classification, along with the measured values compared to their thresholds:
+
+| Trigger | Label | Signals shown |
+|---------|-------|---------------|
+| `building_fraction > 0.10` | Overture Maps building footprints | `building_fraction` vs. `URBAN_BUILDING_FRACTION_THRESHOLD` |
+| `bsi_freq > 0.65` AND `ndvi > 0.25` AND `canopy < 0.45` | Mixed vegetation + impervious (tropical / coastal) | BSI frequency, NDVI, canopy proxy vs. thresholds |
+| `bsi_freq > 0.50` AND `ndvi < 0.25` AND `canopy < 0.25` | Dense impervious surface (temperate urban core) | BSI frequency, NDVI, canopy proxy vs. thresholds |
+
+When `building_fraction` falls in the ambiguous band (0.02–0.10), the Overture coverage value is shown alongside the spectral path note.
+
+The `is_urban` boolean is also surfaced in the location list API response (`GET /v1/locations`, `GET /v1/locations/public`) and shown as an "Urban" badge on dashboard cards.
 
 ---
 
@@ -1117,7 +1176,7 @@ Default (no TerraClimate data, `no_terraclimate_data` flag): 50.
 
 ### 11.7 Landslide risk score
 
-A standalone terrain hazard score (0-100) derived from the terrain DTM (3DEP for US locations, GLO-30 globally). It is **not included in the composite** -- landslide is an independent geophysical hazard orthogonal to the climate risk dimensions. It is surfaced separately in the API response and the HTML report.
+A standalone terrain hazard score (0-100) derived from the terrain DTM (3DEP for US locations, GLO-30 globally). It is **not included in the weighted-average component of the composite** but does enter the `dominant` (max) term (section 11.8), so a high landslide score lifts the composite. It is surfaced separately in the API response and the HTML report.
 
 **Physical basis:** Slope angle is the primary driver of gravitational shear stress. Terrain relief (elevation range of the 640m footprint) is a secondary proxy for slope length and material accumulation potential.
 
@@ -1143,27 +1202,48 @@ The gauge is hidden in the HTML report when `slope_deg` is null (no DEM data) an
 
 ### 11.8 Composite score
 
+The composite blends regional calibration with worst-case hazard surfacing:
+
+```
+composite = 0.40 × weighted_avg + 0.60 × dominant
+```
+
+`dominant = max(all sub-scores)`. At α = 0.60 a single hazard at 90 produces composite ≈ 65; all sub-scores equal at 25 produces composite = 25 (no inflation); all at 80 produces 80.
+
 **Urban locations** (climate-zone weights are not applicable to impervious surfaces):
 
 ```
-composite = 0.60 × (100 − heat_mitigation_score)
-          + 0.15 × wetness_score
-          + 0.15 × flood_risk_score
-          + 0.10 × heat_stress_score
+urban_weighted = 0.60 × (100 − heat_mitigation_score)
+               + 0.15 × wetness_score
+               + 0.15 × flood_risk_score
+               + 0.10 × heat_stress_score
+
+urban_max = max(100 − heat_mitigation_score, wetness_score,
+                flood_risk_score, heat_stress_score)
+
+composite = 0.40 × urban_weighted + 0.60 × urban_max
 ```
 
-The canopy deficit term (60%) dominates because the primary long-term climate risk for urban environments is the urban heat island effect, which is modulated by vegetation and shading.
+The canopy deficit term dominates the weighted-average component because the primary long-term climate risk for urban environments is the urban heat island effect, which is modulated by vegetation and shading.
 
 **Non-urban locations** (climate-zone-weighted):
 
 ```
-composite = w_drought     × drought_score
-          + w_wetness     × wetness_score
-          + w_fire        × fire_exposure_score
-          + w_heat_inv    × (100 − heat_mitigation_score)
-          + w_flood       × flood_risk_score
-          + w_heat_stress × heat_stress_score
+weighted_avg = w_drought     × drought_score
+             + w_wetness     × wetness_score
+             + w_fire        × fire_exposure_score
+             + w_heat_inv    × (100 − heat_mitigation_score)
+             + w_flood       × flood_risk_score
+             + w_heat_stress × heat_stress_score
+
+dominant = max(drought_score, wetness_score, fire_exposure_score,
+               100 − heat_mitigation_score, flood_risk_score,
+               heat_stress_score, landslide_score)
+
+composite = 0.40 × weighted_avg + 0.60 × dominant
 ```
+
+`landslide_score` is included in `dominant` only. Adding it to the weighted average would require rebalancing all climate zone weight dicts; surfacing it through the max achieves the intent (a high landslide score lifts the composite) without structural changes to the weighting system.
 
 Climate zone weights (Köppen classification; all rows sum to 1.0):
 
@@ -1244,6 +1324,8 @@ The NDWI optical cross-validation veto (section 11.5) addresses this by discount
 
 The fixed 640 m × 640 m footprint means that a point location in a mixed environment (e.g. a building at the edge of a park) integrates signal from surrounding land cover. The reported NDVI, BSI, and canopy proxy reflect the 640 m neighbourhood average, not the specific parcel land cover. This is by design: the intent is to capture the broader landscape context relevant to climate risk, not parcel-specific green space.
 
+A specific consequence at coastal boundaries: open water and beach sand both produce near-zero NDVI. When the window straddles a shoreline, the non-land portion can depress the window mean below the urban-detection barren-terrain guard, causing dense coastal urban areas (waterfronts, boardwalks, harbour districts) to be classified as non-urban. The tidal zone flag is typically set for such locations, which already suppresses drought scoring -- the primary downstream effect of the urban flag in these contexts.
+
 ---
 
 ## 16. Parameter reference
@@ -1275,7 +1357,8 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
 | `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent |
 | `SAR_ACTIVE_FLOOD_MIN_NDWI` | 0.08 | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
-| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag regardless of corroboration |
+| `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag if anomaly exceeds this (blocked when SAR is artifactual) |
+| `SAR_CHRONIC_ARTIFACT_THRESHOLD` | 0.50 | `active_flood` artifact guard: if `sar_water_freq_5y` exceeds this while NDWI is below `SAR_ACTIVE_FLOOD_MIN_NDWI`, SAR is treated as look-angle-contaminated and the strong-anomaly bypass is disabled |
 | `DEM_FLAT_SLOPE_THRESHOLD` | 15.0° | Per-pixel slope above which the pixel is excluded from SAR water fraction (numerator and denominator) |
 
 ### Elevation parameters (hybrid DTM)
@@ -1319,11 +1402,20 @@ All thresholds are configurable via environment variables. Defaults are listed b
 
 | Parameter | Default | Path |
 |-----------|---------|------|
-| `URBAN_MIN_NDVI_THRESHOLD` | 0.12 | Guard: below this NDVI the site is naturally barren; both paths suppressed |
-| `URBAN_BSI_FREQ_STRONG_THRESHOLD` | 0.65 | Path 1 (strong signal alone) |
-| `URBAN_BSI_FREQ_THRESHOLD` | 0.50 | Path 2 (combined) |
-| `URBAN_NDVI_THRESHOLD` | 0.25 | Path 2 |
-| `URBAN_CANOPY_THRESHOLD` | 0.25 | Path 2 |
+| `URBAN_MIN_NDVI_THRESHOLD` | 0.12 | Guard: below this NDVI the site is naturally barren; all paths suppressed |
+| `URBAN_BUILDING_FRACTION_THRESHOLD` | 0.10 | Overture primary path: `building_fraction` above this → urban |
+| `URBAN_BUILDING_FRACTION_VETO` | 0.02 | Overture veto: `building_fraction` below this → not urban (suppresses BSI spectral paths) |
+| `URBAN_BSI_FREQ_STRONG_THRESHOLD` | 0.65 | BSI fallback Path 1 (strong signal alone) |
+| `URBAN_BSI_FREQ_THRESHOLD` | 0.50 | BSI fallback Path 2 (combined) |
+| `URBAN_NDVI_THRESHOLD` | 0.25 | BSI fallback Path 2 |
+| `URBAN_CANOPY_THRESHOLD` | 0.25 | BSI fallback Path 2 |
+
+### Overture Maps parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `OVERTURE_BUCKET` | `overturemaps-us-west-2` | Public S3 bucket for Overture GeoParquet (us-west-2, no auth) |
+| `OVERTURE_RELEASE` | `2026-02-18.0` | Pinned release tag; update with `aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request` |
 
 ### Trend-aware scoring parameters (v1.27.0)
 
@@ -1385,4 +1477,4 @@ SH values are derived automatically by shifting NH months by +6. Tropical, Arid,
 
 ---
 
-*Processing version `s2l2a-v1.27.0` / score version `risk-v1.17.0`. Trend-aware scoring (active boosts, momentum amplifiers, slope sub-components) introduced in v1.27.0/v1.15.0. Bidirectional mitigations (improving trends reduce scores) added in v1.16.0. Progressive momentum formula, fire momentum (`nbr_momentum_ratio_1y`), and momentum priority threshold added in v1.17.0.*
+*Processing version `s2l2a-v1.27.0` / score version `risk-v1.19.0`. Trend-aware scoring (active boosts, momentum amplifiers, slope sub-components) introduced in v1.27.0/v1.15.0. Bidirectional mitigations (improving trends reduce scores) added in v1.16.0. Progressive momentum formula, fire momentum (`nbr_momentum_ratio_1y`), and momentum priority threshold added in v1.17.0. Dominant-hazard composite (40% weighted average + 60% max sub-score) introduced in v1.19.0.*

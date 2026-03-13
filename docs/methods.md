@@ -789,6 +789,20 @@ Urban classification has the following downstream effects:
 - `fire_exposure_score` is forced to 0 (NBR on concrete/asphalt spectrally mimics burned vegetation; see section 15.1)
 - The composite score uses a fixed urban weighted-average profile blended with the dominant sub-score (section 11.8)
 
+### 10.1 Detection path explanation in the report
+
+When `is_urban = 1`, the HTML report displays a "Detection path" line inside the urban banner explaining which signal triggered classification, along with the measured values compared to their thresholds:
+
+| Trigger | Label | Signals shown |
+|---------|-------|---------------|
+| `building_fraction > 0.10` | Overture Maps building footprints | `building_fraction` vs. `URBAN_BUILDING_FRACTION_THRESHOLD` |
+| `bsi_freq > 0.65` AND `ndvi > 0.25` AND `canopy < 0.45` | Mixed vegetation + impervious (tropical / coastal) | BSI frequency, NDVI, canopy proxy vs. thresholds |
+| `bsi_freq > 0.50` AND `ndvi < 0.25` AND `canopy < 0.25` | Dense impervious surface (temperate urban core) | BSI frequency, NDVI, canopy proxy vs. thresholds |
+
+When `building_fraction` falls in the ambiguous band (0.02–0.10), the Overture coverage value is shown alongside the spectral path note.
+
+The `is_urban` boolean is also surfaced in the location list API response (`GET /v1/locations`, `GET /v1/locations/public`) and shown as an "Urban" badge on dashboard cards.
+
 ---
 
 ## 11. Tidal zone classification

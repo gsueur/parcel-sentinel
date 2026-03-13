@@ -794,10 +794,12 @@ class PostgresStore:
             quality_score: float | None = None
             composite_score: int | None = None
             active_episodes: list[str] = []
+            is_urban: bool = False
             if features_json_str:
                 try:
                     _feat = json.loads(features_json_str)
                     quality_score = _feat.get("quality_score")
+                    is_urban = (_feat.get("is_urban") or 0.0) > 0.5
                     for _ep in ("active_flood", "active_fire", "active_drought"):
                         if (_feat.get(_ep) or 0.0) > 0.5:
                             active_episodes.append(_ep)
@@ -820,6 +822,7 @@ class PostgresStore:
                 "quality_score":   quality_score,
                 "composite_score": composite_score,
                 "active_episodes": active_episodes,
+                "is_urban":        is_urban,
                 "is_public":       bool(is_public),
                 "report_url":      f"/v1/location/{location_key}/report",
                 "thumbnail_url":   f"/v1/thumbnail/{location_key}.png",

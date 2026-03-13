@@ -820,6 +820,86 @@ _URBAN_SUPPRESSED_GROUPS = {"Vegetation Health", "Vegetation Moisture", "Fire Hi
 _FEAT_SKIP = {"is_urban"}
 
 
+def _urban_reason_html(features: dict) -> str:
+    """Return a short HTML snippet explaining which signals triggered urban detection."""
+    from ..config import settings
+
+    bf = features.get("building_fraction")
+    bsi_freq = features.get("bsi_bare_soil_freq_5y")
+    ndvi = features.get("ndvi_mean_5y")
+    canopy = features.get("canopy_proxy")
+
+    _v = '<span style="font-family:monospace;font-weight:600">'
+    _vc = '</span>'
+
+    def _fmt(val: float | None, pct: bool = False) -> str:
+        if val is None:
+            return "n/a"
+        return f"{val:.0%}" if pct else f"{val:.3f}"
+
+    # Overture direct path
+    if bf is not None and bf > settings.URBAN_BUILDING_FRACTION_THRESHOLD:
+        return (
+            f'<div style="font-size:0.74rem;color:#475569;margin-top:6px;line-height:1.6">'
+            f'<strong>Detection path:</strong> Overture Maps building footprints &mdash; '
+            f'building coverage {_v}{_fmt(bf, pct=True)}{_vc} '
+            f'(threshold &gt; {settings.URBAN_BUILDING_FRACTION_THRESHOLD:.0%}).'
+            f'</div>'
+        )
+
+    # Ambiguous Overture band + spectral confirmation
+    overture_note = ""
+    if bf is not None:
+        overture_note = (
+            f' Building coverage {_v}{_fmt(bf, pct=True)}{_vc} '
+            f'(ambiguous band {settings.URBAN_BUILDING_FRACTION_VETO:.0%}&ndash;'
+            f'{settings.URBAN_BUILDING_FRACTION_THRESHOLD:.0%}); confirmed by spectral indices.'
+        )
+
+    if bsi_freq is None:
+        return ""
+
+    # Path 1: strong BSI + elevated NDVI (tropical/coastal)
+    if (
+        bsi_freq > settings.URBAN_BSI_FREQ_STRONG_THRESHOLD
+        and ndvi is not None
+        and ndvi > settings.URBAN_NDVI_THRESHOLD
+        and (canopy is None or canopy < settings.URBAN_BSI_STRONG_MAX_CANOPY)
+    ):
+        return (
+            f'<div style="font-size:0.74rem;color:#475569;margin-top:6px;line-height:1.6">'
+            f'<strong>Detection path:</strong> Mixed vegetation + impervious (tropical / coastal urban pattern).{overture_note} '
+            f'BSI frequency {_v}{_fmt(bsi_freq, pct=True)}{_vc} '
+            f'(&gt; {settings.URBAN_BSI_FREQ_STRONG_THRESHOLD:.0%}) &bull; '
+            f'NDVI {_v}{_fmt(ndvi)}{_vc} '
+            f'(&gt; {settings.URBAN_NDVI_THRESHOLD}) &bull; '
+            f'canopy proxy {_v}{_fmt(canopy)}{_vc} '
+            f'(&lt; {settings.URBAN_BSI_STRONG_MAX_CANOPY}).'
+            f'</div>'
+        )
+
+    # Path 2: moderate BSI + low NDVI + low canopy (dense temperate urban core)
+    if (
+        ndvi is not None
+        and bsi_freq > settings.URBAN_BSI_FREQ_THRESHOLD
+        and ndvi < settings.URBAN_NDVI_THRESHOLD
+        and (canopy is None or canopy < settings.URBAN_CANOPY_THRESHOLD)
+    ):
+        return (
+            f'<div style="font-size:0.74rem;color:#475569;margin-top:6px;line-height:1.6">'
+            f'<strong>Detection path:</strong> Dense impervious surface (temperate urban core).{overture_note} '
+            f'BSI frequency {_v}{_fmt(bsi_freq, pct=True)}{_vc} '
+            f'(&gt; {settings.URBAN_BSI_FREQ_THRESHOLD:.0%}) &bull; '
+            f'NDVI {_v}{_fmt(ndvi)}{_vc} '
+            f'(&lt; {settings.URBAN_NDVI_THRESHOLD}) &bull; '
+            f'canopy proxy {_v}{_fmt(canopy)}{_vc} '
+            f'(&lt; {settings.URBAN_CANOPY_THRESHOLD}).'
+            f'</div>'
+        )
+
+    return ""
+
+
 def _features_html(features: dict, is_urban: bool = False) -> str:
     """Render the Derived Features section as grouped, annotated cards."""
     if not features:
@@ -1639,6 +1719,7 @@ def build_report_html(
             f'<span style="{_pill};background:#fef3c7;color:#92400e">10% heat stress</span>'
             '(TerraClimate)'
             '</div>'
+            + _urban_reason_html(feat) +
             '</div>'
         )
         formula_note = ""
