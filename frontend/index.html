@@ -133,6 +133,20 @@
       background: #f8fafc; color: var(--faint);
       border: 1px solid var(--border); border-radius: 3px; padding: 1px 6px; vertical-align: middle;
     }
+    .badge-owner {
+      display: inline-block; margin-left: 5px;
+      font-size: 0.65rem; font-weight: 500;
+      background: #f5f3ff; color: #6d28d9;
+      border: 1px solid #ddd6fe; border-radius: 3px; padding: 1px 6px; vertical-align: middle;
+      max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      vertical-align: middle;
+    }
+    .admin-section-hdr {
+      font-size: 0.78rem; font-weight: 600; color: var(--muted); letter-spacing: 0.04em;
+      text-transform: uppercase; padding: 18px 0 8px; border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    .admin-section-hdr:first-child { padding-top: 4px; }
     .card-scores { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
     .card-episodes { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
     .ep-badge {
@@ -621,13 +635,25 @@
     </div>
   </div>
 
-  <!-- My Locations tab -->
+  <!-- My Locations / All Locations tab -->
   <div id="panel-mine" class="hidden">
-    <div class="section-header">
-      <span class="section-title" id="mine-count"></span>
+    <!-- Non-admin: flat list -->
+    <div id="mine-regular">
+      <div class="section-header">
+        <span class="section-title" id="mine-count"></span>
+      </div>
+      <div id="mine-grid" class="grid">
+        <p class="state-msg">Loading&hellip;</p>
+      </div>
     </div>
-    <div id="mine-grid" class="grid">
-      <p class="state-msg">Loading&hellip;</p>
+    <!-- Admin: three sections -->
+    <div id="mine-admin" class="hidden">
+      <div class="admin-section-hdr">My Locations</div>
+      <div id="admin-mine-grid" class="grid"></div>
+      <div class="admin-section-hdr">Public Locations</div>
+      <div id="admin-public-grid" class="grid"></div>
+      <div class="admin-section-hdr">Other Users</div>
+      <div id="admin-others-grid" class="grid"></div>
     </div>
   </div>
 
@@ -751,6 +777,7 @@ function updateHeaderState() {
     authEl.classList.remove('hidden');
     authEl.style.display = 'flex';
     tabMine.classList.remove('hidden');
+    tabMine.textContent = user.role === 'admin' ? 'All Locations' : 'My Locations';
     document.getElementById('user-chip').textContent = user.email || user.name || user.user_id;
     if (hero) hero.classList.add('hidden');
     if (features) features.classList.add('hidden');
@@ -818,7 +845,8 @@ async function loadPublicLocations() {
 
 async function loadMyLocations() {
   const mineGrid = document.getElementById('mine-grid');
-  if (!getUser()) {
+  const user = getUser();
+  if (!user) {
     mineGrid.innerHTML = `
       <div class="cta-box" style="grid-column:1/-1">
         <p>Sign in to see and manage your locations.</p>
@@ -831,15 +859,31 @@ async function loadMyLocations() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     serverVersions = data.server_versions || serverVersions;
-    const count = data.count;
-    document.getElementById('mine-count').textContent =
-      `${count} location${count !== 1 ? 's' : ''}`;
 
-    const pending = [...document.querySelectorAll('.card-pending')];
-    renderGrid('mine-grid', data.locations, true);
-    pending.forEach(c => {
-      if (!document.getElementById(c.id)) document.getElementById('mine-grid').prepend(c);
-    });
+    if (user.role === 'admin') {
+      document.getElementById('mine-regular').classList.add('hidden');
+      document.getElementById('mine-admin').classList.remove('hidden');
+
+      const mine   = data.locations.filter(l => l.customer_id === user.user_id);
+      const pub    = data.locations.filter(l => l.is_public && l.customer_id !== user.user_id);
+      const others = data.locations.filter(l => !l.is_public && l.customer_id !== user.user_id);
+
+      renderGrid('admin-mine-grid',   mine,   true,  false);
+      renderGrid('admin-public-grid', pub,    false, false);
+      renderGrid('admin-others-grid', others, false, true);
+    } else {
+      document.getElementById('mine-regular').classList.remove('hidden');
+      document.getElementById('mine-admin').classList.add('hidden');
+
+      const count = data.count;
+      document.getElementById('mine-count').textContent =
+        `${count} location${count !== 1 ? 's' : ''}`;
+      const pending = [...document.querySelectorAll('.card-pending')];
+      renderGrid('mine-grid', data.locations, true, false);
+      pending.forEach(c => {
+        if (!document.getElementById(c.id)) document.getElementById('mine-grid').prepend(c);
+      });
+    }
   } catch (e) {
     mineGrid.innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
   }
@@ -854,7 +898,7 @@ async function refreshAfterJob() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ── RENDER GRID ────────────────────────────────────────────────────────────────
-function renderGrid(gridId, locations, showActions) {
+function renderGrid(gridId, locations, showActions, showOwner = false) {
   const grid = document.getElementById(gridId);
   locations = [...locations].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   if (!locations.length) {
@@ -882,6 +926,9 @@ function renderGrid(gridId, locations, showActions) {
       ? (loc.is_public
           ? `<span class="badge-public">Public</span>`
           : `<span class="badge-private">Private</span>`)
+      : '';
+    const ownerBadge = showOwner && loc.customer_name
+      ? `<span class="badge-owner" title="${loc.customer_name}">${loc.customer_name}</span>`
       : '';
     let scorePill = '';
     if (loc.composite_score != null) {
@@ -926,7 +973,7 @@ function renderGrid(gridId, locations, showActions) {
           <img class="card-thumb" src="${API_URL}${loc.thumbnail_url}"
                alt="" onerror="this.outerHTML='<div class=card-thumb-placeholder></div>'">
           <div class="card-body">
-            <div class="card-name">${name}${visiBadge}</div>
+            <div class="card-name">${name}${visiBadge}${ownerBadge}</div>
             <div class="card-meta">${meta}</div>
             ${scoresRow}
             ${episodeBadges}

@@ -750,11 +750,12 @@ class PostgresStore:
                     ) sub WHERE rn = 1
                 )
                 SELECT pg.location_key, pg.geojson_text, pg.name, pg.customer_id,
-                       c.name AS customer_name, pg.updated_at,
+                       COALESCE(c.name, u.email) AS customer_name, pg.updated_at,
                        lf.processing_version, ls.score_version,
                        lf.features_json, ls.scores_json, pg.is_public
                 FROM location_geometries pg
                 LEFT JOIN customers c ON pg.customer_id = c.customer_id
+                LEFT JOIN users u ON pg.customer_id = u.user_id
                 LEFT JOIN latest_features lf ON lf.location_key = pg.location_key
                 LEFT JOIN latest_scores ls ON ls.location_key = pg.location_key
                 {where}
