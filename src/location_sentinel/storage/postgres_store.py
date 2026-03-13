@@ -1630,18 +1630,31 @@ class PostgresStore:
     # ------------------------------------------------------------------
 
     def get_elevation(self, location_key: str, dem_version: str | None = None) -> dict[str, float] | None:
+        """Return cached elevation features.
+        Pass dem_version to match only that version (pipeline cache check);
+        omit to return any cached row regardless of version (report display)."""
         if self._pool is None:
             return None
         with self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT elevation_m, elevation_range_m, slope_deg, elevation_min_m, elevation_max_m,
-                       aspect_deg, tpi_m, curvature, heat_load_index
-                FROM elevation_cache WHERE location_key = %s AND dem_version = %s
-                """,
-                [location_key, dem_version],
-            )
+            if dem_version is not None:
+                cur.execute(
+                    """
+                    SELECT elevation_m, elevation_range_m, slope_deg, elevation_min_m, elevation_max_m,
+                           aspect_deg, tpi_m, curvature, heat_load_index
+                    FROM elevation_cache WHERE location_key = %s AND dem_version = %s
+                    """,
+                    [location_key, dem_version],
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT elevation_m, elevation_range_m, slope_deg, elevation_min_m, elevation_max_m,
+                           aspect_deg, tpi_m, curvature, heat_load_index
+                    FROM elevation_cache WHERE location_key = %s
+                    """,
+                    [location_key],
+                )
             row = cur.fetchone()
         if row is None:
             return None
@@ -1658,14 +1671,22 @@ class PostgresStore:
         }
 
     def get_elevation_array(self, location_key: str, dem_version: str | None = None) -> bytes | None:
+        """Return the raw elevation array bytes.
+        Pass dem_version to match only that version; omit to return any cached row."""
         if self._pool is None:
             return None
         with self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute(
-                "SELECT elevation_array FROM elevation_cache WHERE location_key = %s AND dem_version = %s",
-                [location_key, dem_version],
-            )
+            if dem_version is not None:
+                cur.execute(
+                    "SELECT elevation_array FROM elevation_cache WHERE location_key = %s AND dem_version = %s",
+                    [location_key, dem_version],
+                )
+            else:
+                cur.execute(
+                    "SELECT elevation_array FROM elevation_cache WHERE location_key = %s",
+                    [location_key],
+                )
             row = cur.fetchone()
         if row is None or row[0] is None:
             return None
