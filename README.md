@@ -31,7 +31,8 @@ Given a point or polygon geometry, this service:
 - Searches the Sentinel-1 GRD archive for SAR passes over the same period
 - Fetches TerraClimate monthly climate variables (temperature, precipitation, VPD, PDSI) from the University of Idaho THREDDS server
 - Reads terrain elevation from a hybrid bare-earth DTM: USGS 3DEP 1" lidar (US locations) with Copernicus GLO-30 as global fallback
-- All four pipelines run concurrently; results are merged before scoring
+- Queries Overture Maps GeoParquet on S3 via DuckDB to count building footprints and compute building coverage fraction within the 640m window
+- All five pipelines run concurrently; results are merged before scoring
 - For each selected S2 scene: reads 64x64 native pixels (640m footprint) for 7 bands, masks bad pixels via SCL, computes six spectral indices
 - For each selected S1 scene: reads 64x64 pixels of VV backscatter, applies a DN threshold to detect water
 - Aggregates to monthly statistics and derives long-term features (optical, SAR, and climate) including trend slopes and 1y momentum ratios
@@ -55,34 +56,34 @@ POST /v1/locations (geometry + options)
         |
         |-------------- asyncio.gather -------------------------------------------------|
         v                  v                        v                               v
-  Sentinel-2 L2A     Sentinel-1 GRD          TerraClimate pipeline        DTM (3DEP / GLO-30)
-  STAC search        STAC search             OPeNDAP point extraction      DEM COG read
-  Earth Search v1    Earth Search v1         U. Idaho THREDDS              /vsis3/, no-sign
-  s2-l2a collection  s1-grd collection       5 vars × N years              1 arc-sec (~30m)
-  sentinel-cogs      sentinel-s1-l1c         tmax tmin ppt vpd PDSI        3DEP (US) / GLO-30
-        |                  |                        |                               |
-        v                  v                        v                               v
-  Scene selection    Scene selection         DuckDB grid-cell cache        64x64 px window
-  monthly best cloud IW GRD, VV asset        (1/24° ~4 km, shared)         elevation_m
-  ≤2/month, max 120  ≤2/month, max 120       Fetch missing via OPeNDAP     elevation_min_m
-        |                  |                        |                         elevation_max_m
-        |                  |                        |                         elevation_range_m
-        |                  |                        |                         slope_deg
-        v                  v                        v                               |
-  Async COG reads    Sync VV reads via        Derive climate features:             |
-  7 bands, 64x64 px  rasterio WarpedVRT       tmax_mean, tmax_anomaly,            |
-  async-geotiff      64x64 px, UTM CRS        tmax_trend, ppt_annual,             |
-        |                  |                  vpd_high_freq, pdsi_freq             |
-        v                  v                        |                               |
-  SCL masking        Water detection                |                               |
-  NDVI NDWI NDMI     water_frac = px < 75 DN        |                               |
-  NBR NDSI BSI       (excl. nodata DN=0)            |                               |
-        |                  |                        |                               |
-        v                  |                        |                               |
-  Monthly aggregation + Snow suppression:           |                               |
-  long-term features   excl. months NDSI > 0.4     |                               |
-        |                  |                        |                               |
-        |<--------- merge optical + SAR + TerraClimate + DEM features ------------|
+  Sentinel-2 L2A     Sentinel-1 GRD          TerraClimate pipeline        DTM (3DEP / GLO-30)   Overture Maps
+  STAC search        STAC search             OPeNDAP point extraction      DEM COG read          GeoParquet / DuckDB
+  Earth Search v1    Earth Search v1         U. Idaho THREDDS              /vsis3/, no-sign      overturemaps-us-west-2
+  s2-l2a collection  s1-grd collection       5 vars × N years              1 arc-sec (~30m)      theme=buildings
+  sentinel-cogs      sentinel-s1-l1c         tmax tmin ppt vpd PDSI        3DEP (US) / GLO-30    pinned release
+        |                  |                        |                               |                     |
+        v                  v                        v                               v                     v
+  Scene selection    Scene selection         DuckDB grid-cell cache        64x64 px window       ST_Intersection
+  monthly best cloud IW GRD, VV asset        (1/24° ~4 km, shared)         elevation_m           footprints in window
+  ≤2/month, max 120  ≤2/month, max 120       Fetch missing via OPeNDAP     elevation_min_m       building_count
+        |                  |                        |                         elevation_max_m       building_fraction
+        |                  |                        |                         elevation_range_m     mean_building_height_m
+        |                  |                        |                         slope_deg             (cached per release)
+        v                  v                        v                               |                     |
+  Async COG reads    Sync VV reads via        Derive climate features:             |                     |
+  7 bands, 64x64 px  rasterio WarpedVRT       tmax_mean, tmax_anomaly,            |                     |
+  async-geotiff      64x64 px, UTM CRS        tmax_trend, ppt_annual,             |                     |
+        |                  |                  vpd_high_freq, pdsi_freq             |                     |
+        v                  v                        |                               |                     |
+  SCL masking        Water detection                |                               |                     |
+  NDVI NDWI NDMI     water_frac = px < 75 DN        |                               |                     |
+  NBR NDSI BSI       (excl. nodata DN=0)            |                               |                     |
+        |                  |                        |                               |                     |
+        v                  |                        |                               |                     |
+  Monthly aggregation + Snow suppression:           |                               |                     |
+  long-term features   excl. months NDSI > 0.4     |                               |                     |
+        |                  |                        |                               |                     |
+        |<--------- merge optical + SAR + TerraClimate + DEM + buildings features ---------------------||
         |
         v
   Climate zone lookup (centroid → Köppen code)
@@ -192,6 +193,28 @@ Five terrain features are derived from the 64x64 window (640m x 640m footprint):
 - `elevation_max_m` -- maximum elevation within the window
 - `elevation_range_m` -- `elevation_max_m − elevation_min_m` (terrain relief proxy)
 - `slope_deg` -- mean slope angle in degrees, computed from numpy central-difference gradient scaled by arc-second pixel size in metres
+
+---
+
+### Overture Maps (building footprints)
+
+**Provider:** Overture Maps Foundation
+**Release:** Pinned at `OVERTURE_RELEASE` (default `2026-02-18.0`); update by running `aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request`
+**Coverage:** Global
+**Format:** GeoParquet partitioned by theme/type, hosted on public S3 (`overturemaps-us-west-2`, us-west-2)
+**Access:** DuckDB with `httpfs` and `spatial` extensions; no authentication required
+
+Three building features are derived per location:
+
+| Feature | Description |
+|---------|-------------|
+| `building_count` | Integer count of Overture building footprints intersecting the 640m window |
+| `building_fraction` | Sum of clipped footprint area / 409,600 m² (range 0–1) |
+| `mean_building_height_m` | Mean height from Overture attribute (sparse; often null for low-coverage regions) |
+
+`building_fraction` formula: `Σ ST_Area(ST_Intersection(geometry, window_envelope)) × deg_to_m² scale / 409,600 m²`.
+
+Results are cached in the `buildings_cache` table keyed on `(location_key, overture_release)` -- independent of `PROCESSING_VERSION`, so bumping the processing version does not re-query Overture.
 
 ---
 
@@ -425,11 +448,14 @@ Long-term features computed from the full date window (default 5 years):
 | `bsi_mean_5y` | Mean BSI over the period |
 | `bsi_bare_soil_freq_5y` | Fraction of months with BSI > 0 (bare soil exposed) |
 | `canopy_proxy` | Peak growing-season NDVI; season window is Köppen + hemisphere aware |
-| `is_urban` | 1.0 if location classified as urban/impervious, 0.0 otherwise |
+| `is_urban` | 1.0 if location classified as urban/impervious, 0.0 otherwise; primary signal is `building_fraction` from Overture Maps (> 0.10 → urban, < 0.02 → non-urban veto); BSI spectral paths are fallback when Overture data is unavailable |
 | `is_tidal_zone` | 1.0 if a NOAA tidal station is within `TIDAL_ZONE_RADIUS_KM` (30 km), 0.0 otherwise |
 | `nearest_tidal_station_km` | Distance in km to the nearest NOAA tidal station, or null if none within radius |
 | `sar_water_freq_5y` | SAR: fraction of scenes (snow-suppressed) with water pixel fraction > threshold |
 | `sar_flood_anomaly` | SAR: max water fraction excess above seasonal median in recent months |
+| `building_count` | Count of Overture Maps building footprints intersecting the 640m window |
+| `building_fraction` | Sum of clipped footprint area / 409,600 m² (0–1); primary urban detection signal |
+| `mean_building_height_m` | Mean building height from Overture attribute (sparse; often null) |
 | `active_flood` | 1.0 if `sar_flood_anomaly > 0.10` AND corroborated by independent evidence: NDWI persistence > 0.08, OR anomaly > 0.35 with any optical water history (blocked when `sar_water_freq_5y > 0.50` and NDWI < 0.08, indicating SAR look-angle terrain artifacts); triggers a 1.40× boost to `flood_risk_score` |
 | `active_fire` | 1.0 if any consecutive-confirmed NBR burn month falls within 3 months of `date_end`; triggers a 1.25× boost to `fire_exposure_score` (non-urban only) |
 | `active_drought` | 1.0 if at least 2 of the last 3 observed NDVI months are below their seasonal median by > 0.1; suppressed for snow months, tidal zones, and persistently wet sites; triggers a 1.30× boost to `drought_score` (non-urban only) |
@@ -1045,6 +1071,15 @@ SH months are NH months shifted by +6 calendar months. The latitude boundary and
 | `TERRACLIMATE_VPD_HIGH_THRESHOLD` | `1.5` | kPa above which a month counts as high-VPD |
 | `TERRACLIMATE_PDSI_DROUGHT_THRESHOLD` | `-2.0` | PDSI below this = moderate drought month |
 | `TERRACLIMATE_TMAX_ANOMALY_SIGMA` | `1.0` | Std-devs above monthly mean = heat anomaly |
+
+### Overture Maps (building footprints)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OVERTURE_BUCKET` | `overturemaps-us-west-2` | Public S3 bucket for Overture GeoParquet (us-west-2, no auth) |
+| `OVERTURE_RELEASE` | `2026-02-18.0` | Pinned Overture release tag; update with `aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request` |
+| `URBAN_BUILDING_FRACTION_THRESHOLD` | `0.10` | `building_fraction` above this → urban (Overture primary path) |
+| `URBAN_BUILDING_FRACTION_VETO` | `0.02` | `building_fraction` below this → not urban (suppresses BSI spectral paths) |
 
 ### Thumbnail
 

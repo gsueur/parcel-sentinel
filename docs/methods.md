@@ -135,7 +135,29 @@ Terrain features are read from a two-source priority chain. For US locations the
 | Coverage | Global |
 | Cache | Same `elevation_cache` table; one read per location |
 
-### 1.5 NOAA CO-OPS (tidal stations and tide predictions)
+### 1.5 Overture Maps (building footprints)
+
+| Attribute | Value |
+|-----------|-------|
+| Provider | Overture Maps Foundation |
+| Release | Pinned at `OVERTURE_RELEASE` (default `2026-02-18.0`) |
+| Format | GeoParquet, partitioned by `theme=buildings/type=building` |
+| Storage | Public S3 (`s3://overturemaps-us-west-2/release/{version}/theme=buildings/type=building/`) |
+| Access | DuckDB with `httpfs` and `spatial` extensions; anonymous (no credentials required) |
+| Coverage | Global |
+| Caching | `buildings_cache` table, keyed on `(location_key, overture_release)`; independent of `PROCESSING_VERSION` |
+
+Three features are derived:
+
+| Feature | Formula / description |
+|---------|----------------------|
+| `building_count` | Integer count of footprints where `ST_Intersects(geometry, window_envelope)` |
+| `building_fraction` | `Σ ST_Area(ST_Intersection(geometry, window_envelope)) × deg_to_m² scale / 409,600 m²`; range [0, 1] |
+| `mean_building_height_m` | Mean of the Overture `height` attribute across intersecting footprints; sparse, often null in low-coverage regions |
+
+The buildings pipeline runs concurrently with S2, S1 SAR, TerraClimate, and DEM. Results are cached per `(location_key, overture_release)` independently of `PROCESSING_VERSION`: bumping the processing version to invalidate optical or SAR caches does not trigger a re-query of Overture.
+
+### 1.6 NOAA CO-OPS (tidal stations and tide predictions)
 
 | Attribute | Value |
 |-----------|-------|
@@ -722,36 +744,49 @@ pdsi_drought_freq_5y = count(PDSI_monthly < -2.0) / count(valid months)
 
 ## 10. Urban detection
 
-Urban classification is determined by a two-path OR logic gate applied to the optical features, preceded by a barren-terrain guard:
+Urban classification uses a three-stage decision tree. The Overture Maps building fraction is the primary signal where available; the existing BSI spectral paths serve as fallback.
 
-**Barren terrain guard (applied before both paths):**
+**Barren terrain guard (applied first):**
 ```
-if ndvi_mean_5y < URBAN_MIN_NDVI_THRESHOLD (0.06):
+if ndvi_mean_5y < URBAN_MIN_NDVI_THRESHOLD (0.12):
     is_urban = False  (naturally barren -- desert, alpine rock, bare soil)
 ```
-Very low NDVI indicates naturally barren terrain rather than urban impervious surfaces. True deserts and alpine rock typically sit at 0.01-0.04 NDVI. Dense urban cores with almost no vegetation (e.g. a city centre with concrete, glass, and asphalt) can drop to ~0.08; the guard is set at 0.06 to exclude genuine barren terrain while allowing dense urban cores through. Path 2's canopy check (< 0.25) provides additional discrimination against sparse scrubland for sites in the 0.06-0.12 NDVI range. Both detection paths are suppressed when the guard fires.
+Every urban environment maintains enough mixed vegetation in a 640 m window to keep the 5-year NDVI mean above 0.12; values below this indicate an absence of vegetation rather than impervious surfaces. Both the Overture and BSI paths are suppressed when the guard fires.
 
-**Path 1 (strong BSI signal alone):**
+**Overture primary path (after guard):**
 ```
-is_urban = True  if  bsi_bare_soil_freq_5y > 0.65
+if building_fraction > URBAN_BUILDING_FRACTION_THRESHOLD (0.10):
+    is_urban = True   (direct measurement; takes precedence)
+elif building_fraction < URBAN_BUILDING_FRACTION_VETO (0.02):
+    is_urban = False  (veto; suppresses BSI spectral paths)
 ```
-Captures tropical and subtropical cities (e.g. Miami, Houston) where year-round vegetation mixed with impervious surfaces keeps NDVI elevated, but the high frequency of bare/impervious signals in BSI still exceeds the threshold.
+When `building_fraction` is available and above 0.10, the site is classified as urban without consulting the spectral indices. This directly measures impervious surface density rather than inferring it from reflectance. When `building_fraction` is below 0.02, the site is classified as non-urban regardless of BSI, suppressing spurious urban classification in agricultural and rural areas with high BSI.
 
-**Path 2 (combined signal):**
+Sites with `building_fraction` between 0.02 and 0.10, or where Overture data is unavailable (null), fall through to the BSI spectral paths.
+
+**BSI spectral fallback (two-path OR logic):**
+
+Path 1 (strong BSI signal alone):
 ```
-is_urban = True  if  bsi_bare_soil_freq_5y > 0.50
-                AND  ndvi_mean_5y < 0.25
-                AND  (canopy_proxy is None  OR  canopy_proxy < 0.25)
+is_urban = True  if  bsi_bare_soil_freq_5y > URBAN_BSI_FREQ_STRONG_THRESHOLD (0.65)
+```
+Captures tropical and subtropical cities (e.g. Miami, Houston) where year-round vegetation keeps NDVI elevated but the high frequency of bare/impervious signals in BSI exceeds the threshold.
+
+Path 2 (combined signal):
+```
+is_urban = True  if  bsi_bare_soil_freq_5y > URBAN_BSI_FREQ_THRESHOLD (0.50)
+                AND  ndvi_mean_5y < URBAN_NDVI_THRESHOLD (0.25)
+                AND  (canopy_proxy is None  OR  canopy_proxy < URBAN_CANOPY_THRESHOLD (0.25))
 ```
 Captures dense temperate urban cores (e.g. Boston, Chicago) with low NDVI, low canopy, and persistent impervious signals.
 
-Both paths evaluate to False (non-urban) if `bsi_bare_soil_freq_5y` is not available.
+Both BSI paths evaluate to False (non-urban) if `bsi_bare_soil_freq_5y` is not available.
 
-**Known limitation -- coastal boundary locations:** When the 640 m window straddles a coastline (beach, boardwalk, harbour edge), the open water and sand portions can drive mean NDVI below the barren-terrain guard, suppressing urban detection even when the land portion is dense urban. This is a known false negative for coastal urban locations where the analysis window cannot be contained within the built area. See also §13.7.
+**Coastal boundary note:** When the 640 m window straddles a coastline, the open water and sand portions can depress mean NDVI toward the barren-terrain guard, potentially suppressing urban detection. With Overture-based detection, this limitation is substantially reduced: building footprints are measured directly and are not affected by adjacent ocean or beach signals. The `building_fraction` veto (< 0.02) prevents coastal open-water overlap from triggering false urban classification. See also §15.7.
 
 Urban classification has the following downstream effects:
 - `drought_score` is forced to 0 (impervious surfaces have no vegetation drought signal)
-- `fire_exposure_score` is forced to 0 (NBR on concrete/asphalt spectrally mimics burned vegetation; see section 13.1)
+- `fire_exposure_score` is forced to 0 (NBR on concrete/asphalt spectrally mimics burned vegetation; see section 15.1)
 - The composite score uses a fixed urban weighted-average profile blended with the dominant sub-score (section 11.8)
 
 ---
@@ -1353,11 +1388,20 @@ All thresholds are configurable via environment variables. Defaults are listed b
 
 | Parameter | Default | Path |
 |-----------|---------|------|
-| `URBAN_MIN_NDVI_THRESHOLD` | 0.06 | Guard: below this NDVI the site is naturally barren (desert/alpine 0.01-0.04); dense urban cores can reach ~0.08 |
-| `URBAN_BSI_FREQ_STRONG_THRESHOLD` | 0.65 | Path 1 (strong signal alone) |
-| `URBAN_BSI_FREQ_THRESHOLD` | 0.50 | Path 2 (combined) |
-| `URBAN_NDVI_THRESHOLD` | 0.25 | Path 2 |
-| `URBAN_CANOPY_THRESHOLD` | 0.25 | Path 2 |
+| `URBAN_MIN_NDVI_THRESHOLD` | 0.12 | Guard: below this NDVI the site is naturally barren; all paths suppressed |
+| `URBAN_BUILDING_FRACTION_THRESHOLD` | 0.10 | Overture primary path: `building_fraction` above this → urban |
+| `URBAN_BUILDING_FRACTION_VETO` | 0.02 | Overture veto: `building_fraction` below this → not urban (suppresses BSI spectral paths) |
+| `URBAN_BSI_FREQ_STRONG_THRESHOLD` | 0.65 | BSI fallback Path 1 (strong signal alone) |
+| `URBAN_BSI_FREQ_THRESHOLD` | 0.50 | BSI fallback Path 2 (combined) |
+| `URBAN_NDVI_THRESHOLD` | 0.25 | BSI fallback Path 2 |
+| `URBAN_CANOPY_THRESHOLD` | 0.25 | BSI fallback Path 2 |
+
+### Overture Maps parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `OVERTURE_BUCKET` | `overturemaps-us-west-2` | Public S3 bucket for Overture GeoParquet (us-west-2, no auth) |
+| `OVERTURE_RELEASE` | `2026-02-18.0` | Pinned release tag; update with `aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request` |
 
 ### Trend-aware scoring parameters (v1.27.0)
 

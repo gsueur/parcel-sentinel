@@ -68,8 +68,8 @@ def query_buildings_sync(lat: float, lon: float, bucket: str, release: str) -> d
                 ), 0.0)                                                        AS building_area_m2,
                 AVG(CASE WHEN height > 0 THEN height END)                     AS mean_height_m
             FROM read_parquet('{path}')
-            WHERE bbox.minx <= {maxx} AND bbox.maxx >= {minx}
-              AND bbox.miny <= {maxy} AND bbox.maxy >= {miny}
+            WHERE bbox.xmin <= {maxx} AND bbox.xmax >= {minx}
+              AND bbox.ymin <= {maxy} AND bbox.ymax >= {miny}
             """
         ).fetchone()
 
