@@ -299,8 +299,14 @@ class PostgresStore:
                     curvature       REAL,
                     heat_load_index REAL,
                     elevation_array BYTEA,
-                    fetched_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    fetched_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    dem_version     VARCHAR
                 )
+            """)
+            # Migration: add dem_version to pre-existing tables (NULL = stale, triggers re-fetch)
+            cur.execute("""
+                ALTER TABLE elevation_cache
+                ADD COLUMN IF NOT EXISTS dem_version VARCHAR
             """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS climate_descriptions (
@@ -1623,7 +1629,7 @@ class PostgresStore:
     # Copernicus GLO-30 elevation cache
     # ------------------------------------------------------------------
 
-    def get_elevation(self, location_key: str) -> dict[str, float] | None:
+    def get_elevation(self, location_key: str, dem_version: str | None = None) -> dict[str, float] | None:
         if self._pool is None:
             return None
         with self._get_conn() as conn:
@@ -1632,9 +1638,9 @@ class PostgresStore:
                 """
                 SELECT elevation_m, elevation_range_m, slope_deg, elevation_min_m, elevation_max_m,
                        aspect_deg, tpi_m, curvature, heat_load_index
-                FROM elevation_cache WHERE location_key = %s
+                FROM elevation_cache WHERE location_key = %s AND dem_version = %s
                 """,
-                [location_key],
+                [location_key, dem_version],
             )
             row = cur.fetchone()
         if row is None:
@@ -1651,14 +1657,14 @@ class PostgresStore:
             "heat_load_index":   row[8],
         }
 
-    def get_elevation_array(self, location_key: str) -> bytes | None:
+    def get_elevation_array(self, location_key: str, dem_version: str | None = None) -> bytes | None:
         if self._pool is None:
             return None
         with self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT elevation_array FROM elevation_cache WHERE location_key = %s",
-                [location_key],
+                "SELECT elevation_array FROM elevation_cache WHERE location_key = %s AND dem_version = %s",
+                [location_key, dem_version],
             )
             row = cur.fetchone()
         if row is None or row[0] is None:
@@ -1666,7 +1672,7 @@ class PostgresStore:
         val = row[0]
         return bytes(val) if isinstance(val, memoryview) else val
 
-    def store_elevation(self, location_key: str, data: dict) -> None:
+    def store_elevation(self, location_key: str, data: dict, dem_version: str | None = None) -> None:
         if self._pool is None:
             return
         elev_arr = data.get("elevation_array")
@@ -1679,8 +1685,8 @@ class PostgresStore:
                 INSERT INTO elevation_cache
                     (location_key, elevation_m, elevation_range_m, slope_deg,
                      elevation_min_m, elevation_max_m,
-                     aspect_deg, tpi_m, curvature, heat_load_index, elevation_array)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     aspect_deg, tpi_m, curvature, heat_load_index, elevation_array, dem_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (location_key)
                 DO UPDATE SET
                     elevation_m       = EXCLUDED.elevation_m,
@@ -1692,7 +1698,8 @@ class PostgresStore:
                     tpi_m             = EXCLUDED.tpi_m,
                     curvature         = EXCLUDED.curvature,
                     heat_load_index   = EXCLUDED.heat_load_index,
-                    elevation_array   = EXCLUDED.elevation_array
+                    elevation_array   = EXCLUDED.elevation_array,
+                    dem_version       = EXCLUDED.dem_version
                 """,
                 [
                     location_key,
@@ -1706,6 +1713,7 @@ class PostgresStore:
                     data.get("curvature"),
                     data.get("heat_load_index"),
                     elev_arr,
+                    dem_version,
                 ],
             )
 

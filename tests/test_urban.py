@@ -7,7 +7,7 @@ class TestDetectUrban:
     def test_urban_true(self):
         features = {
             "bsi_bare_soil_freq_5y": 0.90,  # 90% of months BSI > 0 → impervious
-            "ndvi_mean_5y": 0.10,
+            "ndvi_mean_5y": 0.20,           # above URBAN_MIN_NDVI_THRESHOLD (0.12): dense urban, not barren
             "canopy_proxy": 0.12,
         }
         assert detect_urban(features) is True
@@ -40,7 +40,7 @@ class TestDetectUrban:
         # No canopy data → canopy_flag is True → still detected as urban if bsi+ndvi hold
         features = {
             "bsi_bare_soil_freq_5y": 0.90,
-            "ndvi_mean_5y": 0.10,
+            "ndvi_mean_5y": 0.20,  # above URBAN_MIN_NDVI_THRESHOLD (0.12)
         }
         assert detect_urban(features) is True
 

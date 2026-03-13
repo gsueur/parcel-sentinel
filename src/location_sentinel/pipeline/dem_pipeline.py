@@ -4,6 +4,7 @@ import asyncio
 import logging
 from functools import partial
 
+from ..config import settings
 from ..geometry.normalize import geojson_to_shapely
 from ..stac.dem_client import read_dem_sync
 from ..storage.duckdb_store import store
@@ -24,10 +25,11 @@ async def run_dem_features(
       elevation_m, elevation_range_m, slope_deg
     All values are None when the DEM tile is unavailable or the read fails.
     """
+    dem_version = settings.PROCESSING_VERSION
     try:
-        cached = store.get_elevation(location_key)
-        if cached is not None and store.get_elevation_array(location_key) is not None:
-            logger.info("DEM cache hit for %s", location_key)
+        cached = store.get_elevation(location_key, dem_version=dem_version)
+        if cached is not None and store.get_elevation_array(location_key, dem_version=dem_version) is not None:
+            logger.info("DEM cache hit for %s (version=%s)", location_key, dem_version)
             return cached
 
         geom = geojson_to_shapely(geom_geojson)
@@ -48,7 +50,7 @@ async def run_dem_features(
                 "aspect_deg": None, "tpi_m": None, "curvature": None, "heat_load_index": None,
             }
 
-        store.store_elevation(location_key, result)
+        store.store_elevation(location_key, result, dem_version=dem_version)
         return {k: v for k, v in result.items() if k != "elevation_array"}
 
     except Exception as exc:

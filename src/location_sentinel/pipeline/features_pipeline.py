@@ -172,7 +172,7 @@ async def run_features(
     # (geometric artefact -- look-angle dependent, not a real water signal).
     # The elevation_array is guaranteed to be cached by run_dem_features above.
     _flat_mask: np.ndarray | None = None
-    _elev_bytes = store.get_elevation_array(location_key)
+    _elev_bytes = store.get_elevation_array(location_key, dem_version=settings.PROCESSING_VERSION)
     if _elev_bytes is not None:
         _sz = settings.COG_WINDOW_SIZE
         _elev_arr = np.frombuffer(bytes(_elev_bytes), dtype=np.float32).reshape(_sz, _sz)
