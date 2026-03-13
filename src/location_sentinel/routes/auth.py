@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
 
 from ..auth.dependencies import UserClaims, current_user
-from ..auth.email import send_verification_email
+from ..auth.email import send_new_user_notification, send_verification_email
 from ..auth.jwt import create_token
 from ..auth.password import hash_password, verify_password
 from ..config import settings
@@ -49,6 +49,11 @@ async def register(body: RegisterRequest):
         send_verification_email(body.email, token)
     except Exception:
         logger.warning("Failed to send verification email to %s", body.email, exc_info=True)
+
+    try:
+        send_new_user_notification(body.email, body.name, body.newsletter)
+    except Exception:
+        logger.warning("Failed to send new-user notification for %s", body.email, exc_info=True)
 
     return {"user_id": user["user_id"], "message": "Check your email to verify your account"}
 

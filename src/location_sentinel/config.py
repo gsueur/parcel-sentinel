@@ -169,6 +169,7 @@ class Settings(BaseSettings):
     # Email (Resend)
     RESEND_API_KEY: str = ""
     EMAIL_FROM_DOMAIN: str = "geomermaids.com"
+    ADMIN_NOTIFY_EMAIL: str = ""         # if set, receives a notification on every new user registration
     FRONTEND_URL: str = ""               # e.g. https://climate-dashboard.geomermaids.com -- redirect after verification
     API_BASE_URL: str = ""               # e.g. https://climate.geomermaids.com -- used to build verify link in emails
 
