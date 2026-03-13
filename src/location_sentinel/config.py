@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     DEM_3DEP_BUCKET: str = "prd-tnm"
     DEM_3DEP_REGION: str = "us-west-2"
 
+    # Overture Maps buildings (public S3, us-west-2)
+    # Update OVERTURE_RELEASE to the latest available release:
+    #   aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request
+    OVERTURE_BUCKET: str = "overturemaps-us-west-2"
+    OVERTURE_RELEASE: str = "2025-05-21.0"
+
     # SAR / Sentinel-1 GRD
     SAR_STAC_COLLECTION: str = "sentinel-1-grd"
     SAR_AWS_BUCKET: str = "sentinel-s1-l1c"
@@ -139,7 +145,7 @@ class Settings(BaseSettings):
     DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.34.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.35.0"
     SCORE_VERSION: str = "risk-v1.19.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers

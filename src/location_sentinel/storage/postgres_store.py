@@ -314,6 +314,17 @@ class PostgresStore:
                 ADD COLUMN IF NOT EXISTS dem_version VARCHAR
             """)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS buildings_cache (
+                    location_key            VARCHAR NOT NULL,
+                    overture_release        VARCHAR NOT NULL,
+                    building_count          INTEGER,
+                    building_fraction       REAL,
+                    mean_building_height_m  REAL,
+                    fetched_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (location_key, overture_release)
+                )
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS climate_descriptions (
                     code      VARCHAR PRIMARY KEY,
                     label     VARCHAR NOT NULL,
@@ -1743,6 +1754,55 @@ class PostgresStore:
                     data.get("heat_load_index"),
                     elev_arr,
                     dem_version,
+                ],
+            )
+
+    def get_buildings(self, location_key: str, overture_release: str) -> dict | None:
+        """Return cached Overture buildings features, or None on cache miss."""
+        if self._pool is None:
+            return None
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT building_count, building_fraction, mean_building_height_m
+                FROM buildings_cache
+                WHERE location_key = %s AND overture_release = %s
+                """,
+                [location_key, overture_release],
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return {
+            "building_count":          row[0],
+            "building_fraction":       row[1],
+            "mean_building_height_m":  row[2],
+        }
+
+    def store_buildings(self, location_key: str, data: dict, overture_release: str) -> None:
+        if self._pool is None:
+            return
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO buildings_cache
+                    (location_key, overture_release, building_count, building_fraction,
+                     mean_building_height_m)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (location_key, overture_release) DO UPDATE SET
+                    building_count         = EXCLUDED.building_count,
+                    building_fraction      = EXCLUDED.building_fraction,
+                    mean_building_height_m = EXCLUDED.mean_building_height_m,
+                    fetched_at             = CURRENT_TIMESTAMP
+                """,
+                [
+                    location_key,
+                    overture_release,
+                    data.get("building_count"),
+                    data.get("building_fraction"),
+                    data.get("mean_building_height_m"),
                 ],
             )
 

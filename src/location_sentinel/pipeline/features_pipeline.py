@@ -26,6 +26,7 @@ from .timeseries import run_timeseries
 from .sar_pipeline import run_sar_features
 from .terraclimate_pipeline import run_terraclimate_features
 from .dem_pipeline import run_dem_features
+from .buildings_pipeline import run_buildings_features
 from ..compute.sar_features import compute_sar_flood_anomaly, compute_sar_water_frequency
 from ..storage.duckdb_store import store
 
@@ -58,8 +59,8 @@ async def run_features(
     geom_centroid = geom_shape.centroid
     climate_code: str | None = store.lookup_climate(geom_centroid.y, geom_centroid.x)
 
-    # Run S2 timeseries, SAR, TerraClimate, and DEM pipelines concurrently
-    (location_key, series, quality), sar_features, tc_features, dem_features = await asyncio.gather(
+    # Run S2 timeseries, SAR, TerraClimate, DEM, and buildings pipelines concurrently
+    (location_key, series, quality), sar_features, tc_features, dem_features, building_features = await asyncio.gather(
         run_timeseries(
             geom_geojson=geom_geojson,
             date_start=date_start,
@@ -79,6 +80,10 @@ async def run_features(
             climate_code=climate_code,
         ),
         run_dem_features(
+            geom_geojson=geom_geojson,
+            location_key=location_key,
+        ),
+        run_buildings_features(
             geom_geojson=geom_geojson,
             location_key=location_key,
         ),
@@ -264,6 +269,9 @@ async def run_features(
     features.update({k: v for k, v in dem_features.items() if v is not None})
     if dem_features.get("elevation_m") is None:
         quality.flags.append("no_dem_data")
+
+    # Building footprint features (Overture Maps GeoParquet)
+    features.update({k: v for k, v in building_features.items() if v is not None})
 
     # Urban detection
     is_urban = detect_urban(features)
