@@ -135,7 +135,7 @@ class Settings(BaseSettings):
 
     # Versions
     PROCESSING_VERSION: str = "s2l2a-v1.28.0"
-    SCORE_VERSION: str = "risk-v1.17.0"
+    SCORE_VERSION: str = "risk-v1.18.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers
     ACTIVE_FLOOD_BOOST: float = 1.40

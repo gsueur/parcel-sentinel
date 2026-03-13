@@ -295,13 +295,16 @@ async def run_features(
     # Corroboration requires independent evidence to avoid SAR-slope artifacts (single orbit
     # hitting snow/rock at a look angle that mimics water):
     #   1. NDWI history shows surface water in >= 8% of months (optical evidence)
-    #   2. Anomaly is very strong (> 35%) -- major event, override corroboration
+    #   2. Anomaly is very strong (> 35%) AND some optical water history exists (> 0 months)
+    #      -- zero NDWI over 5 years means the SAR signal is a geometry artifact regardless
+    #         of anomaly magnitude (e.g. coastal look-angle capturing open sea)
     # SAR chronic (sar_water_freq) is intentionally NOT used: it can share the same
     # look-angle artifact as the acute signal, making it circular corroboration.
     _sar_anom = (features.get("sar_flood_anomaly") or 0.0)
+    _ndwi_wet = (features.get("ndwi_wetness_persistence_5y") or 0.0)
     _flood_corroborated = (
-        (features.get("ndwi_wetness_persistence_5y") or 0.0) > settings.SAR_ACTIVE_FLOOD_MIN_NDWI
-        or _sar_anom > settings.SAR_ACTIVE_FLOOD_STRONG_ANOMALY
+        _ndwi_wet > settings.SAR_ACTIVE_FLOOD_MIN_NDWI
+        or (_sar_anom > settings.SAR_ACTIVE_FLOOD_STRONG_ANOMALY and _ndwi_wet > 0.0)
     )
     features["active_flood"] = 1.0 if (_sar_anom > 0.10 and _flood_corroborated) else 0.0
 
