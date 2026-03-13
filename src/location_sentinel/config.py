@@ -145,7 +145,7 @@ class Settings(BaseSettings):
     DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.35.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.36.0"
     SCORE_VERSION: str = "risk-v1.19.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers
@@ -194,6 +194,8 @@ class Settings(BaseSettings):
     URBAN_CANOPY_THRESHOLD: float = 0.25
     URBAN_MIN_NDVI_THRESHOLD: float = 0.06  # below this = naturally barren (desert/alpine rock, NDVI 0.01-0.04); dense urban cores can reach ~0.08
     URBAN_BSI_STRONG_MAX_CANOPY: float = 0.45  # Path 1 ceiling: vineyards/orchards have BSI > 65% + NDVI > 0.25 but canopy > 0.45; no city reaches this
+    URBAN_BUILDING_FRACTION_THRESHOLD: float = 0.10  # Overture: > 10% building coverage → urban
+    URBAN_BUILDING_FRACTION_VETO: float = 0.02       # Overture: < 2% building coverage → not urban (suppresses BSI spectral paths)
 
     # Scoring thresholds
     NDVI_ANOMALY_THRESHOLD: float = 0.1

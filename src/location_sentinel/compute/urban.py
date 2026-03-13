@@ -4,20 +4,32 @@ from ..config import settings
 
 
 def detect_urban(features: dict[str, float | None]) -> bool:
-    """Detect urban/impervious surface locations using BSI frequency and NDVI proxies.
+    """Detect urban/impervious surface locations.
 
-    Two detection paths (OR logic):
-      1. Strong BSI signal alone: bsi_bare_soil_freq_5y > URBAN_BSI_FREQ_STRONG_THRESHOLD (65%)
-         Catches tropical/coastal cities (e.g. Miami) where vegetation mixed with
-         impervious surfaces keeps NDVI elevated despite dense urbanisation.
-      2. Combined signal: BSI freq > 50% AND NDVI < 0.25 AND low/absent canopy
-         Standard dense urban pattern (e.g. Boston).
+    Primary path -- Overture Maps building footprints (when available):
+      building_fraction > 0.10  → urban   (direct measurement, takes precedence)
+      building_fraction < 0.02  → not urban (veto; suppresses BSI spectral paths)
+      building_fraction in [0.02, 0.10] → fall through to BSI paths
 
-    BSI freq = fraction of months where BSI > 0. Using frequency rather than mean
-    BSI avoids snow-month dilution (snow on impervious surfaces has negative BSI).
+    Spectral fallback (when building_fraction is None):
+      Path 1: BSI_freq > 0.65 AND NDVI > 0.25 AND canopy < 0.45
+              Tropical/coastal cities (e.g. Miami) with mixed vegetation + impervious.
+      Path 2: BSI_freq > 0.50 AND NDVI < 0.25 AND canopy < 0.25
+              Dense temperate urban cores (e.g. Boston, Chicago).
 
-    Missing bsi_freq returns False (safe default: assume non-urban).
+    BSI freq = fraction of months where BSI > 0 (frequency avoids snow-month dilution).
     """
+    building_fraction = features.get("building_fraction")
+
+    # Overture path: ground-truth building footprint coverage.
+    if building_fraction is not None:
+        if building_fraction > settings.URBAN_BUILDING_FRACTION_THRESHOLD:
+            return True
+        if building_fraction < settings.URBAN_BUILDING_FRACTION_VETO:
+            return False
+        # Ambiguous band [veto, threshold] -- fall through to spectral paths.
+
+    # Spectral fallback.
     bsi_freq = features.get("bsi_bare_soil_freq_5y")
     ndvi = features.get("ndvi_mean_5y")
     canopy = features.get("canopy_proxy")
@@ -26,22 +38,14 @@ def detect_urban(features: dict[str, float | None]) -> bool:
         return False
 
     # Guard: very low NDVI indicates naturally barren terrain (desert, alpine rock),
-    # not urban impervious. Dense urban cores (e.g. Chicago loop) can drop to ~0.08
-    # with almost no vegetation, so the threshold is set at 0.06 -- well below any
-    # real city but above true desert / alpine rock (typically 0.01-0.04).
-    # Path 2's canopy check (< 0.25) provides the primary guard against sparse
-    # scrubland false positives for sites in the 0.06-0.12 NDVI range.
+    # not urban impervious. Dense urban cores (e.g. Chicago loop) can reach ~0.08;
+    # true desert / alpine rock sits at 0.01-0.04.
     if ndvi is not None and ndvi < settings.URBAN_MIN_NDVI_THRESHOLD:
         return False
 
-    # Path 1: overwhelmingly impervious signal with elevated vegetation (tropical/coastal cities,
-    # e.g. Miami). Requires ndvi > URBAN_NDVI_THRESHOLD (0.25) since this path is specifically
-    # for high-vegetation urban mixes; rocky/arid terrain with low-medium NDVI would otherwise
-    # be mis-classified (see URBAN_MIN_NDVI_THRESHOLD guard above).
-    # Also requires canopy < URBAN_BSI_STRONG_MAX_CANOPY (0.45): vineyards and orchards produce
-    # the same BSI > 65% + NDVI > 0.25 signature from bare-soil rows + seasonal crop canopy,
-    # but their canopy cover consistently exceeds what any urban area achieves. Path 2 handles
-    # the medium-NDVI dense-urban pattern.
+    # Path 1: strong BSI + elevated NDVI (tropical/coastal cities, e.g. Miami).
+    # Canopy ceiling blocks vineyards and orchards (same spectral signature but
+    # canopy > 0.45 from dense seasonal crop cover).
     if (
         bsi_freq > settings.URBAN_BSI_FREQ_STRONG_THRESHOLD
         and ndvi is not None
@@ -50,11 +54,11 @@ def detect_urban(features: dict[str, float | None]) -> bool:
     ):
         return True
 
-    # Path 2: moderate BSI + low NDVI + low/absent canopy
+    # Path 2: moderate BSI + low NDVI + low canopy (dense temperate urban cores).
     if ndvi is None:
         return False
-    bsi_flag = bsi_freq > settings.URBAN_BSI_FREQ_THRESHOLD
-    ndvi_flag = ndvi < settings.URBAN_NDVI_THRESHOLD
-    canopy_flag = (canopy is None) or (canopy < settings.URBAN_CANOPY_THRESHOLD)
-
-    return bsi_flag and ndvi_flag and canopy_flag
+    return (
+        bsi_freq > settings.URBAN_BSI_FREQ_THRESHOLD
+        and ndvi < settings.URBAN_NDVI_THRESHOLD
+        and (canopy is None or canopy < settings.URBAN_CANOPY_THRESHOLD)
+    )
