@@ -726,10 +726,10 @@ Urban classification is determined by a two-path OR logic gate applied to the op
 
 **Barren terrain guard (applied before both paths):**
 ```
-if ndvi_mean_5y < URBAN_MIN_NDVI_THRESHOLD (0.12):
+if ndvi_mean_5y < URBAN_MIN_NDVI_THRESHOLD (0.06):
     is_urban = False  (naturally barren -- desert, alpine rock, bare soil)
 ```
-Near-zero 5-year mean NDVI indicates an absence of vegetation, not the presence of impervious surfaces. Every urban environment -- including those in arid climates with irrigated street trees and parks -- maintains enough mixed vegetation in a 640 m window to keep the 5-year mean above 0.12. Values below this threshold reliably indicate naturally barren terrain such as high-altitude rocky plateaus, desert reg, or exposed scree, where high BSI frequency reflects bare mineral substrate rather than concrete or asphalt. Both detection paths are suppressed when this guard fires.
+Very low NDVI indicates naturally barren terrain rather than urban impervious surfaces. True deserts and alpine rock typically sit at 0.01-0.04 NDVI. Dense urban cores with almost no vegetation (e.g. a city centre with concrete, glass, and asphalt) can drop to ~0.08; the guard is set at 0.06 to exclude genuine barren terrain while allowing dense urban cores through. Path 2's canopy check (< 0.25) provides additional discrimination against sparse scrubland for sites in the 0.06-0.12 NDVI range. Both detection paths are suppressed when the guard fires.
 
 **Path 1 (strong BSI signal alone):**
 ```
@@ -747,7 +747,7 @@ Captures dense temperate urban cores (e.g. Boston, Chicago) with low NDVI, low c
 
 Both paths evaluate to False (non-urban) if `bsi_bare_soil_freq_5y` is not available.
 
-**Known limitation -- coastal boundary locations:** When the 640 m window straddles a coastline (beach, boardwalk, harbour edge), the open water and sand portions drive mean NDVI below the 0.12 barren-terrain guard, suppressing urban detection even when the land portion is dense urban. This is a known false negative for coastal urban locations where the analysis window cannot be contained within the built area. See also §13.7.
+**Known limitation -- coastal boundary locations:** When the 640 m window straddles a coastline (beach, boardwalk, harbour edge), the open water and sand portions can drive mean NDVI below the barren-terrain guard, suppressing urban detection even when the land portion is dense urban. This is a known false negative for coastal urban locations where the analysis window cannot be contained within the built area. See also §13.7.
 
 Urban classification has the following downstream effects:
 - `drought_score` is forced to 0 (impervious surfaces have no vegetation drought signal)
@@ -1275,7 +1275,7 @@ The NDWI optical cross-validation veto (section 11.5) addresses this by discount
 
 The fixed 640 m × 640 m footprint means that a point location in a mixed environment (e.g. a building at the edge of a park) integrates signal from surrounding land cover. The reported NDVI, BSI, and canopy proxy reflect the 640 m neighbourhood average, not the specific parcel land cover. This is by design: the intent is to capture the broader landscape context relevant to climate risk, not parcel-specific green space.
 
-A specific consequence at coastal boundaries: open water and beach sand both produce near-zero NDVI. When the window straddles a shoreline, the non-land portion depresses the window mean below the urban-detection barren-terrain guard (0.12), causing dense coastal urban areas (waterfronts, boardwalks, harbour districts) to be classified as non-urban. The tidal zone flag is typically set for such locations, which already suppresses drought scoring -- the primary downstream effect of the urban flag in these contexts.
+A specific consequence at coastal boundaries: open water and beach sand both produce near-zero NDVI. When the window straddles a shoreline, the non-land portion can depress the window mean below the urban-detection barren-terrain guard, causing dense coastal urban areas (waterfronts, boardwalks, harbour districts) to be classified as non-urban. The tidal zone flag is typically set for such locations, which already suppresses drought scoring -- the primary downstream effect of the urban flag in these contexts.
 
 ---
 
@@ -1353,7 +1353,7 @@ All thresholds are configurable via environment variables. Defaults are listed b
 
 | Parameter | Default | Path |
 |-----------|---------|------|
-| `URBAN_MIN_NDVI_THRESHOLD` | 0.12 | Guard: below this NDVI the site is naturally barren; both paths suppressed |
+| `URBAN_MIN_NDVI_THRESHOLD` | 0.06 | Guard: below this NDVI the site is naturally barren (desert/alpine 0.01-0.04); dense urban cores can reach ~0.08 |
 | `URBAN_BSI_FREQ_STRONG_THRESHOLD` | 0.65 | Path 1 (strong signal alone) |
 | `URBAN_BSI_FREQ_THRESHOLD` | 0.50 | Path 2 (combined) |
 | `URBAN_NDVI_THRESHOLD` | 0.25 | Path 2 |
