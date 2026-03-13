@@ -146,7 +146,7 @@
       text-transform: uppercase; padding: 18px 0 8px; border-bottom: 1px solid var(--border);
       margin-bottom: 14px;
     }
-    .admin-section-hdr:first-child { padding-top: 4px; }
+    .admin-section-hdr--first { padding-top: 4px; }
     .card-scores { display: flex; align-items: center; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
     .card-episodes { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
     .ep-badge {
@@ -624,6 +624,7 @@
 <div class="tabs">
   <button class="tab active" id="tab-public" onclick="switchMainTab('public')">Explore locations</button>
   <button class="tab hidden" id="tab-mine" onclick="switchMainTab('mine')">My Locations</button>
+  <button class="tab hidden" id="tab-others" onclick="switchMainTab('others')">Other Locations</button>
 </div>
 
 <!-- ── MAIN CONTENT ── -->
@@ -639,25 +640,20 @@
     </div>
   </div>
 
-  <!-- My Locations / All Locations tab -->
+  <!-- My Locations tab -->
   <div id="panel-mine" class="hidden">
-    <!-- Non-admin: flat list -->
-    <div id="mine-regular">
-      <div class="section-header">
-        <span class="section-title" id="mine-count"></span>
-      </div>
-      <div id="mine-grid" class="grid">
-        <p class="state-msg">Loading&hellip;</p>
-      </div>
+    <div class="section-header">
+      <span class="section-title" id="mine-count"></span>
     </div>
-    <!-- Admin: three sections -->
-    <div id="mine-admin" class="hidden">
-      <div class="admin-section-hdr">My Locations</div>
-      <div id="admin-mine-grid" class="grid"></div>
-      <div class="admin-section-hdr">Public Locations</div>
-      <div id="admin-public-grid" class="grid"></div>
-      <div class="admin-section-hdr">Other Users</div>
-      <div id="admin-others-grid" class="grid"></div>
+    <div id="mine-grid" class="grid">
+      <p class="state-msg">Loading&hellip;</p>
+    </div>
+  </div>
+
+  <!-- Other Locations tab (admin only) -->
+  <div id="panel-others" class="hidden">
+    <div id="others-body">
+      <p class="state-msg">Loading&hellip;</p>
     </div>
   </div>
 
@@ -769,19 +765,24 @@ async function authFetch(url, opts = {}) {
 // ── HEADER STATE ───────────────────────────────────────────────────────────────
 function updateHeaderState() {
   const user = getUser();
-  const anonEl   = document.getElementById('anon-actions');
-  const authEl   = document.getElementById('auth-actions');
-  const tabMine  = document.getElementById('tab-mine');
-  const hero     = document.getElementById('hero');
-  const features = document.getElementById('features');
-  const howSec   = document.getElementById('how-section');
+  const anonEl    = document.getElementById('anon-actions');
+  const authEl    = document.getElementById('auth-actions');
+  const tabMine   = document.getElementById('tab-mine');
+  const tabOthers = document.getElementById('tab-others');
+  const tabPublic = document.getElementById('tab-public');
+  const hero      = document.getElementById('hero');
+  const features  = document.getElementById('features');
+  const howSec    = document.getElementById('how-section');
 
   if (user) {
     anonEl.classList.add('hidden');
     authEl.classList.remove('hidden');
     authEl.style.display = 'flex';
     tabMine.classList.remove('hidden');
-    tabMine.textContent = user.role === 'admin' ? 'All Locations' : 'My Locations';
+    tabMine.textContent = 'My Locations';
+    const isAdmin = user.role === 'admin';
+    tabPublic.textContent = isAdmin ? 'Public Locations' : 'Explore locations';
+    tabOthers.classList.toggle('hidden', !isAdmin);
     document.getElementById('user-chip').textContent = user.email || user.name || user.user_id;
     if (hero) hero.classList.add('hidden');
     if (features) features.classList.add('hidden');
@@ -790,11 +791,12 @@ function updateHeaderState() {
     anonEl.classList.remove('hidden');
     authEl.classList.add('hidden');
     tabMine.classList.add('hidden');
+    tabOthers.classList.add('hidden');
+    tabPublic.textContent = 'Explore locations';
     if (hero) hero.classList.remove('hidden');
     if (features) features.classList.remove('hidden');
     if (howSec) howSec.classList.remove('hidden');
-    // If currently on mine tab, switch to public
-    if (activeTab === 'mine') switchMainTab('public');
+    if (activeTab === 'mine' || activeTab === 'others') switchMainTab('public');
   }
 }
 // ──────────────────────────────────────────────────────────────────────────────
@@ -807,10 +809,13 @@ function switchMainTab(tab) {
   activeTab = tab;
   document.getElementById('tab-public').classList.toggle('active', tab === 'public');
   document.getElementById('tab-mine').classList.toggle('active', tab === 'mine');
+  document.getElementById('tab-others').classList.toggle('active', tab === 'others');
   document.getElementById('panel-public').classList.toggle('hidden', tab !== 'public');
   document.getElementById('panel-mine').classList.toggle('hidden', tab !== 'mine');
+  document.getElementById('panel-others').classList.toggle('hidden', tab !== 'others');
 
   if (tab === 'mine' && getUser()) loadMyLocations();
+  if (tab === 'others' && getUser()) loadOtherLocations();
 }
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -875,32 +880,57 @@ async function loadMyLocations() {
     const data = await res.json();
     serverVersions = data.server_versions || serverVersions;
 
-    if (user.role === 'admin') {
-      document.getElementById('mine-regular').classList.add('hidden');
-      document.getElementById('mine-admin').classList.remove('hidden');
-
-      const mine   = data.locations.filter(l => l.customer_id === user.user_id);
-      const pub    = data.locations.filter(l => l.is_public && l.customer_id !== user.user_id);
-      const others = data.locations.filter(l => !l.is_public && l.customer_id !== user.user_id);
-
-      renderGrid('admin-mine-grid',   mine,   true,  false);
-      renderGrid('admin-public-grid', pub,    false, false);
-      renderGrid('admin-others-grid', others, false, true);
-    } else {
-      document.getElementById('mine-regular').classList.remove('hidden');
-      document.getElementById('mine-admin').classList.add('hidden');
-
-      const count = data.count;
-      document.getElementById('mine-count').textContent =
-        `${count} location${count !== 1 ? 's' : ''}`;
-      const pending = [...document.querySelectorAll('.card-pending')];
-      renderGrid('mine-grid', data.locations, true, false);
-      pending.forEach(c => {
-        if (!document.getElementById(c.id)) document.getElementById('mine-grid').prepend(c);
-      });
-    }
+    // Admins see all locations from GET /locations; filter to just their own here
+    const mine = user.role === 'admin'
+      ? data.locations.filter(l => l.customer_id === user.user_id)
+      : data.locations;
+    document.getElementById('mine-count').textContent =
+      `${mine.length} location${mine.length !== 1 ? 's' : ''}`;
+    const pending = [...document.querySelectorAll('.card-pending')];
+    renderGrid('mine-grid', mine, true, false);
+    pending.forEach(c => {
+      if (!document.getElementById(c.id)) document.getElementById('mine-grid').prepend(c);
+    });
   } catch (e) {
     mineGrid.innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
+  }
+}
+
+async function loadOtherLocations() {
+  const body = document.getElementById('others-body');
+  const user = getUser();
+  if (!user || user.role !== 'admin') return;
+  try {
+    const res = await authFetch(`${API_URL}/v1/locations`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    serverVersions = data.server_versions || serverVersions;
+
+    const others = data.locations.filter(l => l.customer_id !== user.user_id);
+    if (!others.length) {
+      body.innerHTML = '<p class="state-msg">No other users have locations yet.</p>';
+      return;
+    }
+
+    // Group by customer_name (fallback to customer_id)
+    const groups = new Map();
+    for (const loc of others) {
+      const key = loc.customer_name || loc.customer_id || 'Unknown';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(loc);
+    }
+
+    // Render one section per user
+    body.innerHTML = [...groups.entries()].map(([owner, locs], i) =>
+      `<div class="admin-section-hdr${i === 0 ? ' admin-section-hdr--first' : ''}">${owner} <span style="font-weight:400;color:var(--faint)">(${locs.length})</span></div>
+       <div id="others-group-${i}" class="grid"></div>`
+    ).join('');
+
+    [...groups.entries()].forEach(([, locs], i) => {
+      renderGrid(`others-group-${i}`, locs, false, false);
+    });
+  } catch (e) {
+    body.innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
   }
 }
 
