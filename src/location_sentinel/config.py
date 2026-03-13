@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Update OVERTURE_RELEASE to the latest available release:
     #   aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request
     OVERTURE_BUCKET: str = "overturemaps-us-west-2"
-    OVERTURE_RELEASE: str = "2025-05-21.0"
+    OVERTURE_RELEASE: str = "2026-02-18.0"
 
     # SAR / Sentinel-1 GRD
     SAR_STAC_COLLECTION: str = "sentinel-1-grd"
