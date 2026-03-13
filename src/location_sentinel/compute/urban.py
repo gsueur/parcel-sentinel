@@ -34,8 +34,15 @@ def detect_urban(features: dict[str, float | None]) -> bool:
     if ndvi is not None and ndvi < settings.URBAN_MIN_NDVI_THRESHOLD:
         return False
 
-    # Path 1: overwhelmingly impervious signal regardless of vegetation mix
-    if bsi_freq > settings.URBAN_BSI_FREQ_STRONG_THRESHOLD:
+    # Path 1: overwhelmingly impervious signal with elevated vegetation (tropical/coastal cities,
+    # e.g. Miami). Requires ndvi > URBAN_NDVI_THRESHOLD (0.25) because this path was specifically
+    # designed for high-vegetation urban mixes -- rocky/arid terrain with high BSI from bare rock
+    # but low-medium NDVI would otherwise be mis-classified. Path 2 handles the medium-NDVI case.
+    if (
+        bsi_freq > settings.URBAN_BSI_FREQ_STRONG_THRESHOLD
+        and ndvi is not None
+        and ndvi > settings.URBAN_NDVI_THRESHOLD
+    ):
         return True
 
     # Path 2: moderate BSI + low NDVI + low/absent canopy
