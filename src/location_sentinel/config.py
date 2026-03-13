@@ -134,7 +134,7 @@ class Settings(BaseSettings):
     DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.29.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.30.0"
     SCORE_VERSION: str = "risk-v1.19.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers

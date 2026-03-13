@@ -308,9 +308,22 @@ async def run_features(
     )
     features["active_flood"] = 1.0 if (_sar_anom > 0.10 and _flood_corroborated) else 0.0
 
-    # active_fire: any consecutive-confirmed burn month within 3 months of date_end
+    # Snow months used for active_fire suppression and active_drought suppression.
+    # Computed once here so both checks share the same set.
+    _snow_months: set[str] = {
+        r.month for r in ndsi_records
+        if r.mean is not None and r.mean > settings.NDSI_SNOW_THRESHOLD
+    }
+
+    # active_fire: any consecutive-confirmed burn month within 3 months of date_end,
+    # excluding months with significant snow cover.
+    # Snow suppression is necessary because barren / high-altitude sites produce NBR
+    # anomalies in winter from snowmelt transitions and bare-soil exposure -- physically
+    # indistinguishable from a burn scar in the spectral signal, but fire cannot co-occur
+    # with significant snow cover.
     features["active_fire"] = 1.0 if burn_months and any(
         _end_abs - (int(mk[:4]) * 12 + int(mk[5:7])) <= 3
+        and mk not in _snow_months
         for mk in burn_months
     ) else 0.0
 
@@ -322,10 +335,6 @@ async def run_features(
     #    NDVI governed by water/emergent vegetation dynamics, not moisture deficit.
     # 3. Persistently wet sites (marshes, wetlands) not in tidal database: SAR water
     #    frequency > 0.7 or NDWI persistence > 0.3 identifies these sites.
-    _snow_months: set[str] = {
-        r.month for r in ndsi_records
-        if r.mean is not None and r.mean > settings.NDSI_SNOW_THRESHOLD
-    }
     _site_is_wet = (
         is_tidal_zone
         or (features.get("sar_water_freq_5y") or 0.0) > 0.70
