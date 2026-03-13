@@ -815,9 +815,20 @@ function switchMainTab(tab) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ── ROUTING ────────────────────────────────────────────────────────────────────
-function route() {
+async function route() {
   if (window.location.pathname === '/verified') {
     document.getElementById('verified-overlay').classList.remove('hidden');
+  }
+  // Refresh user profile from server so role/email changes take effect without re-login
+  if (getToken()) {
+    try {
+      const res = await authFetch(`${API_URL}/v1/auth/me`);
+      if (res.ok) {
+        const me = await res.json();
+        const stored = getUser();
+        localStorage.setItem(LS_USER, JSON.stringify({ ...stored, ...me }));
+      }
+    } catch (_) {}
   }
   updateHeaderState();
   loadPublicLocations();
