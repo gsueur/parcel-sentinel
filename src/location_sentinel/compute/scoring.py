@@ -4,6 +4,40 @@ from dataclasses import dataclass, field
 
 from ..config import settings
 
+
+def _sar_snow_artifact_risk(climate_code: str | None, elevation_m: float | None) -> float:
+    """Estimate likelihood that SAR water signals are snow/ice artifacts (0.0-1.0).
+
+    C-band SAR cannot distinguish liquid water from wet snow, frozen ground, or ice.
+    High-elevation semi-arid and continental/boreal climates have extended snow seasons
+    that inflate both sar_water_freq_5y and sar_flood_anomaly with non-water returns.
+
+    base risk by Köppen major letter:
+      E (polar/tundra)        → 1.00  always frozen
+      D (continental/boreal)  → 0.80  long snowy winters
+      B cold variants (BSk, BWk) → 0.65  cold semi-arid with snow
+      B hot variants (BSh, BWh)  → 0.20  desert, no snow
+      C (temperate)           → 0.20  mild winters, occasional snow at altitude
+      A (tropical)            → 0.00  no snow
+
+    elevation bonus: +0.40 max for every 4000m above 500m (linear).
+    """
+    major = (climate_code or "")[0] if climate_code else ""
+    if major == "E":
+        base = 1.00
+    elif major == "D":
+        base = 0.80
+    elif major == "B":
+        base = 0.65 if (climate_code or "").endswith("k") else 0.20
+    elif major == "C":
+        base = 0.20
+    elif major == "A":
+        base = 0.00
+    else:
+        base = 0.30
+    elev_bonus = min(0.40, max(0.0, ((elevation_m or 0.0) - 500.0) / 4000.0))
+    return min(1.0, base + elev_bonus)
+
 # ---------------------------------------------------------------------------
 # Climate-zone weight profiles for the composite score
 # ---------------------------------------------------------------------------
@@ -278,12 +312,24 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     # sar_water_freq_5y (chronic), not sar_flood_anomaly (anomaly above baseline).
     ndwi_pers = features.get("ndwi_wetness_persistence_5y") or 0.0
     chronic_score = sar_water_freq * 100
-    if ndwi_pers < settings.SAR_NDWI_CORROBORATION_THRESHOLD and chronic_score > 0:
+    ndwi_unconfirmed = ndwi_pers < settings.SAR_NDWI_CORROBORATION_THRESHOLD
+    if ndwi_unconfirmed and chronic_score > 0:
         chronic_score *= settings.SAR_NDWI_VETO_FACTOR
     # Scale factor of 2.5: 10% anomaly → 25 pts, 40% → 100 pts.
     # The anomaly signal already represents water above seasonal baseline,
     # so a linear 1:1 mapping (×100) under-weights genuine episodic flood events.
     acute_score = min(100.0, sar_flood_anomaly * 250)
+    # When chronic SAR is elevated but NDWI provides no corroboration, the SAR window
+    # likely has a systematic artifact (snow/ice/frozen ground). Apply the same veto
+    # to acute_score. The effective threshold scales down with snow artifact risk so
+    # that high-elevation semi-arid/continental climates need less chronic evidence
+    # to trigger the veto (e.g. BSk at 1600m: threshold ~0.26 vs default 0.50).
+    snow_artifact_risk = _sar_snow_artifact_risk(climate_code, features.get("elevation_m"))
+    effective_artifact_threshold = settings.SAR_CHRONIC_ARTIFACT_THRESHOLD * (
+        1.0 - 0.5 * snow_artifact_risk
+    )
+    if ndwi_unconfirmed and sar_water_freq > effective_artifact_threshold:
+        acute_score *= settings.SAR_NDWI_VETO_FACTOR
 
     # Terrain flash flood: low elevation + significant slope = fast runoff concentration
     elev_m = features.get("elevation_m")

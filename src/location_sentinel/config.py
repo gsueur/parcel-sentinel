@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     # Likely cause: specular C-band backscatter from ocean, runways, or flat roofs.
     SAR_NDWI_CORROBORATION_THRESHOLD: float = 0.05  # < 5% optical water months → no corroboration
     SAR_NDWI_VETO_FACTOR: float = 0.25              # multiply flood score by this when unconfirmed
+    # When chronic SAR water fraction is this high but NDWI is unconfirmed, the entire
+    # SAR window is systematically compromised (snow/ice/frozen ground artifact).
+    # Apply the same veto to the acute anomaly score in this case.
+    SAR_CHRONIC_ARTIFACT_THRESHOLD: float = 0.50    # chronic > 50% + no NDWI → veto acute too
 
     # active_flood corroboration: acute SAR anomaly alone is not sufficient to flag
     # active_flood -- SAR slope artifacts (single orbit on snow/rock) can mimic water.
@@ -146,7 +150,7 @@ class Settings(BaseSettings):
 
     # Versions
     PROCESSING_VERSION: str = "s2l2a-v1.36.0"
-    SCORE_VERSION: str = "risk-v1.20.0"
+    SCORE_VERSION: str = "risk-v1.20.2"
 
     # Trend-aware scoring -- Part A: active episode multipliers
     ACTIVE_FLOOD_BOOST: float = 1.40
