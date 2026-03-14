@@ -88,10 +88,11 @@ class Settings(BaseSettings):
     # Likely cause: specular C-band backscatter from ocean, runways, or flat roofs.
     SAR_NDWI_CORROBORATION_THRESHOLD: float = 0.05  # < 5% optical water months → no corroboration
     SAR_NDWI_VETO_FACTOR: float = 0.25              # multiply flood score by this when unconfirmed
-    # When chronic SAR water fraction is this high but NDWI is unconfirmed, the entire
-    # SAR window is systematically compromised (snow/ice/frozen ground artifact).
-    # Apply the same veto to the acute anomaly score in this case.
-    SAR_CHRONIC_ARTIFACT_THRESHOLD: float = 0.50    # chronic > 50% + no NDWI → veto acute too
+    # When chronic SAR water fraction exceeds this threshold but NDWI provides no corroboration,
+    # the SAR window is systematically compromised (snow/ice/frozen ground, terrain specular).
+    # Used in two places: (1) flood scoring -- veto acute_score (threshold scales down with
+    # snow artifact risk from climate/elevation); (2) active_flood -- block strong-anomaly bypass.
+    SAR_CHRONIC_ARTIFACT_THRESHOLD: float = 0.50
 
     # active_flood corroboration: acute SAR anomaly alone is not sufficient to flag
     # active_flood -- SAR slope artifacts (single orbit on snow/rock) can mimic water.
@@ -100,11 +101,6 @@ class Settings(BaseSettings):
     # creating circular corroboration.
     SAR_ACTIVE_FLOOD_MIN_NDWI: float = 0.08      # >= ~1 month/year optical water history
     SAR_ACTIVE_FLOOD_STRONG_ANOMALY: float = 0.35  # very strong anomaly -- flag regardless
-    # If SAR chronically shows water in > 50% of scenes but NDWI shows < 8% of months,
-    # the SAR backscatter is almost certainly contaminated by look-angle terrain artifacts
-    # (montane slopes producing specular reflection indistinguishable from open water).
-    # In that case the acute anomaly is also unreliable -- block the strong-anomaly bypass.
-    SAR_CHRONIC_ARTIFACT_THRESHOLD: float = 0.50  # chronic SAR water freq above which SAR is unreliable when NDWI disagrees
 
     # Standardized window size for all raster reads
     COG_WINDOW_SIZE: int = 64
