@@ -280,7 +280,10 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     chronic_score = sar_water_freq * 100
     if ndwi_pers < settings.SAR_NDWI_CORROBORATION_THRESHOLD and chronic_score > 0:
         chronic_score *= settings.SAR_NDWI_VETO_FACTOR
-    acute_score = sar_flood_anomaly * 100
+    # Scale factor of 2.5: 10% anomaly → 25 pts, 40% → 100 pts.
+    # The anomaly signal already represents water above seasonal baseline,
+    # so a linear 1:1 mapping (×100) under-weights genuine episodic flood events.
+    acute_score = min(100.0, sar_flood_anomaly * 250)
 
     # Terrain flash flood: low elevation + significant slope = fast runoff concentration
     elev_m = features.get("elevation_m")
@@ -418,16 +421,17 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     # the weighted average. landslide_score enters the max() only (no rebalancing
     # of climate zone weights needed).
     if is_urban:
-        # Urban: canopy deficit dominates; wetness, flood, and heat stress are secondary.
-        # Climate zone weights are irrelevant on impervious surfaces.
+        # Urban: heat mitigation (canopy deficit) is one factor among several.
+        # It stays in the weighted term to reflect shade/UHI risk, but is excluded
+        # from urban_max so that actual hazards (flood, heat stress) drive the
+        # composite rather than the structural absence of trees dominating everything.
         urban_weighted = (
-            0.60 * (100 - heat_mitigation_score)
+            0.30 * (100 - heat_mitigation_score)
             + 0.15 * wetness_score
-            + 0.15 * flood_risk_score
-            + 0.10 * heat_stress_score
+            + 0.30 * flood_risk_score
+            + 0.25 * heat_stress_score
         )
         urban_max = max(
-            100 - heat_mitigation_score,
             wetness_score,
             flood_risk_score,
             heat_stress_score,
