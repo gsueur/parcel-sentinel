@@ -303,14 +303,18 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     sar_water_freq = features.get("sar_water_freq_5y") or 0.0
     sar_flood_anomaly = features.get("sar_flood_anomaly") or 0.0
 
-    # NDWI optical cross-validation veto applied ONLY to the chronic component.
-    # A normally-dry location (NDWI ≈ 0%) showing a sudden SAR water anomaly is
-    # the strongest possible episodic flood signal -- the veto must NOT suppress it.
-    # The veto targets structural false positives: coastal SAR windows capturing
-    # open ocean, airport runways, or smooth rooftops that chronically mimic water
-    # in C-band but are invisible to optical NDWI. These produce elevated
-    # sar_water_freq_5y (chronic), not sar_flood_anomaly (anomaly above baseline).
-    ndwi_pers = features.get("ndwi_wetness_persistence_5y") or 0.0
+    # NDWI optical cross-validation veto applied to both chronic and acute components.
+    # Primary path (chronic): if NDWI < 5% and SAR chronic > artifact threshold, veto.
+    # This targets structural false positives: coastal SAR windows capturing open ocean,
+    # airport runways, or smooth rooftops that chronically mimic water in C-band.
+    # Secondary path (acute): if NDWI is confirmed zero (never detected in 5 years) and
+    # SAR chronic is in a moderate range (12-50%), veto the acute score too. This catches
+    # orbit geometry artifacts in mountain valleys where one orbit track consistently
+    # produces specular C-band returns (smooth granite, wet meadow, river at a fixed look
+    # angle) while optical never confirms surface water. The anomaly in such cases reflects
+    # inter-orbit divergence rather than a genuine temporal flood event.
+    _raw_ndwi = features.get("ndwi_wetness_persistence_5y")
+    ndwi_pers = _raw_ndwi or 0.0
     chronic_score = sar_water_freq * 100
     ndwi_unconfirmed = ndwi_pers < settings.SAR_NDWI_CORROBORATION_THRESHOLD
     if ndwi_unconfirmed and chronic_score > 0:
@@ -328,7 +332,14 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     effective_artifact_threshold = settings.SAR_CHRONIC_ARTIFACT_THRESHOLD * (
         1.0 - 0.5 * snow_artifact_risk
     )
-    if ndwi_unconfirmed and sar_water_freq > effective_artifact_threshold:
+    # Secondary orbit-geometry artifact veto: NDWI confirmed zero (not None, not trace)
+    # and SAR chronic is in moderate range -- optical silence over 5 years is conclusive.
+    _confirmed_zero_ndwi = _raw_ndwi is not None and _raw_ndwi == 0.0
+    _orbit_artifact = (
+        _confirmed_zero_ndwi
+        and sar_water_freq > settings.SAR_ZERO_NDWI_ARTIFACT_THRESHOLD
+    )
+    if ndwi_unconfirmed and (sar_water_freq > effective_artifact_threshold or _orbit_artifact):
         acute_score *= settings.SAR_NDWI_VETO_FACTOR
 
     # Terrain flash flood: low elevation + significant slope = fast runoff concentration

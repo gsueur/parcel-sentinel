@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     # Used in two places: (1) flood scoring -- veto acute_score (threshold scales down with
     # snow artifact risk from climate/elevation); (2) active_flood -- block strong-anomaly bypass.
     SAR_CHRONIC_ARTIFACT_THRESHOLD: float = 0.50
+    # Secondary lower threshold for vetoing acute_score when NDWI is confirmed zero.
+    # If NDWI wetness persistence is exactly 0.0 (optical never saw surface water across 5 years)
+    # AND SAR chronic exceeds this fraction, the combination is a strong orbit geometry artifact
+    # fingerprint (e.g. valley walls or smooth terrain producing specular C-band returns on one
+    # orbit track). The strict NDWI=0 requirement prevents suppressing genuine episodic floods
+    # on normally-dry lowland sites where NDWI may be absent only in calm conditions.
+    SAR_ZERO_NDWI_ARTIFACT_THRESHOLD: float = 0.12
 
     # active_flood corroboration: acute SAR anomaly alone is not sufficient to flag
     # active_flood -- SAR slope artifacts (single orbit on snow/rock) can mimic water.
@@ -146,7 +153,7 @@ class Settings(BaseSettings):
 
     # Versions
     PROCESSING_VERSION: str = "s2l2a-v1.36.0"
-    SCORE_VERSION: str = "risk-v1.20.2"
+    SCORE_VERSION: str = "risk-v1.20.3"
 
     # Trend-aware scoring -- Part A: active episode multipliers
     ACTIVE_FLOOD_BOOST: float = 1.40
