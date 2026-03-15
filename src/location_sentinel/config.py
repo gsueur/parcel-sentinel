@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     DEM_3DEP_REGION: str = "us-west-2"
 
     # Beck et al. (2023) 1km Köppen-Geiger COG (private bucket, uses AWS credential chain)
-    KOEPPEN_COG_URL: str = "s3://klimex-590184008642-us-west-2-an/climates.tif"
+    KOEPPEN_COG_URL: str = "https://klimex-590184008642-us-west-2-an.s3.us-west-2.amazonaws.com/climates.tif"
     KOEPPEN_AWS_REGION: str = "us-west-2"
 
     # Overture Maps buildings (public S3, us-west-2)

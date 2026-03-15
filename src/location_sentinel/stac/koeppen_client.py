@@ -24,15 +24,28 @@ _INT_TO_CODE: dict[int, str] = {
 _koeppen_store: Any | None = None
 
 
+def _parse_s3_url(url: str) -> tuple[str, str]:
+    """Extract (bucket, key) from an S3 virtual-hosted HTTPS URL.
+
+    Input:  "https://{bucket}.s3.{region}.amazonaws.com/{key}"
+    Output: ("{bucket}", "{key}")
+    """
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    bucket = parsed.hostname.split(".s3.")[0]
+    key = parsed.path.lstrip("/")
+    return bucket, key
+
+
 def _get_store() -> Any:
     global _koeppen_store
     if _koeppen_store is None:
         from obstore.store import S3Store
+        bucket, _ = _parse_s3_url(settings.KOEPPEN_COG_URL)
         _koeppen_store = S3Store(
-            bucket=settings.KOEPPEN_COG_URL.split("/")[2],
+            bucket=bucket,
             region=settings.KOEPPEN_AWS_REGION,
             # Private bucket: uses AWS credential chain (env vars / instance profile).
-            # Do NOT set skip_signature=True.
         )
     return _koeppen_store
 
@@ -45,8 +58,7 @@ async def lookup_climate_cog(lat: float, lon: float) -> str | None:
     """
     from async_geotiff import GeoTIFF, Window
 
-    # Object key is everything after "s3://<bucket>/"
-    key = "/".join(settings.KOEPPEN_COG_URL.split("/")[3:])
+    _, key = _parse_s3_url(settings.KOEPPEN_COG_URL)
 
     try:
         geotiff = await GeoTIFF.open(key, store=_get_store())
