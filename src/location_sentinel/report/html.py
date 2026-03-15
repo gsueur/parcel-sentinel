@@ -1573,8 +1573,9 @@ def build_report_html(
         code = climate.get("code", "")
         label = climate.get("label", code)
         criterion = climate.get("criterion", "")
+        tooltip = f"{criterion} \u2014 K\u00f6ppen-Geiger classification: Beck et al. (2023) 1\u2009km"
         climate_html = (
-            f'<span title="{criterion}" style="'
+            f'<span title="{tooltip}" style="'
             f'display:inline-flex;align-items:center;gap:6px;'
             f'background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;'
             f'padding:3px 10px;font-size:0.82rem;color:#1e293b;cursor:default">'
@@ -2013,6 +2014,17 @@ def build_report_html(
       Water fraction shown below each scene; red &ge; 30%, orange &ge; 10%.
     </div>
     {sar_cards}
+  </div>
+
+  <div style="margin-top:32px;padding:16px 20px;border-top:1px solid #e2e8f0;font-size:0.72rem;color:#94a3b8;line-height:1.7">
+    <strong style="color:#64748b">Data sources &amp; citations</strong><br>
+    <span>
+      <strong>Köppen-Geiger classification:</strong>
+      Beck, H. E., T. R. McVicar, N. Vergopolan, A. Berg, N. J. Lutsko, A. Dufour, Z. Zeng, X. Jiang,
+      A. I. J. M. van Dijk, and D. G. Miralles.
+      High-resolution (1&thinsp;km) Köppen-Geiger maps for 1901&ndash;2099 based on constrained CMIP6 projections.
+      <em>Scientific Data</em> 10, 724 (2023).
+    </span>
   </div>
 
 </div>
