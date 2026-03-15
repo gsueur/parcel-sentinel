@@ -583,15 +583,15 @@ Three terrain-derived modifiers adjust component scores when DEM data is availab
 ```
 chronic_score = sar_water_freq_5y * 100
 if ndwi_wetness_persistence_5y < 0.05:
-    chronic_score *= 0.25  # NDWI veto applies only to chronic component
-acute_score = sar_flood_anomaly * 100
+    chronic_score *= 0.25  # NDWI veto always applied to chronic
+acute_score = sar_flood_anomaly * 250  # 40% anomaly → 100 pts
 terrain_flash_score = f(elevation_m, slope_deg)
 flood_risk_score = max(chronic_score, acute_score, terrain_flash_score * 0.5)
 ```
 
 After terrain boosts (TPI, curvature), if `active_flood = 1`: score is multiplied by `ACTIVE_FLOOD_BOOST` (1.40), capped at 100.
 
-**NDWI veto:** When `ndwi_wetness_persistence_5y < 5%` but SAR chronic is elevated, chronic component is discounted by 0.75. Not applied to the acute anomaly component.
+**NDWI veto:** Two paths suppress the `acute_score` when optical data contradicts the SAR signal. Primary: `ndwi_wetness_persistence_5y < 5%` and `sar_water_freq_5y > 0.45` (scales down with snow artifact risk -- coastal/runway artifact). Secondary: `ndwi_wetness_persistence_5y` confirmed 0.0 and `sar_water_freq_5y > 0.12` -- orbit geometry artifacts in mountain valleys where one orbit track produces specular C-band returns while optical never confirms water. The `acute_score` is multiplied by 0.25 in either case. A normally-dry site (`sar_water_freq_5y < 0.12`) with a large acute anomaly is not vetoed.
 
 ### Heat stress score
 
@@ -699,8 +699,8 @@ Interactive docs: `http://localhost:8000/docs`
 {
   "location_key": "a1b2c3",
   "name": "Miami downtown",
-  "processing_version": "s2l2a-v1.26.0",
-  "score_version": "risk-v1.19.0",
+  "processing_version": "s2l2a-v1.27.0",
+  "score_version": "risk-v1.20.3",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -967,8 +967,8 @@ All settings are environment variables. Defaults work out of the box.
 | `DUCKDB_PATH` | `location_sentinel.duckdb` | DuckDB file path |
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `PROCESSING_VERSION` | `s2l2a-v1.26.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.19.0` | Cache key tag for scores |
+| `PROCESSING_VERSION` | `s2l2a-v1.27.0` | Cache key tag for features |
+| `SCORE_VERSION` | `risk-v1.20.3` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2

@@ -108,13 +108,16 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     """Compute risk sub-scores and composite from derived features.
 
     All scores are 0-100. Higher = more risk (except heat_mitigation where higher = more mitigation).
-    Deterministic, versioned as risk-v1.1.0.
+    Deterministic, versioned as risk-v1.20.3.
 
     Sub-scores:
     - drought_score:       NDVI anomaly frequency + trend + mean + NDMI moisture stress
-    - wetness_score:       NDWI surface water persistence
+    - wetness_score:       NDWI surface water persistence + trend slope
     - fire_exposure_score: NBR burn frequency over the lookback period
     - heat_mitigation:     Canopy proxy (higher = more shade = lower heat risk)
+    - flood_risk_score:    SAR chronic inundation + acute anomaly + terrain flash/TPI
+    - heat_stress_score:   TerraClimate tmax anomaly frequency + VPD trend
+    - composite_score:     Climate-zone-weighted combination of the above
     """
     factors: list[dict] = []
     is_urban = (features.get("is_urban") or 0.0) > 0.5
@@ -334,12 +337,13 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     )
     # Secondary orbit-geometry artifact veto: NDWI confirmed zero (not None, not trace)
     # and SAR chronic is in moderate range -- optical silence over 5 years is conclusive.
+    # _orbit_artifact implies ndwi_unconfirmed (0.0 < 0.05) but is kept as a separate
+    # branch for clarity: the primary path gates on high chronic SAR (> 0.45), the
+    # secondary path gates on confirmed zero NDWI (> moderate chronic SAR > 0.12).
     _confirmed_zero_ndwi = _raw_ndwi is not None and _raw_ndwi == 0.0
-    _orbit_artifact = (
-        _confirmed_zero_ndwi
-        and sar_water_freq > settings.SAR_ZERO_NDWI_ARTIFACT_THRESHOLD
-    )
-    if ndwi_unconfirmed and (sar_water_freq > effective_artifact_threshold or _orbit_artifact):
+    if ndwi_unconfirmed and sar_water_freq > effective_artifact_threshold:
+        acute_score *= settings.SAR_NDWI_VETO_FACTOR
+    elif _confirmed_zero_ndwi and sar_water_freq > settings.SAR_ZERO_NDWI_ARTIFACT_THRESHOLD:
         acute_score *= settings.SAR_NDWI_VETO_FACTOR
 
     # Terrain flash flood: low elevation + significant slope = fast runoff concentration
@@ -381,7 +385,7 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
         flood_risk_score = min(100.0, flood_risk_score * settings.ACTIVE_FLOOD_BOOST)
 
     if flood_risk_score > 10:
-        driver = "sar_flood_anomaly" if sar_flood_anomaly * 100 >= sar_water_freq * 100 else "sar_water_freq_5y"
+        driver = "sar_flood_anomaly" if sar_flood_anomaly * 250 >= chronic_score else "sar_water_freq_5y"
         factors.append({
             "name": driver,
             "direction": "positive",

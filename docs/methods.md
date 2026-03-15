@@ -1,7 +1,7 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.19.0`
-**Date:** 2026-03-13
+**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.20.3`
+**Date:** 2026-03-14
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
 ---
@@ -1061,13 +1061,13 @@ Default (no canopy data): 50.
 
 ### 11.5 Flood risk score
 
-Three components are combined, with the NDWI cross-validation veto applied **only to the chronic SAR component**:
+Three components are combined. NDWI cross-validation vetoes are applied to **both** the chronic and the acute SAR components via two independent paths:
 
 ```
 chronic_score = sar_water_freq_5y × 100
 if ndwi_wetness_persistence_5y < SAR_NDWI_CORROBORATION_THRESHOLD (0.05):
     chronic_score × = SAR_NDWI_VETO_FACTOR (0.25)
-acute_score = sar_flood_anomaly × 100
+acute_score = sar_flood_anomaly × 250   # scale so 40% anomaly → 100 pts
 
 # Terrain flash flood potential (static, no observation required)
 if elevation_m < TERRAIN_FLASH_ELEV_MAX (300 m) and slope_deg > TERRAIN_FLASH_SLOPE_MIN (3°):
@@ -1098,11 +1098,11 @@ This applies regardless of urban classification (flooding is not suppressed for 
 **TPI flood boost:** Valley floors systematically accumulate runoff from surrounding terrain. When `tpi_m < TERRAIN_TPI_FLOOD_THRESHOLD` (−5.0 m), a boost is added after the max-of-components step:
 
 ```
-tpi_boost = min(TERRAIN_TPI_FLOOD_MAX_BOOST, abs(tpi_m − TERRAIN_TPI_FLOOD_THRESHOLD))
+tpi_boost = min(TERRAIN_TPI_FLOOD_MAX_BOOST, (−tpi_m − abs(TERRAIN_TPI_FLOOD_THRESHOLD)) / 2.0)
 flood_risk_score = min(100, flood_risk_score + tpi_boost)
 ```
 
-`TERRAIN_TPI_FLOOD_MAX_BOOST = 20.0` pts. At TPI = −25 m: +20 pts (cap reached). Only applied when DEM data is available.
+`TERRAIN_TPI_FLOOD_MAX_BOOST = 20.0` pts. The `/2.0` divisor means the cap is reached at TPI ≈ −45 m (at TPI = −25 m the boost is +10 pts). Only applied when DEM data is available.
 
 **Curvature flood boost:** Concave terrain concentrates overland flow and promotes ponding. When `curvature > TERRAIN_CURVATURE_THRESHOLD` (+0.0001 m⁻¹, i.e. the terrain is concave at the site center), an additional boost is applied:
 
@@ -1114,17 +1114,19 @@ flood_risk_score = min(100, flood_risk_score + curvature_boost)
 
 `TERRAIN_CURVATURE_MAX_BOOST = 10.0` pts, `TERRAIN_CURVATURE_SCALE = 50000.0`. Only applied when DEM data is available. Applied after the TPI boost.
 
-**NDWI optical cross-validation veto (chronic component only):**
+**NDWI optical cross-validation veto (two paths):**
 
-When Sentinel-2 optical data shows that surface water is essentially absent from the site's history (`ndwi_wetness_persistence_5y < 0.05`) but the SAR chronic frequency is elevated, the two sensors contradict each other. The most common causes are:
+When Sentinel-2 optical data shows that surface water is essentially absent from the site's history but SAR returns are elevated, the two sensors contradict each other. The veto is applied via two independent paths with different sensitivity levels.
 
-- Coastal locations where the SAR window captures open ocean or a harbour: calm sea surface mimics flood backscatter chronically
-- Airport runways and large flat rooftops: specularly smooth in C-band, invisible as water in optical NDWI
-- Dry lake beds and salt flats with smooth surfaces after drying
+**Primary path (chronic > 0.50):** When `ndwi_wetness_persistence_5y < SAR_NDWI_CORROBORATION_THRESHOLD (0.05)` and the orbit-stratified `sar_water_freq_5y` exceeds `SAR_CHRONIC_ARTIFACT_THRESHOLD * (1 - 0.5 * snow_artifact_risk)` (effective threshold ≈ 0.45 for temperate climates at low elevation), the `acute_score` is also vetoed. The typical causes are chronic structural false positives -- calm ocean, airport runways, large smooth rooftops -- that produce elevated chronic AND anomaly SAR signals with zero optical confirmation.
 
-The chronic component is discounted by `SAR_NDWI_VETO_FACTOR = 0.25`. It is not zeroed: partial genuine flooding may still be present even when NDWI persistence is below the threshold.
+**Secondary path (confirmed zero NDWI + moderate chronic):** When `ndwi_wetness_persistence_5y` is confirmed 0.0 (the feature is present and the optical sensor detected surface water in zero months over the full 5-year window) and `sar_water_freq_5y > SAR_ZERO_NDWI_ARTIFACT_THRESHOLD (0.12)`, the `acute_score` is also vetoed. This path targets orbit geometry artifacts in mountain valleys: a single SAR orbit track may consistently produce specular C-band returns from valley walls, smooth granite, or a river at a fixed look angle, inflating both the chronic frequency and the orbit-stratified anomaly while Sentinel-2 never confirms surface water. The orbit-stratified anomaly detector misreads the systematic inter-orbit divergence as a temporal flood event.
 
-The veto is **not applied** to `sar_flood_anomaly` (the acute component). A normally-dry agricultural site showing a sudden SAR water spike is the strongest possible episodic flood signal -- the optical sensors may have been obscured by cloud, or the flooding may have subsided before the next clear optical pass. Applying the veto to the acute component would suppress genuine flood detections at the locations most at risk from episodic inundation.
+For both paths the `acute_score` is multiplied by `SAR_NDWI_VETO_FACTOR (0.25)`.
+
+**Not vetoed:** a normally-dry site (`sar_water_freq_5y < 0.12`) with `ndwi_wetness_persistence_5y < 0.05` showing a large SAR anomaly -- that is the strongest episodic flood signal and is left unpenalised. Optical sensors may have been obscured by cloud, or the flood may have receded before the next clear pass.
+
+The chronic component is always discounted by `SAR_NDWI_VETO_FACTOR` when `ndwi_unconfirmed` is True, regardless of which acute path applies. It is not zeroed: partial genuine flooding may still contribute.
 
 Default when no SAR data (`no_sar_data` flag set): 0.
 
@@ -1354,11 +1356,12 @@ All thresholds are configurable via environment variables. Defaults are listed b
 | `SAR_FLOOD_MAD_K` | 2.0 | MAD multiplier for orbit-stratified adaptive threshold |
 | `SAR_MIN_ANOMALY_FRACTION` | 0.05 | Floor on adaptive threshold (prevents noise at low-baseline orbits) |
 | `SAR_MIN_CONSECUTIVE_FLOOD_MONTHS` | 2 | Minimum calendar-consecutive anomalous months to count for the chronic MAD-based frequency |
-| `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed |
-| `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic flood score when NDWI corroboration is absent |
+| `SAR_NDWI_CORROBORATION_THRESHOLD` | 0.05 | Optical water persistence below which the SAR chronic score is vetoed and the primary acute veto path activates |
+| `SAR_NDWI_VETO_FACTOR` | 0.25 | Multiplier applied to the chronic and (when artifact conditions are met) acute flood score when NDWI corroboration is absent |
 | `SAR_ACTIVE_FLOOD_MIN_NDWI` | 0.08 | `active_flood` corroboration: minimum NDWI persistence (optical water history required) |
 | `SAR_ACTIVE_FLOOD_STRONG_ANOMALY` | 0.35 | `active_flood` strong-anomaly override: flag if anomaly exceeds this (blocked when SAR is artifactual) |
-| `SAR_CHRONIC_ARTIFACT_THRESHOLD` | 0.50 | `active_flood` artifact guard: if `sar_water_freq_5y` exceeds this while NDWI is below `SAR_ACTIVE_FLOOD_MIN_NDWI`, SAR is treated as look-angle-contaminated and the strong-anomaly bypass is disabled |
+| `SAR_CHRONIC_ARTIFACT_THRESHOLD` | 0.50 | Primary artifact guard: (1) `active_flood` -- if `sar_water_freq_5y` exceeds this while NDWI < `SAR_ACTIVE_FLOOD_MIN_NDWI`, the strong-anomaly bypass is disabled; (2) flood scoring -- `acute_score` vetoed when `sar_water_freq_5y` exceeds this scaled by `(1 - 0.5 × snow_artifact_risk)` |
+| `SAR_ZERO_NDWI_ARTIFACT_THRESHOLD` | 0.12 | Secondary acute veto: `acute_score` also vetoed when `ndwi_wetness_persistence_5y` is confirmed 0.0 and `sar_water_freq_5y` exceeds this. Targets orbit-geometry artifacts (mountain valley specular returns) where one orbit track produces persistent moderate-to-high SAR water fractions while optical never confirms surface water |
 | `DEM_FLAT_SLOPE_THRESHOLD` | 15.0° | Per-pixel slope above which the pixel is excluded from SAR water fraction (numerator and denominator) |
 
 ### Elevation parameters (hybrid DTM)
