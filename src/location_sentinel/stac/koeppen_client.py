@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from ..config import settings
@@ -43,25 +42,11 @@ def _get_store() -> Any:
     if _koeppen_store is None:
         from obstore.store import S3Store
         bucket, _ = _parse_s3_url(settings.KOEPPEN_COG_URL)
-        # Pass static credentials explicitly so obstore never falls through to the
-        # EC2 instance metadata service (169.254.169.254), which times out on
-        # non-EC2 hosts. Reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from the
-        # process environment (set in .env or the systemd unit).
-        kwargs: dict = {"bucket": bucket, "region": settings.KOEPPEN_AWS_REGION}
-        access_key = os.environ.get("AWS_ACCESS_KEY_ID")
-        secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY")
-        if access_key and secret_key:
-            kwargs["access_key_id"] = access_key
-            kwargs["secret_access_key"] = secret_key
-            session_token = os.environ.get("AWS_SESSION_TOKEN")
-            if session_token:
-                kwargs["token"] = session_token
-        else:
-            logger.warning(
-                "AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY not set; "
-                "Köppen COG lookups will fail on non-EC2 hosts"
-            )
-        _koeppen_store = S3Store(**kwargs)
+        _koeppen_store = S3Store(
+            bucket=bucket,
+            region=settings.KOEPPEN_AWS_REGION,
+            skip_signature=True,
+        )
     return _koeppen_store
 
 
