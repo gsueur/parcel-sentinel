@@ -552,6 +552,8 @@ Weighted combination of optical and TerraClimate signals (weights renormalized w
 | NDMI trend slope (v1.27) | 15% | [+0.05, -0.05] yr → [0, 100] |
 | PDSI trend slope (v1.27) | 15% | [0, -0.5] yr → [0, 100] |
 
+**PDSI/optical coherence veto (v1.21.0):** When `pdsi_drought_freq_5y > PDSI_OPTICAL_CONFLICT_PDSI_THRESHOLD (0.40)` and `ndvi_anomaly_freq_5y < PDSI_OPTICAL_CONFLICT_NDVI_THRESHOLD (0.15)`, the PDSI-derived components (drought frequency and trend slope) are multiplied by `PDSI_OPTICAL_CONFLICT_DAMP (0.25)` before entering the weighted average. Optical (NDVI, NDMI) components are unaffected. This suppresses false-positive drought scores caused by TerraClimate grid cells misaligned with the actual micro-climate across orographic rainfall gradients (e.g. a windward-coast site whose 4 km grid cell covers the drier leeward flank). When triggered, the `pdsi_optical_conflict` quality flag is set.
+
 Terrain amplifiers applied after weighted average (non-urban): slope > 10° adds up to +20%; south-facing (HLI) adds up to +25%.
 
 Then, if available (non-urban), momentum amplifiers: for each of `ndvi_momentum_ratio_1y`, `ndmi_momentum_ratio_1y`, `pdsi_momentum_ratio_1y` where ratio > 1.0, the score is multiplied by `1 + min(0.30, (ratio - 1.0) × 0.10)`. Ratios cap at 5.0; max per-metric amplification = +30%.
@@ -716,7 +718,7 @@ Interactive docs: `http://localhost:8000/docs`
   "location_key": "a1b2c3",
   "name": "Miami downtown",
   "processing_version": "s2l2a-v1.27.0",
-  "score_version": "risk-v1.20.3",
+  "score_version": "risk-v1.21.0",
   "date_window": { "start": "2021-02-01", "end": "2026-02-01" },
   "scores": {
     "drought_score": 0,
@@ -984,7 +986,7 @@ All settings are environment variables. Defaults work out of the box.
 | `ENV` | `development` | `development` or `production` (affects caching headers) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `PROCESSING_VERSION` | `s2l2a-v1.27.0` | Cache key tag for features |
-| `SCORE_VERSION` | `risk-v1.20.3` | Cache key tag for scores |
+| `SCORE_VERSION` | `risk-v1.21.0` | Cache key tag for scores |
 | `CACHE_TTL_SECONDS` | `604800` | In-memory cache TTL (7 days) |
 
 ### Sentinel-2
@@ -1022,6 +1024,9 @@ All settings are environment variables. Defaults work out of the box.
 | `DEM_FLAT_SLOPE_THRESHOLD` | `15.0` | Pixels steeper than this (degrees) are excluded from SAR water fraction computation |
 | `SAR_MAX_SCENES_PER_MONTH` | `2` | Max SAR scenes per month |
 | `SAR_MAX_TOTAL_SCENES` | `120` | Hard cap on total SAR scenes |
+| `PDSI_OPTICAL_CONFLICT_PDSI_THRESHOLD` | `0.40` | `pdsi_drought_freq_5y` above this triggers PDSI/optical coherence veto |
+| `PDSI_OPTICAL_CONFLICT_NDVI_THRESHOLD` | `0.15` | `ndvi_anomaly_freq_5y` below this (combined with high PDSI) triggers veto |
+| `PDSI_OPTICAL_CONFLICT_DAMP` | `0.25` | Multiplier applied to PDSI drought components when coherence veto is active |
 
 ### Geometry
 

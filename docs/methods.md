@@ -1,6 +1,6 @@
 # Location Sentinel -- Scientific Methods Reference
 
-**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.20.3`
+**Version:** processing `s2l2a-v1.27.0` / scoring `risk-v1.21.0`
 **Date:** 2026-03-14
 **Scope:** Data sources, pixel-level processing, spectral indices, feature derivation, urban detection, tidal zone classification, risk scoring. Infrastructure, routing, and persistence are excluded.
 
@@ -935,11 +935,23 @@ Weighted combination of optical and climate components. Only components with ava
 | NDVI trend | `clamp((0.05 − slope) / 0.10 × 100,  0, 100)` | 0.20 |
 | NDVI mean | `clamp((0.8 − ndvi_mean) / 0.8 × 100,  0, 100)` | 0.15 |
 | NDMI moisture stress | `ndmi_moisture_stress_freq_5y × 100` | 0.20 |
-| PDSI drought frequency | `pdsi_drought_freq_5y × 100` | 0.25 |
+| PDSI drought frequency | `pdsi_drought_freq_5y × 100 × pdsi_conflict_damp` | 0.25 |
 | NDMI trend slope (v1.27) | `clamp(−ndmi_trend / 0.05 × 100,  0, 100)` | 0.15 |
-| PDSI trend slope (v1.27) | `clamp(−pdsi_trend / 0.50 × 100,  0, 100)` | 0.15 |
+| PDSI trend slope (v1.27) | `clamp(−pdsi_trend / 0.50 × 100,  0, 100) × pdsi_conflict_damp` | 0.15 |
 
 Trend slope mapping (NDVI): −0.05/yr → 100 (severe decline); +0.05/yr → 0 (recovering). NDVI mean: NDVI = 0 → 100 (bare); NDVI = 0.8 → 0 (dense vegetation). NDMI trend: −0.05/yr → 100 (worsening stress); 0/yr → 0. PDSI trend: −0.50/yr → 100 (worsening drought); 0/yr → 0.
+
+**PDSI/optical coherence veto (v1.21.0):**
+
+`pdsi_conflict_damp` is `PDSI_OPTICAL_CONFLICT_DAMP (0.25)` when both conditions hold:
+1. `pdsi_drought_freq_5y > PDSI_OPTICAL_CONFLICT_PDSI_THRESHOLD (0.40)` -- TerraClimate signals sustained drought
+2. `ndvi_anomaly_freq_5y < PDSI_OPTICAL_CONFLICT_NDVI_THRESHOLD (0.15)` -- optical vegetation shows no stress
+
+Otherwise `pdsi_conflict_damp = 1.0` (no modification).
+
+**Rationale:** TerraClimate has a native resolution of approximately 4 km. On islands or coastal ranges with steep orographic rainfall gradients, a single grid cell can straddle windward and leeward flanks that receive radically different precipitation. PDSI for the cell may reflect the drier leeward regime while the actual location sits on the wetter windward side. When PDSI reports drought in 40%+ of months but the Sentinel-2 optical signal shows healthy vegetation with below-threshold anomaly frequency, the disagreement is conclusive: the PDSI grid cell is systematically mis-representative of the site's true water balance. The optical signal is ground-truth; the PDSI components are dampened by 75%.
+
+When triggered, `features["pdsi_optical_conflict"] = 1.0` is set and `"pdsi_optical_conflict"` is appended to `quality.flags`. The `pdsi_drought_freq_5y` factor is also excluded from `top_factors` to avoid surfacing a known artifact as a primary risk driver.
 
 **Terrain drought amplifier (non-urban only):**
 
@@ -1302,6 +1314,7 @@ Quality flags:
 | `sar_burn_suppression` | At least one SAR month excluded due to co-located NBR burn signal |
 | `no_terraclimate_data` | TerraClimate fetch failed for all requested variables |
 | `no_dem_data` | DEM tile read failed for all sources (3DEP + GLO-30), or < 25% valid pixels (ocean tile edge, missing coverage) |
+| `pdsi_optical_conflict` | `pdsi_drought_freq_5y > 0.40` and `ndvi_anomaly_freq_5y < 0.15`: TerraClimate PDSI likely misaligned with the site's actual micro-climate (orographic gradient artifact); PDSI drought components dampened by 75% in scoring |
 
 ---
 
