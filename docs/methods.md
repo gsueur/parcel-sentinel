@@ -173,6 +173,23 @@ The station list is downloaded at application startup and stored in DuckDB. For 
 
 For tidal zone sites, each Sentinel-1 SAR scene acquisition UTC time is parsed from the scene ID filename (`S1X_IW_GRDH_1SDV_YYYYMMDDTHHMMSS_...`). The NOAA predictions API is queried for hourly MSL values covering the acquisition date. The tide level at the exact acquisition minute is obtained by linear interpolation between the two bounding hourly values. Results are displayed in the HTML report below each SAR thumbnail and returned as `tide_level_m` in the `sar_scenes` array of the JSON report.
 
+### 1.7 Köppen-Geiger classification
+
+| Attribute | Value |
+|-----------|-------|
+| Source | Beck et al. (2023) high-resolution Köppen-Geiger maps |
+| Resolution | 1 km (native pixel extraction at location centroid) |
+| Coverage | Global |
+| Format | Cloud-Optimised GeoTIFF (COG), hosted on private S3 |
+| Access | async-geotiff + obstore; single-pixel read at pipeline time |
+| Config vars | `KOEPPEN_COG_URL`, `KOEPPEN_AWS_REGION` |
+
+The classification code is read from the COG at the location centroid during pipeline execution and passed as a parameter to `save_geometry`. Human-readable zone labels and criteria are stored in the `climate_descriptions` PostgreSQL table. The old `climates` table (which held the coarser 0.5° flat-file grid) no longer exists.
+
+**Motivation:** The prior 0.5° source misclassified locations on islands with steep orographic rainfall gradients. Leeward Maui, for example, was assigned Af (tropical rainforest) instead of BWh/BSh (hot arid), causing composite scores to apply tropical-zone weights that overweight wetness risk and underweight drought and heat stress. The 1 km source resolves these orographic transitions.
+
+**Citation:** Beck, H. E., T. R. McVicar, N. Vergopolan, A. Berg, N. J. Lutsko, A. Dufour, Z. Zeng, X. Jiang, A. I. J. M. van Dijk, and D. G. Miralles. High-resolution (1 km) Köppen-Geiger maps for 1901-2099 based on constrained CMIP6 projections. *Scientific Data* 10, 724 (2023).
+
 ---
 
 ## 2. Spatial footprint
@@ -445,7 +462,7 @@ Growing season definition (Köppen zone + hemisphere):
 | Temperate / Continental, < 33° abs lat | Mar -- Nov | Sep -- May |
 | Polar / Alpine (E) | Jun -- Aug | Dec -- Feb |
 
-SH months are the NH months shifted by 6 calendar months. Köppen code is looked up from the 0.5° gridded climatology stored at location creation time.
+SH months are the NH months shifted by 6 calendar months. Köppen code is read at pipeline time from the Beck et al. (2023) 1 km COG (section 1.7).
 
 The canopy proxy approximates canopy closure from the peak photosynthetic signal rather than mean NDVI, which is suppressed in winter. It is used in heat mitigation scoring and urban detection.
 
@@ -1259,7 +1276,7 @@ Climate zone weights (Köppen classification; all rows sum to 1.0):
 | Polar / Alpine | E | 0.06 | 0.14 | 0.04 | 0.44 | 0.12 | 0.20 |
 | Unknown / default | -- | 0.22 | 0.16 | 0.14 | 0.16 | 0.12 | 0.20 |
 
-Köppen classification is derived from the location centroid using a 1/12° gridded climatology. The "Cs" (Mediterranean) key takes precedence over the general "C" key; all other zones match on the first letter.
+Köppen classification is derived from the location centroid using the Beck et al. (2023) 1 km COG (section 1.7). The "Cs" (Mediterranean) key takes precedence over the general "C" key; all other zones match on the first letter.
 
 ---
 

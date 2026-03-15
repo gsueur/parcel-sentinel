@@ -255,6 +255,22 @@ Grid cell centre coordinates are snapped to the nearest 1/24° before querying. 
 
 ---
 
+### Köppen-Geiger classification
+
+**Source:** Beck et al. (2023) 1 km global Köppen-Geiger COG
+**Resolution:** 1 km (native); single-pixel point extraction at the location centroid
+**Access:** Private S3 COG (`KOEPPEN_COG_URL`), read at pipeline time via async-geotiff + obstore
+**Coverage:** Global; classification codes per the standard five-letter Köppen system
+
+The classification code is extracted at pipeline time during feature computation and passed to `save_geometry`. The `climate_descriptions` table (human-readable labels and zone criteria) remains in PostgreSQL; the old `climates` table (which stored the 0.5° flat-file grid) has been removed.
+
+**Motivation for upgrading from the 0.5° grid:** The previous source misclassified locations on islands with steep orographic rainfall gradients. For example, leeward Maui was classified as Af (tropical rainforest) instead of BWh/BSh (hot arid), causing the composite score to use tropical-zone weights that substantially overweight wetness risk while underweighting drought and heat stress.
+
+**Citation:**
+Beck, H. E., T. R. McVicar, N. Vergopolan, A. Berg, N. J. Lutsko, A. Dufour, Z. Zeng, X. Jiang, A. I. J. M. van Dijk, and D. G. Miralles. High-resolution (1 km) Köppen-Geiger maps for 1901-2099 based on constrained CMIP6 projections. *Scientific Data* 10, 724 (2023).
+
+---
+
 ## Scene selection and cloud filtering
 
 ### Step 1: STAC metadata pre-filter (Sentinel-2)
@@ -1072,6 +1088,13 @@ SH months are NH months shifted by +6 calendar months. The latitude boundary and
 | `TERRACLIMATE_VPD_HIGH_THRESHOLD` | `1.5` | kPa above which a month counts as high-VPD |
 | `TERRACLIMATE_PDSI_DROUGHT_THRESHOLD` | `-2.0` | PDSI below this = moderate drought month |
 | `TERRACLIMATE_TMAX_ANOMALY_SIGMA` | `1.0` | Std-devs above monthly mean = heat anomaly |
+
+### Köppen-Geiger classification
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KOEPPEN_COG_URL` | (S3 URL) | S3 URL for the Beck et al. (2023) 1 km Köppen-Geiger COG (`climates.tif`) |
+| `KOEPPEN_AWS_REGION` | `us-west-2` | AWS region for the Köppen COG bucket |
 
 ### Overture Maps (building footprints)
 
