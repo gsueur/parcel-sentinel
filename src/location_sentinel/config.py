@@ -155,9 +155,18 @@ class Settings(BaseSettings):
     # without touching the snow or burn suppression logic.
     DEM_FLAT_SLOPE_THRESHOLD: float = 15.0  # degrees
 
+    # PDSI / optical coherence veto (Option B -- orographic gradient artifact suppression)
+    # When TerraClimate PDSI reports high drought frequency but optical vegetation (NDVI)
+    # shows no stress, the PDSI grid cell is likely on the wrong side of an orographic
+    # rainfall gradient (e.g. windward Maui mapped to a leeward 4 km cell).
+    # Applied in scoring: dampen both the pdsi_drought_freq and pdsi_trend_slope components.
+    PDSI_OPTICAL_CONFLICT_PDSI_THRESHOLD: float = 0.40   # pdsi_drought_freq_5y > this → suspect
+    PDSI_OPTICAL_CONFLICT_NDVI_THRESHOLD: float = 0.15   # ndvi_anomaly_freq_5y < this → optical silence
+    PDSI_OPTICAL_CONFLICT_DAMP: float = 0.25             # multiply PDSI components by this when conflict
+
     # Versions
     PROCESSING_VERSION: str = "s2l2a-v1.36.0"
-    SCORE_VERSION: str = "risk-v1.20.3"
+    SCORE_VERSION: str = "risk-v1.21.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers
     ACTIVE_FLOOD_BOOST: float = 1.40

@@ -391,4 +391,21 @@ async def run_features(
             _recent_drought = _drought_count >= 2
     features["active_drought"] = 1.0 if _recent_drought else 0.0
 
+    # PDSI / optical coherence check: TerraClimate grid cell likely misaligned with
+    # actual micro-climate (orographic gradient artifact). When PDSI signals high drought
+    # frequency but optical NDVI shows no vegetation stress over the same period, the
+    # two sensors contradict each other. The PDSI score is dampened in scoring.py;
+    # the flag is recorded here so the report can surface it as a data quality warning.
+    _pdsi_drought_freq = features.get("pdsi_drought_freq_5y")
+    _ndvi_anomaly_freq = features.get("ndvi_anomaly_freq_5y")
+    _pdsi_conflict = (
+        _pdsi_drought_freq is not None
+        and _ndvi_anomaly_freq is not None
+        and _pdsi_drought_freq > settings.PDSI_OPTICAL_CONFLICT_PDSI_THRESHOLD
+        and _ndvi_anomaly_freq < settings.PDSI_OPTICAL_CONFLICT_NDVI_THRESHOLD
+    )
+    features["pdsi_optical_conflict"] = 1.0 if _pdsi_conflict else 0.0
+    if _pdsi_conflict:
+        quality.flags.append("pdsi_optical_conflict")
+
     return location_key, features, quality, series

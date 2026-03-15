@@ -108,7 +108,7 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     """Compute risk sub-scores and composite from derived features.
 
     All scores are 0-100. Higher = more risk (except heat_mitigation where higher = more mitigation).
-    Deterministic, versioned as risk-v1.20.3.
+    Deterministic, versioned as risk-v1.21.0.
 
     Sub-scores:
     - drought_score:       NDVI anomaly frequency + trend + mean + NDMI moisture stress
@@ -135,6 +135,15 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
 
     drought_components: list[float] = []
     drought_weights: list[float] = []
+    # PDSI / optical coherence veto: TerraClimate cell misaligned with micro-climate.
+    # When PDSI reports high drought but NDVI shows no vegetation stress, the PDSI
+    # signal is likely a grid artifact (orographic gradient, island topography).
+    # Dampen both PDSI-derived components; optical (NDVI, NDMI) components are unaffected.
+    pdsi_conflict_damp = (
+        settings.PDSI_OPTICAL_CONFLICT_DAMP
+        if (features.get("pdsi_optical_conflict") or 0.0) > 0.5
+        else 1.0
+    )
 
     if anomaly_freq is not None:
         drought_components.append(anomaly_freq * 100)
@@ -165,9 +174,10 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
 
     if pdsi_drought is not None:
         # Fraction of months with PDSI < -2 (moderate drought). Map [0, 1] → [0, 100]
-        drought_components.append(pdsi_drought * 100)
+        # Dampened by pdsi_conflict_damp when PDSI/optical coherence veto is active.
+        drought_components.append(pdsi_drought * 100 * pdsi_conflict_damp)
         drought_weights.append(0.25)
-        if pdsi_drought > 0.15:
+        if pdsi_drought > 0.15 and pdsi_conflict_damp == 1.0:
             factors.append({"name": "pdsi_drought_freq_5y", "direction": "positive", "weight": 0.25})
 
     # Part C -- slope sub-components
@@ -181,8 +191,9 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
     pdsi_trend = features.get("pdsi_trend_slope_5y")
     if pdsi_trend is not None:
         # Negative slope = worsening drought. Map [abs(PDSI_TREND_DROUGHT_MAX), 0] → [100, 0]
+        # Dampened by pdsi_conflict_damp when PDSI/optical coherence veto is active.
         pdsi_slope_score = max(0.0, min(100.0, (-pdsi_trend / abs(settings.PDSI_TREND_DROUGHT_MAX)) * 100))
-        drought_components.append(pdsi_slope_score)
+        drought_components.append(pdsi_slope_score * pdsi_conflict_damp)
         drought_weights.append(0.15)
 
     slope_deg = features.get("slope_deg")
