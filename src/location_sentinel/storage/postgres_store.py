@@ -3,7 +3,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
-import math
 import os
 import secrets
 import uuid
@@ -73,9 +72,6 @@ def _round_floats(obj, ndigits: int = 4):
         return [_round_floats(v, ndigits) for v in obj]
     return obj
 
-
-def _snap_to_koeppen_grid(coord: float) -> float:
-    return math.floor(coord / 0.5) * 0.5 + 0.25
 
 
 def _frombuffer(val) -> np.ndarray:
@@ -340,69 +336,6 @@ class PostgresStore:
                     """,
                     [code, label, criterion],
                 )
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS climates (
-                    lat DOUBLE PRECISION NOT NULL,
-                    lon DOUBLE PRECISION NOT NULL,
-                    code VARCHAR NOT NULL,
-                    PRIMARY KEY (lat, lon)
-                )
-            """)
-            cur.execute("SELECT COUNT(*) FROM climates")
-            count = cur.fetchone()[0]
-            if count == 0:
-                self._load_koeppen_file(cur)
-
-    def _load_koeppen_file(self, cur) -> None:
-        candidates = [
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "Koeppen-Geiger-ASCII.txt"),
-            "Koeppen-Geiger-ASCII.txt",
-        ]
-        path = None
-        for c in candidates:
-            resolved = os.path.abspath(c)
-            if os.path.exists(resolved):
-                path = resolved
-                break
-        if path is None:
-            logger.warning("Koeppen-Geiger-ASCII.txt not found; climates table will be empty")
-            return
-
-        logger.info("Loading Koeppen-Geiger data from %s", path)
-        rows: list[tuple] = []
-        with open(path, encoding="utf-8") as fh:
-            next(fh)
-            for line in fh:
-                parts = line.split()
-                if len(parts) < 3:
-                    continue
-                try:
-                    lat, lon, code = float(parts[0]), float(parts[1]), parts[2]
-                    rows.append((lat, lon, code))
-                except ValueError:
-                    continue
-
-        psycopg2.extras.execute_values(
-            cur,
-            "INSERT INTO climates (lat, lon, code) VALUES %s ON CONFLICT (lat, lon) DO NOTHING",
-            rows,
-        )
-        logger.info("Loaded %d Koeppen-Geiger grid cells", len(rows))
-
-    def lookup_climate(self, lat: float, lon: float) -> str | None:
-        if self._pool is None:
-            return None
-        snapped_lat = _snap_to_koeppen_grid(lat)
-        snapped_lon = _snap_to_koeppen_grid(lon)
-        with self._get_conn() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT code FROM climates WHERE lat = %s AND lon = %s",
-                [snapped_lat, snapped_lon],
-            )
-            result = cur.fetchone()
-        return result[0] if result else None
-
     def health_check(self) -> bool:
         try:
             if self._pool is None:
@@ -638,6 +571,7 @@ class PostgresStore:
         name: str | None = None,
         customer_id: str | None = None,
         is_public: bool | None = None,
+        climate_code: str | None = None,
     ) -> None:
         if self._pool is None:
             return
@@ -654,11 +588,11 @@ class PostgresStore:
                     name = existing[0]
                 if customer_id is None:
                     customer_id = existing[1]
-                existing_code = existing[2]
+                if climate_code is None:
+                    climate_code = existing[2]  # preserve existing code if not supplied
                 if is_public is None:
                     is_public = existing[3]
             else:
-                existing_code = None
                 if is_public is None:
                     is_public = False
 
@@ -670,14 +604,6 @@ class PostgresStore:
                 )
                 if not cur.fetchone():
                     customer_id = None
-
-            climate_code = existing_code
-            if climate_code is None:
-                try:
-                    pt = shape(geojson)
-                    climate_code = self.lookup_climate(pt.y, pt.x)
-                except Exception:
-                    pass
 
             cur.execute(
                 """

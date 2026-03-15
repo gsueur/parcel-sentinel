@@ -36,7 +36,7 @@ async def post_score(req: ScoreRequest):
             return cached
 
     try:
-        location_key, score_result, features, quality, date_start, series = await run_score(
+        location_key, score_result, features, quality, date_start, series, _climate = await run_score(
             geom_geojson=req.geometry.model_dump(),
             date_end=de,
             lookback_years=req.lookback_years,

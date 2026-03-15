@@ -8,6 +8,7 @@ from shapely.geometry import shape as shapely_shape
 from ..compute.scoring import ScoreResult, compute_scores
 from ..config import settings
 from ..models.common import MetricName, QualityInfo
+from ..stac.koeppen_client import lookup_climate_cog
 from ..storage.duckdb_store import store
 from .features_pipeline import run_features
 
@@ -22,7 +23,7 @@ async def run_score(
 ) -> tuple:
     """Run scoring pipeline: derive date range, compute features, score.
 
-    Returns (location_key, score_result, features, quality, date_start, series).
+    Returns (location_key, score_result, features, quality, date_start, series, climate_code).
 
     Fast path: if features already exist in DuckDB for the current
     PROCESSING_VERSION and date window, they are loaded directly and the full
@@ -38,7 +39,7 @@ async def run_score(
     climate_code: str | None = None
     try:
         centroid = shapely_shape(geom_geojson).centroid
-        climate_code = store.lookup_climate(centroid.y, centroid.x)
+        climate_code = await lookup_climate_cog(centroid.y, centroid.x)
     except Exception:
         logger.warning("Climate lookup failed for location_key=%s", location_key)
 
@@ -58,7 +59,7 @@ async def run_score(
                 location_key, settings.PROCESSING_VERSION
             ) or {}
             result = compute_scores(features, climate_code=climate_code)
-            return location_key, result, features, quality, date_start, series
+            return location_key, result, features, quality, date_start, series, climate_code
 
     # Full pipeline: STAC search → COG reads → feature derivation.
     metrics = [
@@ -76,4 +77,4 @@ async def run_score(
     )
 
     result = compute_scores(features, climate_code=climate_code)
-    return location_key, result, features, quality, date_start, series
+    return location_key, result, features, quality, date_start, series, climate_code

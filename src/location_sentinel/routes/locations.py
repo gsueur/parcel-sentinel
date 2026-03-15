@@ -125,7 +125,7 @@ async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str, 
             logger.info("force_recompute: purged %d stale SAR scenes for %s", n_deleted, stable_key)
 
     try:
-        location_key, score_result, features, quality, date_start, series = await run_score(
+        location_key, score_result, features, quality, date_start, series, climate_code = await run_score(
             geom_geojson=req.geometry.model_dump(),
             date_end=de,
             lookback_years=req.lookback_years,
@@ -143,7 +143,8 @@ async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str, 
         return
 
     geom_dict = req.geometry.model_dump()
-    store.save_geometry(location_key, geom_dict, name=req.name, customer_id=user_id, is_public=is_public)
+    store.save_geometry(location_key, geom_dict, name=req.name, customer_id=user_id, is_public=is_public,
+                        climate_code=climate_code)
     store.save_scores(location_key, settings.SCORE_VERSION, req.lookback_years, {
         "drought_score": score_result.drought_score,
         "wetness_score": score_result.wetness_score,
@@ -229,7 +230,7 @@ async def _run_regenerate_job(
     job_store.update(job_id, status="running")
 
     try:
-        _lk, score_result, features, quality, date_start, series = await run_score(
+        _lk, score_result, features, quality, date_start, series, climate_code = await run_score(
             geom_geojson=geom_dict,
             date_end=de,
             lookback_years=req.lookback_years,
@@ -240,7 +241,7 @@ async def _run_regenerate_job(
         job_store.update(job_id, status="failed", error=f"Computation failed (trace_id={trace_id})")
         return
 
-    store.save_geometry(location_key, geom_dict, name=name)
+    store.save_geometry(location_key, geom_dict, name=name, climate_code=climate_code)
     store.save_scores(location_key, settings.SCORE_VERSION, req.lookback_years, {
         "drought_score": score_result.drought_score,
         "wetness_score": score_result.wetness_score,

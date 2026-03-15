@@ -28,6 +28,7 @@ from .terraclimate_pipeline import run_terraclimate_features
 from .dem_pipeline import run_dem_features
 from .buildings_pipeline import run_buildings_features
 from ..compute.sar_features import compute_sar_flood_anomaly, compute_sar_water_frequency
+from ..stac.koeppen_client import lookup_climate_cog
 from ..storage.duckdb_store import store
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ async def run_features(
         location_key = geometry_hash(geom_shape)
 
     geom_centroid = geom_shape.centroid
-    climate_code: str | None = store.lookup_climate(geom_centroid.y, geom_centroid.x)
+    climate_code: str | None = await lookup_climate_cog(geom_centroid.y, geom_centroid.x)
 
     # Run S2 timeseries, SAR, TerraClimate, DEM, and buildings pipelines concurrently
     (location_key, series, quality), sar_features, tc_features, dem_features, building_features = await asyncio.gather(

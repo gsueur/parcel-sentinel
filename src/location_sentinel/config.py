@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     DEM_3DEP_BUCKET: str = "prd-tnm"
     DEM_3DEP_REGION: str = "us-west-2"
 
+    # Beck et al. (2023) 1km Köppen-Geiger COG (private bucket, uses AWS credential chain)
+    KOEPPEN_COG_URL: str = "s3://klimex-590184008642-us-west-2-an/climates.tif"
+    KOEPPEN_AWS_REGION: str = "us-west-2"
+
     # Overture Maps buildings (public S3, us-west-2)
     # Update OVERTURE_RELEASE to the latest available release:
     #   aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request
