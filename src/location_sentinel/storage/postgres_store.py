@@ -560,6 +560,28 @@ class PostgresStore:
             return None
         return json.loads(result[0])
 
+    def get_generation_params(self, location_key: str) -> dict | None:
+        """Return {date_end, lookback_years} from stored features/scores for regeneration."""
+        if self._pool is None:
+            return None
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT lf.date_end, ls.lookback_years
+                FROM location_features lf
+                LEFT JOIN location_scores ls ON ls.location_key = lf.location_key
+                WHERE lf.location_key = %s
+                ORDER BY lf.updated_at DESC, ls.updated_at DESC
+                LIMIT 1
+                """,
+                [location_key],
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return {"date_end": str(row[0]) if row[0] else None, "lookback_years": row[1]}
+
     # ------------------------------------------------------------------
     # Geometry / location management
     # ------------------------------------------------------------------
@@ -1345,6 +1367,16 @@ class PostgresStore:
                     )
                     rows = cur.fetchall()
         return [(row[0], float(row[1]), int(row[2])) for row in rows if row[1] is not None]
+
+    def delete_elevation_cache(self, location_key: str) -> None:
+        if self._pool is None:
+            return
+        with self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM elevation_cache WHERE location_key = %s",
+                [location_key],
+            )
 
     def delete_sar_scenes(self, location_key: str, processing_version: str) -> int:
         if self._pool is None:

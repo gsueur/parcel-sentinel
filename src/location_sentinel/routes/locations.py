@@ -185,8 +185,8 @@ async def _run_location_job(job_id: str, req: LocationRequest, stable_key: str, 
 
 
 class _RegenerateRequest(BaseModel):
-    date_end: datetime.date = Field(default_factory=datetime.date.today)
-    lookback_years: int = Field(default=5, ge=1, le=10)
+    force_recompute: bool = Field(default=False, description="Force re-run even if scores/features are already up to date")
+    force_redownload: bool = Field(default=False, description="Clear all download caches (elevation, SAR) before re-running")
 
 
 @router.post("/location/{location_key}/regenerate", status_code=202)
@@ -199,6 +199,7 @@ async def regenerate_location(
 
     The location_key is preserved exactly -- no re-derivation from geometry.
     Use this instead of re-POSTing to /locations to avoid creating duplicate entries.
+    date_end and lookback_years are read from the location's stored generation params.
     """
     location_info = store.get_location_info(location_key)
     if location_info is None:
@@ -225,15 +226,24 @@ async def _run_regenerate_job(
     trace_id = uuid.uuid4().hex[:12]
     geom_dict = location_info["geojson"]
     name = location_info["name"]
-    de = req.date_end.isoformat()
+
+    gen_params = store.get_generation_params(location_key)
+    de = gen_params["date_end"] if gen_params and gen_params.get("date_end") else datetime.date.today().isoformat()
+    lookback_years = gen_params["lookback_years"] if gen_params and gen_params.get("lookback_years") else 5
 
     job_store.update(job_id, status="running")
+
+    if req.force_redownload:
+        store.delete_elevation_cache(location_key)
+        n_deleted = store.delete_sar_scenes(location_key, settings.PROCESSING_VERSION)
+        if n_deleted:
+            logger.info("force_redownload: purged %d stale SAR scenes for %s", n_deleted, location_key)
 
     try:
         _lk, score_result, features, quality, date_start, series, climate_code = await run_score(
             geom_geojson=geom_dict,
             date_end=de,
-            lookback_years=req.lookback_years,
+            lookback_years=lookback_years,
             location_key=location_key,
         )
     except Exception:
@@ -242,7 +252,7 @@ async def _run_regenerate_job(
         return
 
     store.save_geometry(location_key, geom_dict, name=name, climate_code=climate_code)
-    store.save_scores(location_key, settings.SCORE_VERSION, req.lookback_years, {
+    store.save_scores(location_key, settings.SCORE_VERSION, lookback_years, {
         "drought_score": score_result.drought_score,
         "wetness_score": score_result.wetness_score,
         "fire_exposure_score": score_result.fire_exposure_score,
