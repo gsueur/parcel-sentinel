@@ -245,6 +245,7 @@ async def _run_regenerate_job(
             date_end=de,
             lookback_years=lookback_years,
             location_key=location_key,
+            force_recompute=True,
         )
     except Exception:
         logger.exception("Regeneration failed location_key=%s trace_id=%s", location_key, trace_id)

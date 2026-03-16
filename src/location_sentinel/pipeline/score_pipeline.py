@@ -20,6 +20,7 @@ async def run_score(
     date_end: str,
     lookback_years: int = 5,
     location_key: str | None = None,
+    force_recompute: bool = False,
 ) -> tuple:
     """Run scoring pipeline: derive date range, compute features, score.
 
@@ -30,6 +31,9 @@ async def run_score(
     S2/SAR/TerraClimate pipeline is skipped entirely (no STAC search, no S3
     reads). This means a score-only recompute (SCORE_VERSION bump, no
     PROCESSING_VERSION change) completes in milliseconds.
+
+    Set force_recompute=True to bypass the fast path and always run the full
+    pipeline (e.g. for regeneration or after clearing download caches).
     """
     d_end = date.fromisoformat(date_end)
     d_start = date(d_end.year - lookback_years, d_end.month, d_end.day)
@@ -44,7 +48,7 @@ async def run_score(
         logger.warning("Climate lookup failed for location_key=%s", location_key)
 
     # Fast path: features already computed for this version + date window.
-    if location_key:
+    if location_key and not force_recompute:
         cached = store.get_features(
             location_key, settings.PROCESSING_VERSION, date_start, date_end
         )
