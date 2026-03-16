@@ -46,9 +46,10 @@ def render_dem_png(elevation_bytes: bytes, elev_min: float, elev_max: float) -> 
     data = np.frombuffer(elevation_bytes, dtype=np.float32).reshape(64, 64).astype(np.float64)
 
     # Hillshade (NW sun, 45° altitude) — pixel spacing ≈ 10 m after footprint fix
+    # dz_dy = row gradient (positive = southward); flip sign so arctan2 gets northward.
     dz_dy, dz_dx = np.gradient(data)
     slope = np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))
-    aspect = (np.arctan2(-dz_dx, dz_dy) + 2 * np.pi) % (2 * np.pi)
+    aspect = (np.arctan2(dz_dx, -dz_dy) + 2 * np.pi) % (2 * np.pi)
     sun_az, sun_alt = np.radians(315), np.radians(45)
     hs = (
         np.cos(sun_alt) * np.cos(slope)

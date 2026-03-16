@@ -126,7 +126,8 @@ def _read_dem_from_path(
         slope_deg = float(np.degrees(np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))).mean())
 
         # Aspect: circular mean downslope direction (0=N, clockwise)
-        aspect_pixel = (np.degrees(np.arctan2(-dz_dx, dz_dy)) + 360) % 360
+        # dz_dy is the row gradient (positive = southward); flip sign for northward.
+        aspect_pixel = (np.degrees(np.arctan2(dz_dx, -dz_dy)) + 360) % 360
         sin_a = np.nanmean(np.sin(np.radians(aspect_pixel)))
         cos_a = np.nanmean(np.cos(np.radians(aspect_pixel)))
         aspect_deg = float((np.degrees(np.arctan2(sin_a, cos_a)) + 360) % 360)
@@ -145,10 +146,12 @@ def _read_dem_from_path(
         r = 2  # 5×5 neighbourhood ≈ 50 m × 50 m
         curvature = float(np.nanmean(laplacian[cy - r:cy + r + 1, cx - r:cx + r + 1]))
 
-        # Heat Load Index (solar radiation proxy, 0–~0.8)
+        # Heat Load Index (solar radiation proxy, 0–1): max for equator-facing slopes.
+        # With correct aspect (0=N clockwise), equator-facing = 180° in NH, 0° in SH.
+        # Uses (1 + cos) so that aspect == equatorial_dir gives maximum (cos=1).
         equatorial_dir = 180.0 if lat >= 0 else 0.0
         heat_load_index = float(
-            (1.0 - np.cos(np.radians(aspect_deg - equatorial_dir))) / 2.0
+            (1.0 + np.cos(np.radians(aspect_deg - equatorial_dir))) / 2.0
             * np.sin(np.radians(slope_deg))
         )
 
