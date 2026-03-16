@@ -954,9 +954,9 @@ class PostgresStore:
                     break
             cur.execute(
                 "INSERT INTO users (user_id, email, password_hash, name, newsletter) VALUES (%s, %s, %s, %s, %s)",
-                [user_id, email, password_hash, name, newsletter],
+                [user_id, email.lower(), password_hash, name, newsletter],
             )
-        return {"user_id": user_id, "email": email, "name": name, "role": "user"}
+        return {"user_id": user_id, "email": email.lower(), "name": name, "role": "user"}
 
     def get_user_by_email(self, email: str) -> dict | None:
         if self._pool is None:
@@ -965,7 +965,7 @@ class PostgresStore:
             cur = conn.cursor()
             cur.execute(
                 "SELECT user_id, email, password_hash, name, role, is_verified, created_at"
-                " FROM users WHERE email = %s",
+                " FROM users WHERE LOWER(email) = LOWER(%s)",
                 [email],
             )
             row = cur.fetchone()
