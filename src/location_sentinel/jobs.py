@@ -76,11 +76,11 @@ class JobStore:
         return None
 
     def get(self, job_id: str) -> Job | None:
-        # Fast path: check this worker's memory first.
+        # Terminal states are immutable -- safe to serve from memory.
         job = self._jobs.get(job_id)
-        if job:
+        if job and job.status in ("ready", "failed"):
             return job
-        # Cross-worker fallback: check DB.
+        # Non-terminal or unseen: always read from DB so cross-worker updates are visible.
         row = self._store().get_job(job_id)
         if row:
             job = Job.from_dict(row)
