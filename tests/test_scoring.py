@@ -478,3 +478,46 @@ class TestScoring:
         assert result.composite_score >= 0.60 * dominant - 0.01
         # composite must not exceed the dominant sub-score
         assert result.composite_score <= dominant + 0.01
+
+
+class TestHeatLoadIndexAmplifier:
+    """HLI (terrain solar load) amplification of heat stress and drought scores."""
+
+    # TerraClimate-only heat stress features (no optical/drought data)
+    _TC_ONLY = {
+        "tmax_anomaly_freq_5y": 0.30,
+        "tmax_trend_slope_5y": 0.02,
+        "vpd_high_freq_5y": 0.20,
+    }
+
+    def test_hli_amplifies_heat_stress_without_optical_data(self):
+        # Regression: a south-facing steep slope must amplify heat stress even when
+        # no S2 optical data exists (drought components empty).
+        r_flat = compute_scores(dict(self._TC_ONLY))
+        r_south_slope = compute_scores({**self._TC_ONLY, "heat_load_index": 0.4})
+        # amp = 1 + min(0.25, 0.4 * 0.5) = 1.20
+        assert r_south_slope.heat_stress_score > r_flat.heat_stress_score
+        assert r_south_slope.heat_stress_score == round(
+            min(100.0, r_flat.heat_stress_score * 1.20)
+        )
+
+    def test_hli_below_threshold_no_amplification(self):
+        r_flat = compute_scores(dict(self._TC_ONLY))
+        r_low_hli = compute_scores({**self._TC_ONLY, "heat_load_index": 0.01})
+        assert r_low_hli.heat_stress_score == r_flat.heat_stress_score
+
+    def test_hli_suppressed_for_urban(self):
+        # DSM rooftop artifacts make HLI unreliable in built-up areas
+        r_urban = compute_scores({**self._TC_ONLY, "is_urban": 1.0})
+        r_urban_hli = compute_scores({**self._TC_ONLY, "is_urban": 1.0, "heat_load_index": 0.4})
+        assert r_urban_hli.heat_stress_score == r_urban.heat_stress_score
+
+    def test_hli_amplifies_drought_with_optical_data(self):
+        drought_features = {
+            "ndvi_mean_5y": 0.2,
+            "ndvi_anomaly_freq_5y": 0.4,
+            "ndmi_moisture_stress_freq_5y": 0.6,
+        }
+        r_flat = compute_scores(dict(drought_features))
+        r_south_slope = compute_scores({**drought_features, "heat_load_index": 0.4})
+        assert r_south_slope.drought_score > r_flat.drought_score

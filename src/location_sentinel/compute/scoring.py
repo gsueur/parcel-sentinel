@@ -198,8 +198,15 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
 
     slope_deg = features.get("slope_deg")
 
+    # HLI amplifier: south-facing slopes (NH) get higher solar load → drier soils,
+    # higher heat stress. Computed independently of the drought branch so it also
+    # amplifies heat_stress_score for locations without optical time series data.
+    # Suppressed for urban locations: GLO-30 is a DSM, so rooftop edges corrupt
+    # slope/aspect (and therefore HLI) in dense built-up areas.
     hli = features.get("heat_load_index")
     hli_amp = 1.0
+    if hli is not None and hli > settings.TERRAIN_HLI_THRESHOLD and not is_urban:
+        hli_amp = 1.0 + min(settings.TERRAIN_HLI_AMP_MAX, hli * settings.TERRAIN_HLI_FACTOR)
 
     if is_urban:
         drought_score = 0.0
@@ -213,9 +220,8 @@ def compute_scores(features: dict[str, float | None], climate_code: str | None =
                 (slope_deg - settings.TERRAIN_DROUGHT_SLOPE_MIN) / 100.0,
             )
             drought_score = min(100.0, drought_score * terrain_amp)
-        # HLI amplifier: south-facing slopes (NH) get more solar radiation → drier
-        if hli is not None and hli > settings.TERRAIN_HLI_THRESHOLD:
-            hli_amp = 1.0 + min(settings.TERRAIN_HLI_AMP_MAX, hli * settings.TERRAIN_HLI_FACTOR)
+        # HLI drought amplifier: more solar radiation → drier
+        if hli_amp > 1.0:
             drought_score = min(100.0, drought_score * hli_amp)
 
         # Improving-slope mitigation: positive NDMI/PDSI trend → reduce drought score.
