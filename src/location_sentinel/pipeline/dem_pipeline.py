@@ -36,7 +36,7 @@ async def run_dem_features(
         centroid = geom.centroid
         lat, lon = centroid.y, centroid.x
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             partial(read_dem_sync, lat, lon),

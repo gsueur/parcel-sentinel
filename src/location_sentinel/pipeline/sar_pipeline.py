@@ -176,7 +176,7 @@ async def run_sar_features(
         geom = geojson_to_shapely(geom_geojson)
         geom = validate_geometry(geom)
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         t0 = time.monotonic()
         search_result = await loop.run_in_executor(
             None,

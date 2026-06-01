@@ -192,21 +192,6 @@ def compute_moisture_stress_frequency(
     return round(stress_count / len(valid), 4)
 
 
-def compute_burn_frequency(
-    records: list[MonthlyRecord],
-    threshold: float = settings.NBR_BURN_THRESHOLD,
-) -> float | None:
-    """Fraction of months with NBR below threshold (burn signal present).
-
-    Returns fraction in [0, 1]. None if no data.
-    """
-    valid = [r for r in records if r.mean is not None]
-    if not valid:
-        return None
-    burn_count = sum(1 for r in valid if r.mean < threshold)
-    return round(burn_count / len(valid), 4)
-
-
 def get_persistent_burn_months(
     records: list[MonthlyRecord],
     threshold: float = settings.NBR_ANOMALY_THRESHOLD,

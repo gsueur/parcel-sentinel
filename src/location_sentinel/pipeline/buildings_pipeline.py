@@ -39,15 +39,21 @@ async def run_buildings_features(
         centroid = geom.centroid
         lat, lon = centroid.y, centroid.x
 
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,
-            partial(
-                query_buildings_sync,
-                lat, lon,
-                settings.OVERTURE_BUCKET,
-                release,
+        loop = asyncio.get_running_loop()
+        # Wall-clock timeout: the DuckDB S3 parquet scan has no internal timeout,
+        # so a slow Overture bucket would otherwise hang the whole asyncio.gather
+        # in features_pipeline. On timeout, fall back to no building data.
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                partial(
+                    query_buildings_sync,
+                    lat, lon,
+                    settings.OVERTURE_BUCKET,
+                    release,
+                ),
             ),
+            timeout=settings.OVERTURE_QUERY_TIMEOUT_SECONDS,
         )
 
         # Cache on success (including zero-building results); skip on error

@@ -92,25 +92,10 @@ class TestStaticMapRender:
         assert isinstance(result, bytes)
         assert result == fake_png
 
-    def test_extract_coords_polygon(self):
-        from src.location_sentinel.thumbnails.static_map import _extract_exterior_coords
+    async def test_render_raises_without_token(self, monkeypatch):
+        from src.location_sentinel.config import settings
+        from src.location_sentinel.thumbnails.static_map import render_location_thumbnail
 
-        coords = _extract_exterior_coords(SAMPLE_GEOJSON)
-        assert len(coords) == 5
-        assert coords[0] == (-77.0365, 38.8977)
-
-    def test_extract_coords_multipolygon(self):
-        from src.location_sentinel.thumbnails.static_map import _extract_exterior_coords
-
-        multi = {
-            "type": "MultiPolygon",
-            "coordinates": [SAMPLE_GEOJSON["coordinates"]],
-        }
-        coords = _extract_exterior_coords(multi)
-        assert len(coords) == 5
-
-    def test_extract_coords_unsupported(self):
-        from src.location_sentinel.thumbnails.static_map import _extract_exterior_coords
-
-        with pytest.raises(ValueError, match="Unsupported geometry type"):
-            _extract_exterior_coords({"type": "Point", "coordinates": [0, 0]})
+        monkeypatch.setattr(settings, "MAPBOX_TOKEN", "")
+        with pytest.raises(RuntimeError, match="MAPBOX_TOKEN"):
+            await render_location_thumbnail(SAMPLE_GEOJSON)

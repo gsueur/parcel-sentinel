@@ -339,6 +339,18 @@ class PostgresStore:
                     """,
                     [code, label, criterion],
                 )
+            # Secondary indexes for hot query paths. PKs already cover the
+            # leading location_key lookups on most tables.
+            for index_sql in (
+                "CREATE INDEX IF NOT EXISTS idx_geometries_customer ON location_geometries (customer_id)",
+                "CREATE INDEX IF NOT EXISTS idx_features_key_updated ON location_features (location_key, updated_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_scores_key_updated ON location_scores (location_key, updated_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_jobs_location_status ON jobs (location_key, status)",
+                "CREATE INDEX IF NOT EXISTS idx_scene_bands_key_version ON scene_bands (location_key, processing_version)",
+                "CREATE INDEX IF NOT EXISTS idx_sar_scene_bands_key_version ON sar_scene_bands (location_key, processing_version)",
+            ):
+                cur.execute(index_sql)
+
     def health_check(self) -> bool:
         try:
             if self._pool is None:
@@ -695,7 +707,8 @@ class PostgresStore:
 
         return {"geojson": geojson, "name": name, "centroid": centroid_lonlat, "climate": climate_info}
 
-    def _locations_query(self, where: str = "", params: list = []) -> list[dict]:
+    def _locations_query(self, where: str = "", params: list | None = None) -> list[dict]:
+        params = params or []
         with self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -891,6 +904,8 @@ class PostgresStore:
             "location_timeseries",
             "location_scores",
             "location_features",
+            "elevation_cache",
+            "buildings_cache",
             "location_geometries",
         ]
         deleted: dict[str, int] = {}
@@ -1036,29 +1051,27 @@ class PostgresStore:
         return token
 
     def consume_verification_token(self, token: str) -> str | None:
-        """Return user_id if the token is valid, unused, and unexpired; else None."""
+        """Return user_id if the token is valid, unused, and unexpired; else None.
+
+        Atomic check-and-set: a single UPDATE ... RETURNING so two concurrent
+        requests with the same token cannot both consume it.
+        """
         if self._pool is None:
             return None
+        now = datetime.now(timezone.utc)
         with self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT user_id, expires_at, used_at FROM email_verification_tokens WHERE token = %s",
-                [token],
+                """
+                UPDATE email_verification_tokens
+                SET used_at = %s
+                WHERE token = %s AND used_at IS NULL AND expires_at > %s
+                RETURNING user_id
+                """,
+                [now, token, now],
             )
             row = cur.fetchone()
-            if row is None:
-                return None
-            user_id, expires_at, used_at = row
-            if used_at is not None:
-                return None
-            exp = expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
-            if datetime.now(timezone.utc) > exp:
-                return None
-            cur.execute(
-                "UPDATE email_verification_tokens SET used_at = %s WHERE token = %s",
-                [datetime.now(timezone.utc), token],
-            )
-        return user_id
+        return row[0] if row else None
 
     def mark_user_verified(self, user_id: str) -> None:
         if self._pool is None:
@@ -1202,22 +1215,26 @@ class PostgresStore:
                 [location_key, processing_version, max_cloud, limit],
             )
             scenes = cur.fetchall()
+            if not scenes:
+                return []
 
-            result = []
-            for scene_id, month_key in scenes:
-                cur.execute(
-                    """
-                    SELECT band_key, width, height, data FROM scene_bands
-                    WHERE location_key = %s AND scene_id = %s AND processing_version = %s
-                    """,
-                    [location_key, scene_id, processing_version],
-                )
-                rows = cur.fetchall()
-                bands = {
-                    band_key: _frombuffer(data).reshape(h, w)
-                    for band_key, w, h, data in rows
-                }
-                result.append({"scene_id": scene_id, "month_key": month_key, "bands": bands})
+            # Fetch all band data in one query instead of one per scene (N+1).
+            scene_ids = [scene_id for scene_id, _ in scenes]
+            cur.execute(
+                """
+                SELECT scene_id, band_key, width, height, data FROM scene_bands
+                WHERE location_key = %s AND processing_version = %s AND scene_id = ANY(%s)
+                """,
+                [location_key, processing_version, scene_ids],
+            )
+            bands_by_scene: dict[str, dict] = {}
+            for scene_id, band_key, w, h, data in cur.fetchall():
+                bands_by_scene.setdefault(scene_id, {})[band_key] = _frombuffer(data).reshape(h, w)
+
+            result = [
+                {"scene_id": scene_id, "month_key": month_key, "bands": bands_by_scene.get(scene_id, {})}
+                for scene_id, month_key in scenes
+            ]
         return result
 
     # ------------------------------------------------------------------

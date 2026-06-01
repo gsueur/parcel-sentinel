@@ -43,8 +43,15 @@ def _interpolate_tide(predictions: list[tuple[int, float]], hour: int, minute: i
     by_hour = {h: v for h, v in predictions}
     if hour in by_hour:
         v0 = by_hour[hour]
-        v1 = by_hour.get(hour + 1, v0)
-        return round(v0 + (minute / 60.0) * (v1 - v0), 3)
+        if hour + 1 in by_hour:
+            v1 = by_hour[hour + 1]
+            return round(v0 + (minute / 60.0) * (v1 - v0), 3)
+        # Last hour of the day (or next hour missing): extrapolate from the
+        # previous hour's slope instead of silently flattening.
+        if hour - 1 in by_hour:
+            slope = v0 - by_hour[hour - 1]
+            return round(v0 + (minute / 60.0) * slope, 3)
+        return round(v0, 3)
     # Fallback: nearest available hour
     for h in (hour - 1, hour + 1):
         if h in by_hour:
@@ -239,7 +246,10 @@ async def get_location_report(location_key: str):
         dem_png_b64=dem_png_b64,
     )
 
-    headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
+    # Always no-store: reports include live scores, tide levels, and active
+    # episode flags; CDN/proxy caching would serve stale risk data after a
+    # regeneration.
+    headers = {"Cache-Control": "no-store"}
     return HTMLResponse(content=html, status_code=200, headers=headers)
 
 
@@ -332,7 +342,10 @@ async def get_location_report_json(location_key: str):
         },
     }
 
-    headers = {"Cache-Control": "no-store"} if settings.ENV == "development" else {}
+    # Always no-store: reports include live scores, tide levels, and active
+    # episode flags; CDN/proxy caching would serve stale risk data after a
+    # regeneration.
+    headers = {"Cache-Control": "no-store"}
     return JSONResponse(content=payload, status_code=200, headers=headers)
 
 

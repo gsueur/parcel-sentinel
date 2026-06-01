@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     #   aws s3 ls s3://overturemaps-us-west-2/release/ --no-sign-request
     OVERTURE_BUCKET: str = "overturemaps-us-west-2"
     OVERTURE_RELEASE: str = "2026-02-18.0"
+    # Wall-clock cap on the DuckDB S3 parquet scan; on timeout the buildings
+    # pipeline returns no data instead of hanging the location job.
+    OVERTURE_QUERY_TIMEOUT_SECONDS: float = 60.0
 
     # SAR / Sentinel-1 GRD
     SAR_STAC_COLLECTION: str = "sentinel-1-grd"

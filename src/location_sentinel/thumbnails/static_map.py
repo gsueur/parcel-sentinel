@@ -80,16 +80,3 @@ async def render_location_thumbnail(geojson_geometry: dict) -> bytes:
         resp.raise_for_status()
 
     return resp.content
-
-
-def _extract_exterior_coords(geojson_geometry: dict) -> list[tuple[float, float]]:
-    """Extract exterior ring coordinates as [(lon, lat), ...] from GeoJSON."""
-    geom_type = geojson_geometry.get("type", "")
-    coordinates = geojson_geometry.get("coordinates", [])
-
-    if geom_type == "Polygon":
-        return [(c[0], c[1]) for c in coordinates[0]]
-    elif geom_type == "MultiPolygon":
-        return [(c[0], c[1]) for c in coordinates[0][0]]
-    else:
-        raise ValueError(f"Unsupported geometry type for thumbnail: {geom_type}")
