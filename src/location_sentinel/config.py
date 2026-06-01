@@ -173,7 +173,7 @@ class Settings(BaseSettings):
     PDSI_OPTICAL_CONFLICT_DAMP: float = 0.25             # multiply PDSI components by this when conflict
 
     # Versions
-    PROCESSING_VERSION: str = "s2l2a-v1.36.0"
+    PROCESSING_VERSION: str = "s2l2a-v1.37.0"
     SCORE_VERSION: str = "risk-v1.21.0"
 
     # Trend-aware scoring -- Part A: active episode multipliers
@@ -229,6 +229,10 @@ class Settings(BaseSettings):
     NDVI_ANOMALY_THRESHOLD: float = 0.1
     NDWI_WET_THRESHOLD: float = 0.0
     NDMI_STRESS_THRESHOLD: float = 0.0    # NDMI below → vegetation moisture stress
+    # NDMI departure below seasonal climatology to count as a moisture anomaly
+    # (momentum ratio). Lower than NDVI's 0.1: the SWIR-based moisture signal has
+    # smaller seasonal variance than the chlorophyll signal, so 0.1 under-detects.
+    NDMI_ANOMALY_THRESHOLD: float = 0.08
     NBR_BURN_THRESHOLD: float = 0.1       # absolute NBR below → burn signal (used for chart bar color only)
     NBR_ANOMALY_THRESHOLD: float = 0.15   # NBR must drop this far below seasonal climatology to count as fire anomaly
     # Minimum consecutive months of NBR anomaly required to count as a genuine

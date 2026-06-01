@@ -115,7 +115,7 @@ async def run_features(
         features["ndmi_moisture_stress_freq_5y"] = compute_moisture_stress_frequency(ndmi_records)
         features["ndmi_trend_slope_5y"] = compute_trend_slope(ndmi_records)
         features["ndmi_momentum_ratio_1y"] = compute_recent_anomaly_ratio(
-            ndmi_records, date_end, threshold=settings.NDVI_ANOMALY_THRESHOLD, direction="below"
+            ndmi_records, date_end, threshold=settings.NDMI_ANOMALY_THRESHOLD, direction="below"
         )
 
     # NBR features -- fire / burn history

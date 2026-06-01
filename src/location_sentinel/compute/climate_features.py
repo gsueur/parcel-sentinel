@@ -94,9 +94,11 @@ def _compute_recent_freq_ratio(
     if baseline_freq < 0.01:
         return None
 
+    # Lower bound excludes months after date_end: the TerraClimate grid-cell cache
+    # can hold months beyond the analysis window, which would inflate the ratio.
     recent_points = [
         (y, m, v) for y, m, v in points
-        if (end_abs - (y * 12 + m)) < recent_months
+        if 0 <= (end_abs - (y * 12 + m)) < recent_months
     ]
     if len(recent_points) < 3:
         return None

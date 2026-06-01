@@ -109,13 +109,21 @@ async def run_terraclimate_features(
             )
 
     # ── Assemble monthly series for feature derivation ────────────────────────
-    # Build {var: {(year, month): value}} restricted to the request window
+    # Build {var: {(year, month): value}} restricted to the request window.
+    # The filter must be month-precise, not year-precise: the grid-cell cache is
+    # shared across locations, so it can hold months outside this location's
+    # window (e.g. cached by a later analysis of the same cell). Including them
+    # would skew means, anomaly frequencies, trends, and momentum ratios.
+    start_d = date.fromisoformat(date_start)
+    end_d = date.fromisoformat(date_end)
+    start_abs = start_d.year * 12 + start_d.month
+    end_abs = end_d.year * 12 + end_d.month
     series: dict[str, dict[tuple[int, int], float | None]] = {}
     for var in variables:
         series[var] = {
             (y, m): v
             for (y, m), v in cached.get(var, {}).items()
-            if y in set(years)
+            if start_abs <= (y * 12 + m) <= end_abs
         }
 
     # Check whether we have any data at all
