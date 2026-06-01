@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.location_sentinel.app import create_app
+from src.location_sentinel.auth.dependencies import UserClaims, current_user
 from src.location_sentinel.compute.aggregation import MonthlyRecord
 from src.location_sentinel.models.common import QualityInfo
 
@@ -17,9 +18,56 @@ SAMPLE_GEOJSON = {
 
 @pytest.fixture
 def client():
+    """Test client authenticated as a regular (non-admin) user."""
+    app = create_app()
+    app.dependency_overrides[current_user] = lambda: UserClaims(user_id="test01", role="user")
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture
+def anon_client():
+    """Test client with no authentication."""
     app = create_app()
     with TestClient(app) as c:
         yield c
+
+
+class TestAuthRequired:
+    """Compute endpoints must reject unauthenticated requests."""
+
+    def test_features_requires_auth(self, anon_client):
+        resp = anon_client.post("/v1/location/features", json={
+            "geometry": SAMPLE_GEOJSON,
+            "date_start": "2024-01-01",
+            "date_end": "2024-06-01",
+            "metrics": ["ndvi"],
+        })
+        assert resp.status_code in (401, 403)
+
+    def test_score_requires_auth(self, anon_client):
+        resp = anon_client.post("/v1/location/score", json={
+            "geometry": SAMPLE_GEOJSON,
+            "date_end": "2024-06-01",
+        })
+        assert resp.status_code in (401, 403)
+
+    def test_timeseries_requires_auth(self, anon_client):
+        resp = anon_client.post("/v1/location/timeseries", json={
+            "geometry": SAMPLE_GEOJSON,
+            "date_start": "2024-01-01",
+            "date_end": "2024-06-01",
+            "metrics": ["ndvi"],
+        })
+        assert resp.status_code in (401, 403)
+
+    def test_jobs_list_requires_admin(self, anon_client):
+        resp = anon_client.get("/v1/jobs")
+        assert resp.status_code in (401, 403)
+
+    def test_job_poll_requires_auth(self, anon_client):
+        resp = anon_client.get("/v1/jobs/some-job-id")
+        assert resp.status_code in (401, 403)
 
 
 class TestDateValidation:
@@ -162,6 +210,7 @@ class TestScore:
             mock_quality,             # quality
             "2019-01-31",             # date_start
             {"ndvi": [{"month": "2019-01", "mean": 0.42, "obs": 1, "cloud": 0.05}]},  # series dict
+            "Cfa",                    # climate_code
         )
 
         resp = client.post("/v1/location/score", json={

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth.dependencies import UserClaims, current_user, require_admin
 from ..jobs import job_store
 
 router = APIRouter()
 
 
 @router.get("/jobs")
-async def list_jobs():
-    """List all jobs, most recent first."""
+async def list_jobs(_: UserClaims = Depends(require_admin)):
+    """List all jobs, most recent first. Admin only."""
     jobs = sorted(job_store._jobs.values(), key=lambda j: j.created_at, reverse=True)
     return {
         "count": len(jobs),
@@ -18,7 +19,7 @@ async def list_jobs():
 
 
 @router.get("/jobs/{job_id}")
-async def get_job(job_id: str):
+async def get_job(job_id: str, _: UserClaims = Depends(current_user)):
     """Poll the status of an async location computation job."""
     job = job_store.get(job_id)
     if job is None:

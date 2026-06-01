@@ -13,6 +13,14 @@ wheels/
 *.duckdb
 *.duckdb.wal
 
+# Secrets -- never commit
+.env
+.env.*
+
+# OS / tooling artifacts
+.DS_Store
+.wrangler/
+
 claude.md
 pyproject.toml
 uv.lock

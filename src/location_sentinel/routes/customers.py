@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+import html
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+from ..auth.dependencies import UserClaims, require_admin
 from ..config import settings
 from ..storage.duckdb_store import store
 
@@ -19,21 +22,21 @@ class CustomerCreate(BaseModel):
 # ------------------------------------------------------------------
 
 @router.get("/customers")
-async def list_customers():
-    """List all customers."""
+async def list_customers(_: UserClaims = Depends(require_admin)):
+    """List all customers. Admin only."""
     customers = store.get_all_customers()
     return JSONResponse(content={"count": len(customers), "customers": customers})
 
 
 @router.post("/customers", status_code=201)
-async def create_customer(body: CustomerCreate):
-    """Create a new customer. Returns a unique 6-hex-char customer_id."""
+async def create_customer(body: CustomerCreate, _: UserClaims = Depends(require_admin)):
+    """Create a new customer. Returns a unique 6-hex-char customer_id. Admin only."""
     customer = store.create_customer(body.name)
     return JSONResponse(content=customer, status_code=201)
 
 
 @router.get("/customers/{customer_id}/locations")
-async def get_customer_locations_json(customer_id: str):
+async def get_customer_locations_json(customer_id: str, _: UserClaims = Depends(require_admin)):
     customer = store.get_customer(customer_id)
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -54,8 +57,8 @@ async def get_customer_locations_json(customer_id: str):
 # ------------------------------------------------------------------
 
 @router.get("/customers/{customer_id}", response_class=HTMLResponse)
-async def get_customer_page(customer_id: str):
-    """Browsable page showing all locations for a customer."""
+async def get_customer_page(customer_id: str, _: UserClaims = Depends(require_admin)):
+    """Browsable page showing all locations for a customer. Admin only."""
     customer = store.get_customer(customer_id)
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -107,16 +110,17 @@ def _build_html(customer: dict, locations: list[dict]) -> str:
     else:
         rows = []
         for p in locations:
-            name = p["name"] or "Unnamed location"
+            # User-supplied fields are escaped to prevent stored XSS.
+            name = html.escape(p["name"] or "Unnamed location")
             coords = ""
             if p["centroid"]:
                 lon, lat = p["centroid"]
                 coords = f"&#x1F4CD; {lat:+.5f}, {lon:+.5f}"
-            key_short = p["location_key"][:32] + "..."
+            key_short = html.escape(p["location_key"][:32]) + "..."
             updated = p["updated_at"][:16].replace("T", " ") if p["updated_at"] else ""
             rows.append(f"""
-            <a class="card" href="{p['report_url']}">
-              <img class="thumb" src="{p['thumbnail_url']}"
+            <a class="card" href="{html.escape(p['report_url'], quote=True)}">
+              <img class="thumb" src="{html.escape(p['thumbnail_url'], quote=True)}"
                    alt="" onerror="this.className='thumb-placeholder'">
               <div class="info">
                 <div class="name">{name}</div>
@@ -127,19 +131,22 @@ def _build_html(customer: dict, locations: list[dict]) -> str:
             </a>""")
         cards = "\n".join(rows)
 
+    customer_name = html.escape(customer["name"])
+    customer_id_safe = html.escape(customer["customer_id"])
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{customer['name']} &mdash; Location Sentinel</title>
+  <title>{customer_name} &mdash; Location Sentinel</title>
   <style>{_CSS}</style>
 </head>
 <body>
   <div class="header">
-    <h1>{customer['name']}</h1>
+    <h1>{customer_name}</h1>
     <div class="sub">
-      <span class="badge">ID: {customer['customer_id']}</span>
+      <span class="badge">ID: {customer_id_safe}</span>
       <small>{count} {noun}</small>
     </div>
   </div>

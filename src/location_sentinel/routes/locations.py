@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import html
 import logging
 import uuid
 
@@ -350,16 +351,17 @@ def _build_html(locations: list[dict]) -> str:
     else:
         rows = []
         for p in locations:
-            name = p["name"] or "Unnamed location"
+            # User-supplied fields are escaped to prevent stored XSS.
+            name = html.escape(p["name"] or "Unnamed location")
             coords = ""
             if p["centroid"]:
                 lon, lat = p["centroid"]
                 coords = f"&#x1F4CD; {lat:+.5f}, {lon:+.5f}"
-            key_short = p["location_key"][:32] + "..."
+            key_short = html.escape(p["location_key"][:32]) + "..."
             updated = p["updated_at"][:16].replace("T", " ") if p["updated_at"] else ""
             rows.append(f"""
-            <a class="card" href="{p['report_url']}">
-              <img class="thumb" src="{p['thumbnail_url']}"
+            <a class="card" href="{html.escape(p['report_url'], quote=True)}">
+              <img class="thumb" src="{html.escape(p['thumbnail_url'], quote=True)}"
                    alt="" onerror="this.className='thumb-placeholder'">
               <div class="info">
                 <div class="name">{name}</div>

@@ -928,7 +928,7 @@ async function loadOtherLocations() {
 
     // Render one section per user
     body.innerHTML = [...groups.entries()].map(([owner, locs], i) =>
-      `<div class="admin-section-hdr${i === 0 ? ' admin-section-hdr--first' : ''}">${owner} <span style="font-weight:400;color:var(--faint)">(${locs.length})</span></div>
+      `<div class="admin-section-hdr${i === 0 ? ' admin-section-hdr--first' : ''}">${esc(owner)} <span style="font-weight:400;color:var(--faint)">(${locs.length})</span></div>
        <div id="others-group-${i}" class="grid"></div>`
     ).join('');
 
@@ -936,7 +936,7 @@ async function loadOtherLocations() {
       renderGrid(`others-group-${i}`, locs, false, false);
     });
   } catch (e) {
-    body.innerHTML = `<p class="state-msg">Failed to load: ${e.message}</p>`;
+    body.innerHTML = `<p class="state-msg">Failed to load: ${esc(e.message)}</p>`;
   }
 }
 
@@ -949,6 +949,13 @@ async function refreshAfterJob() {
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ── RENDER GRID ────────────────────────────────────────────────────────────────
+// Escape user-supplied strings before interpolating into innerHTML (XSS).
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function renderGrid(gridId, locations, showActions, showOwner = false) {
   const grid = document.getElementById(gridId);
   locations = [...locations].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -959,7 +966,7 @@ function renderGrid(gridId, locations, showActions, showOwner = false) {
     return;
   }
   grid.innerHTML = locations.map(loc => {
-    const name    = loc.name || 'Unnamed';
+    const name    = esc(loc.name || 'Unnamed');
     const coords  = loc.centroid
       ? `${loc.centroid[1] >= 0 ? '+' : ''}${loc.centroid[1].toFixed(4)},\u2009${loc.centroid[0] >= 0 ? '+' : ''}${loc.centroid[0].toFixed(4)}`
       : '';
@@ -979,7 +986,7 @@ function renderGrid(gridId, locations, showActions, showOwner = false) {
           : `<span class="badge-private">Private</span>`)
       : '';
     const ownerBadge = showOwner && loc.customer_name
-      ? `<span class="badge-owner" title="${loc.customer_name}">${loc.customer_name}</span>`
+      ? `<span class="badge-owner" title="${esc(loc.customer_name)}">${esc(loc.customer_name)}</span>`
       : '';
     const urbanBadge = loc.is_urban
       ? `<span class="badge-urban">Urban</span>`
@@ -1007,7 +1014,7 @@ function renderGrid(gridId, locations, showActions, showOwner = false) {
     const eps = loc.active_episodes || [];
     const episodeBadges = eps.length
       ? `<div class="card-episodes">${eps.map(ep => {
-          const m = EP_META[ep] || { cls: 'flood', icon: '&#x26A0;', label: ep };
+          const m = EP_META[ep] || { cls: 'flood', icon: '&#x26A0;', label: esc(ep) };
           return `<span class="ep-badge ${m.cls}">${m.icon}&nbsp;${m.label}</span>`;
         }).join('')}</div>`
       : '';
@@ -1246,7 +1253,7 @@ function addPendingCard(jobId, name) {
   card.innerHTML = `
     <div class="card-thumb-computing"><div class="spinner"></div></div>
     <div class="card-body">
-      <div class="card-name">${name}</div>
+      <div class="card-name">${esc(name)}</div>
       <div class="card-computing" id="job-status-${jobId}">Computing\u2026</div>
     </div>`;
   const grid = document.getElementById('mine-grid');
@@ -1304,7 +1311,7 @@ function startBackgroundPoll(jobId) {
 
 function setFormStatus(type, msg) {
   const el = document.getElementById('form-status');
-  el.innerHTML = msg;
+  el.textContent = msg;
   el.className = `status-box ${type}`;
   el.classList.remove('hidden');
 }

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_mod
 import json
 from datetime import datetime, timezone
 
@@ -1554,6 +1555,8 @@ def build_report_html(
     dem_png_b64: str | None = None,
 ) -> str:
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    # Escape user- and external-API-supplied strings to prevent stored XSS in the report.
+    location_key = html_mod.escape(location_key)
     key_short = location_key[:24] + "..." if len(location_key) > 24 else location_key
     date_range_str = (
         f"{date_start} to {date_end}"
@@ -1561,7 +1564,7 @@ def build_report_html(
         else None
     )
 
-    display_name = name or "Unnamed location"
+    display_name = html_mod.escape(name) if name else "Unnamed location"
     if centroid:
         lon, lat = centroid
         coord_str = f"{lat:+.5f}, {lon:+.5f}"
@@ -1610,11 +1613,13 @@ def build_report_html(
 
     # Tidal zone badge
     if nearest_tidal:
+        station_id_safe = html_mod.escape(str(nearest_tidal["station_id"]), quote=True)
+        station_name_safe = html_mod.escape(str(nearest_tidal["name"]))
         tidal_html = (
             f'<span class="tidal-badge"'
-            f' title="Nearest NOAA tidal station: {nearest_tidal["station_id"]}">'
+            f' title="Nearest NOAA tidal station: {station_id_safe}">'
             f'<span class="tidal-icon">&#127754;</span>'
-            f'<span>{nearest_tidal["name"]} &nbsp;&middot;&nbsp; {nearest_tidal["distance_km"]:.1f} km</span>'
+            f'<span>{station_name_safe} &nbsp;&middot;&nbsp; {nearest_tidal["distance_km"]:.1f} km</span>'
             f'</span>'
         )
     else:

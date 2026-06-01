@@ -3,8 +3,9 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from ..auth.dependencies import UserClaims, current_user
 from ..config import settings
 from ..geometry.validate import GeometryValidationError
 from ..models.common import CacheInfo, DateWindow
@@ -20,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/location/features", response_model=FeaturesResponse)
-async def post_features(req: FeaturesRequest):
+async def post_features(req: FeaturesRequest, user: UserClaims = Depends(current_user)):
     trace_id = uuid.uuid4().hex[:12]
 
     ds = req.date_start.isoformat()
@@ -56,7 +57,8 @@ async def post_features(req: FeaturesRequest):
     geom_dict = req.geometry.model_dump()
 
     from ..storage.duckdb_store import store
-    store.save_geometry(location_key, geom_dict, name=req.name, customer_id=req.customer_id)
+    # Attribute to the authenticated user; req.customer_id is ignored.
+    store.save_geometry(location_key, geom_dict, name=req.name, customer_id=user.user_id)
 
     map_links = build_map_links(location_key, geom_dict)
 

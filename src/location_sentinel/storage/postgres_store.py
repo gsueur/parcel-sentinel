@@ -180,21 +180,24 @@ class PostgresStore:
                     used_at TIMESTAMP
                 )
             """)
-            # Drop the FK from location_geometries.customer_id → customers so that
-            # user_ids (from the users table) can be stored there going forward.
-            cur.execute("""
-                ALTER TABLE location_geometries
-                    DROP CONSTRAINT IF EXISTS location_geometries_customer_id_fkey
-            """)
+            # customer_id intentionally has no FK to customers: it stores user_ids
+            # (from the users table) going forward.
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS location_geometries (
                     location_key VARCHAR PRIMARY KEY,
                     geojson_text TEXT,
                     name VARCHAR,
-                    customer_id VARCHAR REFERENCES customers(customer_id),
+                    customer_id VARCHAR,
                     climate_code VARCHAR,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
+            """)
+            # Drop the legacy FK on databases created before the users migration.
+            # Must run after CREATE TABLE: ALTER on a missing table errors even
+            # with DROP CONSTRAINT IF EXISTS.
+            cur.execute("""
+                ALTER TABLE location_geometries
+                    DROP CONSTRAINT IF EXISTS location_geometries_customer_id_fkey
             """)
             # Add is_public column if it doesn't exist yet; use DEFAULT TRUE so all
             # pre-existing rows are immediately visible on the public landing page.

@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -18,6 +18,14 @@ class Settings(BaseSettings):
                 return json.loads(v)
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
+
+    @model_validator(mode="after")
+    def _require_production_secrets(self) -> "Settings":
+        # An empty SECRET_KEY is a valid HMAC key for python-jose: anyone could
+        # forge admin JWTs. Refuse to start in production without one.
+        if self.ENV == "production" and not self.SECRET_KEY:
+            raise ValueError("SECRET_KEY must be set when ENV=production")
+        return self
 
     # Environment
     ENV: str = "development"  # "development" | "production"
@@ -291,7 +299,7 @@ class Settings(BaseSettings):
     THUMBNAIL_HEIGHT: int = 200
     THUMBNAIL_CACHE_TTL: int = 86400  # 1 day
     GEOJSON_IO_MAX_URL_LENGTH: int = 8000
-    MAPBOX_TOKEN: str = "pk.eyJ1IjoiZ21lcm1haWRzIiwiYSI6ImNtZDBlanQ5bTE5czAycXMzNnF0Z3dodHEifQ.CXbfNM-wVW4UORDm65mE2Q"
+    MAPBOX_TOKEN: str = ""               # required for thumbnails -- set via env var
     MAPBOX_STYLE: str = "mapbox/satellite-v9"
     THUMBNAIL_CONTEXT_BUFFER_M: float = 400.0  # extra buffer around analysis geometry (~1000m viewport for point inputs)
 

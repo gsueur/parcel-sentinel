@@ -44,6 +44,9 @@ async def render_location_thumbnail(geojson_geometry: dict) -> bytes:
     Overlays the exact COG footprint (640m × 640m square for point inputs, polygon
     outline for parcel inputs) as a stroke-only blue rectangle. Returns PNG bytes.
     """
+    if not settings.MAPBOX_TOKEN:
+        raise RuntimeError("MAPBOX_TOKEN is not configured; cannot render thumbnails")
+
     footprint_geojson = _scene_footprint(geojson_geometry)
 
     # Expand viewport with landscape context buffer so the map shows surroundings,

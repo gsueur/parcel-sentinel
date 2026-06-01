@@ -44,9 +44,9 @@ Clients poll `GET /v1/jobs/{job_id}` for completion. The job store is in-memory 
 
 **Versions:** Bump `PROCESSING_VERSION` in `config.py` whenever features or their computation change. `SCORE_VERSION` when scoring weights/formula change. Both are stored with cached results -- a mismatch triggers recompute.
 
-Current versions: `PROCESSING_VERSION = "s2l2a-v1.27.0"`, `SCORE_VERSION = "risk-v1.15.0"`.
+Current versions: see `PROCESSING_VERSION` and `SCORE_VERSION` in `config.py` (the values below go stale; config.py is the source of truth).
 
-**Trend-aware scoring (v1.15.0):** Three layers applied in order after each base sub-score:
+**Trend-aware scoring (introduced in risk-v1.15.0):** Three layers applied in order after each base sub-score:
 - Part A: Active episode multipliers -- `active_flood × 1.40`, `active_drought × 1.30` (non-urban), `active_fire × 1.25` (non-urban, NBR must be present)
 - Part B: 1y vs 5y momentum ratios -- `ndvi_momentum_ratio_1y`, `ndmi_momentum_ratio_1y`, `pdsi_momentum_ratio_1y` amplify `drought_score`; `tmax_momentum_ratio_1y` amplifies `heat_stress_score`; ratio > 1.0 → `amp = 1 + min(0.30, (ratio-1) × 0.10)`
 - Part C: Theil-Sen slope sub-components -- `ndmi_trend_slope_5y` and `pdsi_trend_slope_5y` added as weighted drought components; `vpd_trend_slope_5y` added as heat_stress component; `ndwi_trend_slope_5y` blended 15% into wetness
@@ -63,7 +63,7 @@ All routes are under `/v1/`.
 
 **Features/score** (`routes/features.py`): `POST /location/features`, `POST /location/score`, `POST /location/timeseries`.
 
-**Report**: `GET /location/{key}/report.html`, `GET /location/{key}/report.json`.
+**Report**: `GET /location/{key}/report` (HTML), `GET /location/{key}/report.json`.
 
 **Thumbnail**: `GET /thumbnail/{key}.png` -- Mapbox Static API composite.
 
